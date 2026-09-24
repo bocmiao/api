@@ -749,8 +749,10 @@ describe('返回字段都有说明', () => {
     checkFields(r, data);
   });
 
-  test('tools 分类的每个非 raw 路由都做了上面的校验，raw 路由都有 returns', () => {
-    const routes = tools.flatMap((m) => m.routes);
+  // 本文件负责的模块；其余 tools 模块（验证码、访客信息等）在 local-tools.test.js 中校验
+  const OWN = new Set(['qrcode', 'shorturl', 'webmeta', 'whois', 'translate', 'devtools']);
+  test('本文件负责的每个非 raw 路由都做了上面的校验，raw 路由都有 returns', () => {
+    const routes = tools.filter((m) => OWN.has(m.name)).flatMap((m) => m.routes);
     const expected = routes.filter((r) => !r.raw).map((r) => `${r.method} ${r.path}`);
     assert.deepEqual(expected.filter((k) => !checked.has(k)), []);
     for (const r of routes.filter((x) => x.raw)) {

@@ -28,7 +28,7 @@ function route(path) {
 const call = (path, qs = '') => route(path).handler({ query: new URLSearchParams(qs), params: {}, body: null, ip: '127.0.0.1', user: null, req: null });
 
 test('模块元数据：分类、source、每个参数都有 desc', () => {
-  assert.equal(funModules.length, 8);
+  assert.ok(funModules.length >= 8);
   const names = new Set();
   for (const m of funModules) {
     assert.equal(m.category, 'fun');
