@@ -55,6 +55,16 @@ export const SETTING_GROUPS = [
     ],
   },
   {
+    id: 'ai', title: 'AI',
+    fields: [
+      { key: 'LLM_BASE_URL', label: '大模型接口地址', type: 'url', default: 'https://api.deepseek.com/v1', placeholder: 'https://api.deepseek.com/v1', help: '兼容 OpenAI 接口格式即可，如 DeepSeek、通义千问 DashScope 兼容模式（https://dashscope.aliyuncs.com/compatible-mode/v1）、Moonshot（https://api.moonshot.cn/v1）、硅基流动（https://api.siliconflow.cn/v1）等' },
+      { key: 'LLM_API_KEY', label: '大模型 API Key', type: 'secret', help: '填写后开启 AI 分类接口；未填写时 AI 接口返回 503' },
+      { key: 'LLM_MODEL', label: '模型名称', type: 'text', default: 'deepseek-chat', placeholder: 'deepseek-chat', help: '需与接口地址对应，如 qwen-plus、moonshot-v1-8k、Qwen/Qwen2.5-7B-Instruct' },
+      { key: 'AI_DAILY_LIMIT', label: '每个用户每天 AI 调用次数', type: 'int', default: '20', min: 0, max: 1e6, help: 'AI 接口只对登录用户开放，所有 AI 接口共享此额度，另外仍计入普通调用额度；设为 0 相当于关闭' },
+      { key: 'AI_MAX_CHARS', label: 'AI 单次最大字数', type: 'int', default: '3000', min: 100, max: 30000, help: '单次请求输入文本的最大字数（问答按所有消息合计），超出返回 400' },
+    ],
+  },
+  {
     id: 'update', title: '在线更新',
     fields: [
       { key: 'UPDATE_REPO', label: 'GitHub 仓库', type: 'text', default: 'bocmiao/api', placeholder: 'owner/repo' },
