@@ -2,11 +2,13 @@ import { createServer } from 'node:http';
 import { config } from './config.js';
 import { handle } from './app.js';
 import { pruneLogs } from './lib/limits.js';
+import { pruneEmailCodes } from './lib/emailcode.js';
 import { startScheduler } from './notify/scheduler.js';
 import { clearPending, readPending } from './lib/swap.js';
 
-pruneLogs();
-setInterval(pruneLogs, 6 * 3600_000).unref();
+const prune = () => { pruneLogs(); pruneEmailCodes(); };
+prune();
+setInterval(prune, 6 * 3600_000).unref();
 startScheduler();
 
 createServer(handle).listen(config.port, () => {

@@ -370,3 +370,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .type-boolean, .type-object, .type-array { color: var(--brand); }
 .response .inline-preview { flex: none; padding: 16px; border-bottom: 1px solid var(--border); }
 .response .inline-preview img { max-height: 160px; }
+
+/* 验证码输入行 */
+.code-row { display: flex; gap: 8px; align-items: center; }
+.code-row .input { flex: 1; min-width: 0; }
+.code-row .btn { flex: none; min-width: 108px; }
+.captcha-img { height: 38px; width: 120px; border-radius: 9px; border: 1px solid var(--border); background: #fff; cursor: pointer; flex: none; object-fit: contain; }

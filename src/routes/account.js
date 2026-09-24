@@ -11,6 +11,8 @@ import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
 import { checkUpdate, applyUpdate } from '../lib/updater.js';
+import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
+import { createCaptcha } from '../apis/tools/captcha.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -37,10 +39,41 @@ function recordLoginFail(ip) {
 
 // ---------- 注册 / 登录 ----------
 
+// 图形验证码（发送邮箱验证码前使用）
+r('GET', '/auth/captcha', () => ({ data: createCaptcha('alnum', 4) }));
+
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+
+r('POST', '/auth/send-code', async (ctx) => {
+  if (!config.emailVerify) throw new HttpError(400, '未开启邮箱验证');
+  const email = String(ctx.body?.email ?? '').trim().toLowerCase();
+  const purpose = ctx.body?.purpose;
+  if (!EMAIL_RE.test(email) || email.length > 254) throw new HttpError(400, '邮箱格式不正确');
+  if (!PURPOSES[purpose]) throw new HttpError(400, 'purpose 只能是 register 或 reset');
+  if (purpose === 'register' && !config.registrationOpen) throw new HttpError(403, '暂未开放注册');
+  checkCaptcha(ctx.body?.captchaToken, ctx.body?.captchaAnswer);
+  const exists = Boolean(sql('SELECT 1 FROM users WHERE email = ?').get(email));
+  return { data: await sendEmailCode({ email, purpose, ip: ctx.ip, exists }) };
+});
+
+r('POST', '/auth/reset-password', async (ctx) => {
+  if (!config.emailVerify) throw new HttpError(400, '未开启邮箱验证，请联系管理员重置密码');
+  const email = validateCredentials(ctx.body?.email, ctx.body?.password);
+  consumeEmailCode(email, 'reset', ctx.body?.code);
+  const user = sql('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user) throw new HttpError(400, '请先获取邮箱验证码');
+  sql('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(ctx.body.password), user.id);
+  sql('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+  if (user.disabled) throw new HttpError(403, '密码已重置，但账号已被停用');
+  ctx.setCookie(sessionCookie(createSession(user.id), ctx.req));
+  return { data: publicUser(user) };
+});
+
 r('POST', '/auth/register', async (ctx) => {
   if (!config.registrationOpen) throw new HttpError(403, '暂未开放注册');
   const email = validateCredentials(ctx.body?.email, ctx.body?.password);
   if (sql('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, '该邮箱已注册');
+  if (config.emailVerify) consumeEmailCode(email, 'register', ctx.body?.code);
   // 第一个注册的用户自动成为管理员
   const isFirst = !sql('SELECT 1 FROM users LIMIT 1').get();
   const { lastInsertRowid } = sql('INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, ?)')

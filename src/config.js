@@ -23,6 +23,17 @@ export const config = {
     maxChannels: int('MAX_CHANNELS_PER_USER', 10),
   },
 
+  // 配置了 SMTP 时默认开启注册邮箱验证；EMAIL_VERIFY=0 可关闭
+  get emailVerify() {
+    return Boolean(this.smtp.host) && process.env.EMAIL_VERIFY !== '0';
+  },
+  emailCode: {
+    ttlMin: int('EMAIL_CODE_TTL_MIN', 10),
+    cooldownSec: int('EMAIL_CODE_COOLDOWN_SEC', 60),
+    perEmailDaily: int('EMAIL_CODE_PER_EMAIL_DAILY', 10),
+    perIpDaily: int('EMAIL_CODE_PER_IP_DAILY', 20),
+  },
+
   logRetentionDays: int('LOG_RETENTION_DAYS', 30),
   notifyIntervalMin: int('NOTIFY_INTERVAL_MIN', 15),
 

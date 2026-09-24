@@ -15,6 +15,7 @@ const envStatus = (env = []) => env.map((e) => {
 
 export function catalog() {
   return {
+    auth: { registrationOpen: config.registrationOpen, emailVerify: config.emailVerify },
     limits: { anonDaily: config.limits.anonDaily, userDaily: config.limits.userDaily, anonMinute: config.limits.anonMinute, userMinute: config.limits.userMinute },
     categories: categories.map((c) => ({ ...c, count: modules.filter((m) => m.category === c.id).length })),
     modules: modules.map((m) => {

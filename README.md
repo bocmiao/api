@@ -43,7 +43,10 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `ADMIN_EMAILS` | | 额外的管理员邮箱，逗号分隔 |
 | `LOG_RETENTION_DAYS` | 30 | 调用日志保留天数 |
 | `NOTIFY_INTERVAL_MIN` | 15 | 推送主题检查间隔（分钟） |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | | 配置后开放邮件推送（465 端口用 TLS，587 用 STARTTLS） |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | | 配置后开启**注册邮箱验证**、**邮箱找回密码**和邮件推送（465 端口用 TLS，587 用 STARTTLS） |
+| `EMAIL_VERIFY` | 1 | 配置了 SMTP 时默认要求注册邮箱验证，设为 0 关闭 |
+| `EMAIL_CODE_COOLDOWN_SEC` / `EMAIL_CODE_PER_EMAIL_DAILY` / `EMAIL_CODE_PER_IP_DAILY` | 60 / 10 / 20 | 邮箱验证码防刷：同一邮箱发送间隔、每个邮箱每天上限、每个 IP 每天上限 |
+| `UPDATE_REPO` / `UPDATE_BRANCH` / `GITHUB_TOKEN` | bocmiao/api / 默认分支 / 空 | 在线更新的来源仓库与分支；私有仓库需要 Token |
 
 第三方密钥（都可以不配，对应接口会显示「需配置」或降级）：
 

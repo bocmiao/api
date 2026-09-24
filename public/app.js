@@ -550,31 +550,104 @@ async function pageDocs() {
   </article></div>`;
 }
 
-// ---------- 登录 / 注册 ----------
+// ---------- 登录 / 注册 / 重置密码 ----------
 function pageAuth(mode) {
-  if (state.user) { location.hash = '#/console'; return; }
   const reg = mode === 'register';
+  const reset = mode === 'reset';
+  if (state.user && !reset) { location.hash = '#/console'; return; }
   const L = state.catalog?.limits;
+  const ev = Boolean(state.catalog?.auth?.emailVerify);
+  const needCode = ev && (reg || reset);
+  const title = reg ? '创建账号' : reset ? '重置密码' : '欢迎回来';
+  const sub = reg ? '注册后即可生成 API Key' : reset ? '通过邮箱验证码设置新密码' : '登录以管理你的 API Key 和推送';
+
+  if (reset && !ev) {
+    $('#main').innerHTML = `<div class="auth"><div class="card"><h1>重置密码</h1>
+      <p class="sub">本站未开启邮箱验证，请联系管理员重置密码。</p><a class="btn" href="#/login">返回登录</a></div></div>`;
+    return;
+  }
+
   $('#main').innerHTML = `<div class="auth"><div class="card">
-    <h1>${reg ? '创建账号' : '欢迎回来'}</h1>
-    <p class="sub">${reg ? '注册后即可生成 API Key' : '登录以管理你的 API Key 和推送'}</p>
+    <h1>${title}</h1>
+    <p class="sub">${sub}</p>
     ${reg && L ? `<ul class="perks">
       <li>${icon('check')}每天 ${fmtNum(L.userDaily)} 次调用额度（免登录仅 ${fmtNum(L.anonDaily)} 次）</li>
       <li>${icon('check')}多个 API Key，用量统计随时查看</li>
       <li>${icon('check')}订阅 Epic 周免等内容更新推送</li></ul>` : ''}
-    <form id="auth">
+    <form id="auth" autocomplete="on">
       <div class="form-error" hidden></div>
       <div class="field"><label for="email">邮箱</label><input class="input" id="email" name="email" type="email" autocomplete="email" required></div>
-      <div class="field"><label for="password">密码</label><input class="input" id="password" name="password" type="password" minlength="8" autocomplete="${reg ? 'new-password' : 'current-password'}" required>
-        ${reg ? '<span class="hint">至少 8 位</span>' : ''}</div>
-      <button class="btn primary lg" type="submit" style="width:100%">${reg ? '注册' : '登录'}</button>
+      ${needCode ? `
+      <div class="field"><label for="captcha">图形验证码</label>
+        <div class="code-row"><input class="input" id="captcha" name="captchaAnswer" autocomplete="off" maxlength="8" placeholder="输入右侧字符">
+        <img id="captcha-img" class="captcha-img" alt="图形验证码" title="看不清？点击刷新"></div></div>
+      <div class="field"><label for="code">邮箱验证码</label>
+        <div class="code-row"><input class="input" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字" required>
+        <button class="btn" type="button" id="send-code">获取验证码</button></div></div>` : ''}
+      <div class="field"><label for="password">${reset ? '新密码' : '密码'}</label><input class="input" id="password" name="password" type="password" minlength="8" autocomplete="${reg || reset ? 'new-password' : 'current-password'}" required>
+        ${reg || reset ? '<span class="hint">至少 8 位</span>' : ''}</div>
+      <button class="btn primary lg" type="submit" style="width:100%">${reg ? '注册' : reset ? '重置并登录' : '登录'}</button>
     </form>
-    <p class="small muted" style="text-align:center;margin:18px 0 0">${reg ? '已有账号？<a href="#/login">登录</a>' : '还没有账号？<a href="#/register">免费注册</a>'}</p>
+    <p class="small muted" style="text-align:center;margin:18px 0 0">${
+      reg ? '已有账号？<a href="#/login">登录</a>'
+      : reset ? '想起来了？<a href="#/login">返回登录</a>'
+      : `还没有账号？<a href="#/register">免费注册</a>${ev ? ' · <a href="#/reset">忘记密码</a>' : ''}`}</p>
   </div></div>`;
-  bindForm($('#auth'), async (v) => {
-    await api('POST', reg ? '/auth/register' : '/auth/login', { email: v.email, password: v.password });
+
+  const form = $('#auth');
+  const errBox = $('.form-error', form);
+  const showErr = (m) => { errBox.textContent = m; errBox.hidden = false; };
+
+  let captchaToken = null;
+  const loadCaptcha = async () => {
+    try {
+      const c = await api('GET', '/auth/captcha');
+      captchaToken = c.token;
+      $('#captcha-img').src = c.image;
+      $('#captcha').value = '';
+    } catch (err) { showErr(err.message); }
+  };
+
+  if (needCode) {
+    loadCaptcha();
+    $('#captcha-img').onclick = loadCaptcha;
+    const btn = $('#send-code');
+    const countdown = (sec) => {
+      btn.disabled = true;
+      const tick = () => {
+        if (!document.body.contains(btn)) return;
+        if (sec <= 0) { btn.disabled = false; btn.textContent = '重新获取'; return; }
+        btn.textContent = `${sec--} 秒后重试`;
+        setTimeout(tick, 1000);
+      };
+      tick();
+    };
+    btn.onclick = async () => {
+      errBox.hidden = true;
+      const email = $('#email').value.trim();
+      const answer = $('#captcha').value.trim();
+      if (!email || !$('#email').checkValidity()) return showErr('请先填写正确的邮箱');
+      if (!answer) return showErr('请先填写图形验证码');
+      btn.disabled = true;
+      try {
+        const r = await api('POST', '/auth/send-code', { email, purpose: reg ? 'register' : 'reset', captchaToken, captchaAnswer: answer });
+        toast('验证码已发送，请查收邮件（也看看垃圾箱）');
+        countdown(r.cooldown ?? 60);
+        $('#code').focus();
+      } catch (err) {
+        showErr(err.message);
+        btn.disabled = false;
+      } finally {
+        loadCaptcha(); // 图形验证码只能用一次
+      }
+    };
+  }
+
+  bindForm(form, async (v) => {
+    if (reset) await api('POST', '/auth/reset-password', { email: v.email, password: v.password, code: v.code });
+    else await api('POST', reg ? '/auth/register' : '/auth/login', { email: v.email, password: v.password, ...(needCode ? { code: v.code } : {}) });
     await loadMe();
-    toast(reg ? '注册成功' : '登录成功');
+    toast(reg ? '注册成功' : reset ? '密码已重置' : '登录成功');
     location.hash = reg ? '#/console/keys' : '#/console';
   });
 }
@@ -1022,7 +1095,7 @@ async function router() {
   const hash = location.hash.replace(/^#\/?/, '');
   if (hash === 'catalog') return;
   const [page, arg] = hash.split('/');
-  const routeName = { '': 'home', api: 'api', docs: 'docs', login: 'auth', register: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
+  const routeName = { '': 'home', api: 'api', docs: 'docs', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
   renderTopbar(routeName);
   window.scrollTo(0, 0);
   try {
@@ -1031,7 +1104,7 @@ async function router() {
       case '': await pageHome(); break;
       case 'api': await pageApi(decodeURIComponent(arg ?? '')); break;
       case 'docs': await pageDocs(); break;
-      case 'login': case 'register': pageAuth(page); break;
+      case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
       case 'admin': await pageAdmin(); break;
       default: pageNotFound();

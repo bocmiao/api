@@ -77,6 +77,19 @@ db.exec(`
     fingerprint TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS email_codes (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL COLLATE NOCASE,
+    purpose TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    ip TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS email_codes_email ON email_codes(email, purpose, id);
+  CREATE INDEX IF NOT EXISTS email_codes_ip ON email_codes(ip, created_at);
   CREATE TABLE IF NOT EXISTS short_links (
     code TEXT PRIMARY KEY,
     url TEXT NOT NULL,
