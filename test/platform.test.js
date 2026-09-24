@@ -191,7 +191,7 @@ test('raw 路由返回 SVG 时附带禁止脚本的 CSP', async () => {
   assert.match(r.headers.get('content-security-policy'), /default-src 'none'/);
 });
 
-test('管理员可关闭指定接口模块：其他人 403 且目录中隐藏，管理员仍可调用', async () => {
+test('管理员可关闭指定接口模块：所有人 403，普通用户目录中隐藏', async () => {
   const admin = client();
   await admin('POST', '/auth/login', { email: 'admin@example.com', password: 'password123' });
   const list = await admin('GET', '/admin/modules');
@@ -208,11 +208,41 @@ test('管理员可关闭指定接口模块：其他人 403 且目录中隐藏，
   assert.ok(!(await user('GET', '/api')).body.data.modules.some((m) => m.name === 'devtools'));
   assert.equal((await client()('GET', '/api/tools/uuid')).status, 403);
 
-  assert.equal((await admin('GET', '/api/tools/uuid')).status, 200);
+  assert.equal((await admin('GET', '/api/tools/uuid')).status, 403, '管理员调用也返回 403');
   const adminCatalog = (await admin('GET', '/api')).body.data.modules.find((m) => m.name === 'devtools');
   assert.equal(adminCatalog.enabled, false);
   assert.equal((await user('PUT', '/admin/modules', { names: ['devtools'], enabled: true })).status, 403);
 
   assert.equal((await admin('PUT', '/admin/modules', { names: ['devtools'], enabled: true })).status, 200);
   assert.equal((await user('GET', '/api/tools/uuid')).status, 200);
+});
+
+test('系统设置：保存后即时生效，密钥不回显，清除后恢复默认', async () => {
+  const admin = client();
+  await admin('POST', '/auth/login', { email: 'admin@example.com', password: 'password123' });
+  const list = await admin('GET', '/admin/settings');
+  const field = (key) => list.body.data.flatMap((g) => g.fields).find((f) => f.key === key);
+  assert.equal(field('SMTP_PASS').value, undefined);
+  assert.equal(field('SMTP_PASS').isSet, false);
+
+  assert.equal((await admin('PUT', '/admin/settings', { ANON_DAILY_LIMIT: 'abc' })).status, 400);
+  assert.equal((await admin('PUT', '/admin/settings', { NO_SUCH: '1' })).status, 400);
+  assert.equal((await admin('PUT', '/admin/settings', { PUBLIC_URL: 'javascript:alert(1)' })).status, 400);
+  assert.equal((await admin('PUT', '/admin/settings', { SMTP_HOST: 'a\nb' })).status, 400);
+
+  assert.equal((await admin('PUT', '/admin/settings', { USER_DAILY_LIMIT: '777', SMTP_PASS: 's3cret' })).status, 200);
+  assert.equal((await client()('GET', '/api')).body.data.limits.userDaily, 777);
+  const after = await admin('GET', '/admin/settings');
+  const pass = after.body.data.flatMap((g) => g.fields).find((f) => f.key === 'SMTP_PASS');
+  assert.equal(pass.isSet, true);
+  assert.equal(pass.source, 'panel');
+  assert.ok(!JSON.stringify(after.body).includes('s3cret'), '密钥不回显');
+
+  assert.equal((await admin('PUT', '/admin/settings', { USER_DAILY_LIMIT: null, SMTP_PASS: '' })).status, 200);
+  assert.equal((await client()('GET', '/api')).body.data.limits.userDaily, 5, '恢复为环境变量的值');
+
+  const normal = client();
+  await normal('POST', '/auth/login', { email: 'user2@example.com', password: 'password123' });
+  assert.equal((await normal('GET', '/admin/settings')).status, 403);
+  assert.equal((await normal('PUT', '/admin/settings', { USER_DAILY_LIMIT: '1' })).status, 403);
 });

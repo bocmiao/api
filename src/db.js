@@ -90,6 +90,11 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS email_codes_email ON email_codes(email, purpose, id);
   CREATE INDEX IF NOT EXISTS email_codes_ip ON email_codes(ip, created_at);
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS module_settings (
     name TEXT PRIMARY KEY,
     enabled INTEGER NOT NULL DEFAULT 1,

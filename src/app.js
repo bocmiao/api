@@ -7,6 +7,10 @@ import { accountRouter } from './routes/account.js';
 import { HttpError } from './lib/http.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled } from './lib/modules.js';
+import { applySettings } from './lib/settings.js';
+
+// 后台「系统设置」中保存的配置优先于环境变量
+applySettings();
 import { consume, logRequest } from './lib/limits.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
@@ -144,10 +148,8 @@ export async function handle(req, res) {
       }
       log.user = user;
       log.logged = !route.public;
-      // 被管理员关闭的模块：管理员本人仍可调用（便于测试），其他人返回 403
-      if (!isModuleEnabled(hit.route.module.name) && !publicUser(user)?.isAdmin) {
-        throw new HttpError(403, '该接口已被管理员关闭');
-      }
+      // 被管理员关闭的模块对所有人（包括管理员）返回 403，已生成的短链接也随之失效
+      if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, '该接口已被管理员关闭');
 
       const rateHeaders = route.public ? {} : consume({ user, ip });
       const body = await readBody(req);

@@ -5,7 +5,6 @@ import { createServer } from 'node:http';
 process.env.SMTP_HOST = 'smtp.example.com';
 process.env.SMTP_USER = 'i@example.com';
 const { handle } = await import('../src/app.js');
-const { config } = await import('../src/config.js');
 const { setMailer } = await import('../src/lib/emailcode.js');
 const { store } = await import('../src/apis/tools/captcha.js');
 
@@ -45,9 +44,8 @@ async function captcha(c) {
 }
 
 const noCooldown = (fn) => async () => {
-  const old = config.emailCode.cooldownSec;
-  config.emailCode.cooldownSec = 0;
-  try { await fn(); } finally { config.emailCode.cooldownSec = old; }
+  process.env.EMAIL_CODE_COOLDOWN_SEC = '0';
+  try { await fn(); } finally { delete process.env.EMAIL_CODE_COOLDOWN_SEC; }
 };
 
 test('配置 SMTP 后开启邮箱验证，/api 目录中可见', async () => {
@@ -132,14 +130,13 @@ test('重置密码：未注册的邮箱也返回成功但不发信；已注册�
 
 test('单个邮箱每天的发送次数有上限', noCooldown(async () => {
   const c = client();
-  const old = config.emailCode.perEmailDaily;
-  config.emailCode.perEmailDaily = 2;
+  process.env.EMAIL_CODE_PER_EMAIL_DAILY = '2';
   try {
     for (let i = 0; i < 2; i++) assert.equal((await c('POST', '/auth/send-code', { email: 'e@example.com', purpose: 'register', ...(await captcha(c)) })).status, 200);
     const r = await c('POST', '/auth/send-code', { email: 'e@example.com', purpose: 'register', ...(await captcha(c)) });
     assert.equal(r.status, 429);
     assert.match(r.body.message, /上限/);
   } finally {
-    config.emailCode.perEmailDaily = old;
+    delete process.env.EMAIL_CODE_PER_EMAIL_DAILY;
   }
 }));

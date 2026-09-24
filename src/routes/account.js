@@ -15,6 +15,8 @@ import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
 import { isModuleEnabled, setModulesEnabled } from '../lib/modules.js';
+import { listSettings, saveSettings } from '../lib/settings.js';
+import { sendMail } from '../notify/smtp.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -368,4 +370,30 @@ r('PUT', '/admin/modules', (ctx) => {
   if (typeof enabled !== 'boolean') throw new HttpError(400, 'enabled 须为 true 或 false');
   setModulesEnabled(names, enabled);
   return { data: { names, enabled } };
+});
+
+// ---------- 系统设置 ----------
+
+r('GET', '/admin/settings', (ctx) => {
+  requireAdmin(ctx);
+  return { data: listSettings() };
+});
+
+// body: { KEY: 'value' | null }
+r('PUT', '/admin/settings', (ctx) => {
+  requireAdmin(ctx);
+  return { data: { saved: saveSettings(ctx.body) } };
+});
+
+r('POST', '/admin/settings/test-mail', async (ctx) => {
+  requireAdmin(ctx);
+  if (!config.smtp.host) throw new HttpError(400, '请先填写并保存 SMTP 服务器');
+  const to = String(ctx.body?.to || ctx.user.email).trim();
+  if (!EMAIL_RE.test(to)) throw new HttpError(400, '收件邮箱格式不正确');
+  try {
+    await sendMail({ ...config.smtp, to, subject: 'Miao API 测试邮件', text: '收到这封邮件，说明 SMTP 配置正确。\n\n—— Miao API' });
+  } catch (err) {
+    throw new HttpError(502, `发送失败：${err.message}`);
+  }
+  return { data: { to } };
 });

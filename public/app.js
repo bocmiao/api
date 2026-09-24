@@ -168,6 +168,7 @@ function renderTopbar(route) {
 }
 
 async function loadMe() {
+  const before = state.user?.id ?? null;
   try {
     const { user, quota } = await api('GET', '/auth/me');
     state.user = user;
@@ -175,6 +176,8 @@ async function loadMe() {
   } catch {
     state.user = null;
   }
+  // 登录身份变化后重新加载接口目录（管理员可见已关闭的接口）
+  if ((state.user?.id ?? null) !== before) state.catalog = null;
 }
 
 async function loadCatalog() {
@@ -370,9 +373,12 @@ async function pageApi(name) {
         <div class="row small" style="margin-top:8px">
           ${m.source ? `<span class="faint">数据来源：${esc(m.source)}</span>` : ''}${moduleBadges(m)}
         </div>
-        ${m.env.length ? `<div class="small faint" style="margin-top:6px">环境变量：${m.env.map((e) => `<code>${esc(e.name)}</code>${e.optional ? '（可选）' : ''} ${e.configured ? '✓' : '未配置'}`).join('，')}</div>` : ''}
+        ${m.env.length ? `<div class="small faint" style="margin-top:6px">配置项：${m.env.map((e) => `<code>${esc(e.name)}</code>${e.optional ? '（可选）' : ''} ${e.configured ? '✓' : '未配置'}`).join('，')}
+          ${state.user?.isAdmin ? ` · <a href="#/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a>` : ''}</div>` : ''}
       </div>
     </div>
+    ${!m.available && state.user?.isAdmin ? `<div class="notice" style="margin-bottom:16px">该接口需要配置第三方密钥后才能使用。<a class="btn sm primary" href="#/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a></div>` : ''}
+    ${m.enabled === false ? '<div class="form-error" style="margin-bottom:16px">该接口已被管理员关闭：所有人（包括管理员）调用都会返回 403。可在「管理 → 接口开关」中重新开启。</div>' : ''}
     <div class="detail">
       <div class="route-list" id="routes">${m.routes.map((r, i) => `
         <button data-i="${i}"><span class="s">${esc(r.summary)}</span><span class="p"><span class="method ${r.method}">${r.method}</span> ${esc(r.path)}</span></button>`).join('')}
@@ -976,7 +982,7 @@ async function pageAdmin() {
   const rows = s.daily.map((d) => ({ day: d.day, user: d.count - d.anon, anon: d.anon }));
   const chart = barChart(rows, [{ key: 'user', label: '注册用户' }, { key: 'anon', label: '未登录', cls: 's2' }]);
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
-    <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计与用户管理</p></div></div>
+    <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计与用户管理</p></div>${adminTabs('overview')}</div>
     <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
       <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><span class="faint small">点击「检查更新」查看 GitHub 上是否有新版本</span></div></div>
     <div class="tiles">
@@ -1026,6 +1032,107 @@ async function pageAdmin() {
       await api('PATCH', `/admin/users/${b.dataset.toggle}`, { disabled: disable });
       pageAdmin();
     } catch (err) { toast(err.message, true); }
+  });
+}
+
+const adminTabs = (active) => `<div class="seg">
+  <a href="#/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
+  <a href="#/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
+
+// ---------- 系统设置 ----------
+const SOURCE_LABEL = { panel: ['后台', 'brand'], env: ['环境变量', ''], default: ['默认', ''] };
+
+async function pageAdminSettings(focusGroup, focusKeys) {
+  if (!state.user?.isAdmin) return pageNotFound();
+  $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
+  const groups = await api('GET', '/admin/settings');
+  const fieldHtml = (f) => {
+    const [srcText, srcCls] = SOURCE_LABEL[f.source];
+    const src = `<span class="badge ${srcCls}" title="当前值来源">${srcText}</span>`;
+    let input;
+    if (f.type === 'bool') {
+      const on = (f.value || f.default) === '1';
+      input = `<label class="switch"><input type="checkbox" data-key="${f.key}" data-type="bool" data-orig="${on ? '1' : '0'}" ${on ? 'checked' : ''}><span></span></label>`;
+    } else if (f.type === 'secret') {
+      input = `<div class="row"><input class="input mono grow" type="password" autocomplete="new-password" data-key="${f.key}" data-type="secret"
+          placeholder="${f.isSet ? '已设置，留空表示不修改' : '未设置'}">
+        ${f.isSet && f.source === 'panel' ? `<button class="btn sm ghost danger" type="button" data-clear="${f.key}">清除</button>` : ''}</div>`;
+    } else {
+      input = `<input class="input ${f.type === 'text' || f.type === 'url' ? 'mono' : ''}" data-key="${f.key}" data-type="${f.type}" data-orig="${esc(f.value)}" value="${esc(f.value)}"
+        ${f.type === 'int' ? 'inputmode="numeric"' : ''} placeholder="${esc(f.default != null ? `默认 ${f.default}` : f.placeholder ?? '')}">`;
+    }
+    return `<div class="set-field">
+      <div class="set-label"><span>${esc(f.label)}</span>${src}${f.restart ? '<span class="badge warn">重启后生效</span>' : ''}</div>
+      ${input}
+      <div class="hint"><span class="mono">${f.key}</span>${f.help ? ` · ${esc(f.help)}` : ''}</div>
+    </div>`;
+  };
+
+  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+    <div class="page-head"><div><h1>系统设置</h1><p>保存后立即生效，优先级高于服务器环境变量；清空某项即恢复为环境变量或默认值</p></div>${adminTabs('settings')}</div>
+    ${groups.map((g) => `<form class="card card-pad set-group" data-group="${g.id}">
+      <div class="row" style="justify-content:space-between;margin-bottom:14px"><h2 style="font-size:16px">${esc(g.title)}</h2>
+        <div class="row">${g.id === 'mail' ? '<button class="btn sm" type="button" id="test-mail">发送测试邮件</button>' : ''}<button class="btn sm primary" type="submit">保存</button></div></div>
+      <div class="set-grid">${g.fields.map(fieldHtml).join('')}</div>
+    </form>`).join('')}
+  </div>`;
+
+  // 从接口页跳转过来时：滚动到对应分组并高亮需要填写的项
+  if (focusGroup) {
+    const form = $(`form[data-group="${CSS.escape(focusGroup)}"]`);
+    form?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    for (const k of (focusKeys || '').split(',').filter(Boolean)) {
+      $(`[data-key="${CSS.escape(k)}"]`)?.closest('.set-field')?.classList.add('focus');
+    }
+    $('.set-field.focus [data-key]')?.focus({ preventScroll: true });
+  }
+
+  const collect = (form) => {
+    const changes = {};
+    for (const el of $$('[data-key]', form)) {
+      const k = el.dataset.key;
+      if (el.dataset.type === 'bool') {
+        const v = el.checked ? '1' : '0';
+        if (v !== el.dataset.orig) changes[k] = v;
+      } else if (el.dataset.type === 'secret') {
+        if (el.value.trim()) changes[k] = el.value.trim();
+      } else if (el.value.trim() !== el.dataset.orig) {
+        changes[k] = el.value.trim() || null;
+      }
+    }
+    return changes;
+  };
+  const save = async (changes) => {
+    if (!Object.keys(changes).length) return toast('没有修改');
+    await api('PUT', '/admin/settings', changes);
+    state.catalog = null;
+    toast('已保存');
+    await loadMe();
+    pageAdminSettings();
+  };
+
+  for (const form of $$('form.set-group')) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { await save(collect(form)); } catch (err) { toast(err.message, true); }
+    });
+  }
+  $('#main').addEventListener('click', async (e) => {
+    const clr = e.target.closest('[data-clear]');
+    if (clr) {
+      if (!(await confirmDialog('清除设置', `确定清除 ${clr.dataset.clear}？将恢复为环境变量中的值（如有）。`, { okText: '清除' }))) return;
+      try { await save({ [clr.dataset.clear]: null }); } catch (err) { toast(err.message, true); }
+    }
+    if (e.target.closest('#test-mail')) {
+      const form = e.target.closest('form');
+      if (Object.keys(collect(form)).length) return toast('请先保存邮件设置，再发送测试邮件', true);
+      const btn = e.target.closest('#test-mail');
+      btn.disabled = true;
+      try {
+        const r = await api('POST', '/admin/settings/test-mail', {});
+        toast(`测试邮件已发送到 ${r.to}`);
+      } catch (err) { toast(err.message, true); } finally { btn.disabled = false; }
+    }
   });
 }
 
@@ -1152,7 +1259,7 @@ function pageNotFound() {
 async function router() {
   const hash = location.hash.replace(/^#\/?/, '');
   if (hash === 'catalog') return;
-  const [page, arg] = hash.split('/');
+  const [page, arg, sub, extra] = hash.split('/');
   const routeName = { '': 'home', api: 'api', docs: 'docs', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
   renderTopbar(routeName);
   window.scrollTo(0, 0);
@@ -1164,7 +1271,7 @@ async function router() {
       case 'docs': await pageDocs(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await pageAdmin(); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {
