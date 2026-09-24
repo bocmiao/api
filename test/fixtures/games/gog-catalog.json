@@ -1,0 +1,115 @@
+{
+ "pages": 1,
+ "productCount": 3,
+ "products": [
+  {
+   "id": "1207658691",
+   "slug": "the_witcher_enhanced_edition",
+   "features": [
+    {
+     "name": "单人",
+     "slug": "single"
+    }
+   ],
+   "screenshots": [],
+   "userPreferredLanguage": {
+    "code": "zh",
+    "inAudio": false,
+    "inText": true
+   },
+   "releaseDate": "2007.10.26",
+   "storeReleaseDate": "2008.09.23",
+   "productType": "game",
+   "title": "The Witcher: Enhanced Edition",
+   "coverVertical": "https://images.gog-statics.com/abc_glx_vertical_cover.webp",
+   "coverHorizontal": "https://images.gog-statics.com/abc_glx_logo.jpg",
+   "developers": [
+    "CD PROJEKT RED"
+   ],
+   "publishers": [
+    "CD PROJEKT RED"
+   ],
+   "operatingSystems": [
+    "windows"
+   ],
+   "price": {
+    "final": "¥0.00",
+    "base": "¥68.00",
+    "discount": "-100%",
+    "finalMoney": {
+     "amount": "0.00",
+     "currency": "CNY",
+     "discount": "68.00"
+    },
+    "baseMoney": {
+     "amount": "68.00",
+     "currency": "CNY"
+    }
+   },
+   "productState": "default",
+   "genres": [
+    {
+     "name": "角色扮演",
+     "slug": "rpg"
+    }
+   ],
+   "tags": [],
+   "reviewsRating": 44,
+   "editions": [],
+   "ratings": [],
+   "storeLink": "https://www.gog.com/zh/game/the_witcher_enhanced_edition"
+  },
+  {
+   "id": "1111",
+   "slug": "always_free",
+   "productType": "game",
+   "title": "Always Free",
+   "coverHorizontal": "https://images.gog-statics.com/f.jpg",
+   "price": {
+    "final": "¥0.00",
+    "base": "¥0.00",
+    "discount": null,
+    "finalMoney": {
+     "amount": "0.00",
+     "currency": "CNY",
+     "discount": "0.00"
+    },
+    "baseMoney": {
+     "amount": "0.00",
+     "currency": "CNY"
+    }
+   },
+   "genres": [],
+   "storeLink": "https://www.gog.com/zh/game/always_free"
+  },
+  {
+   "id": "2222",
+   "slug": "cheap_game",
+   "productType": "dlc",
+   "title": "Cheap Game",
+   "coverHorizontal": null,
+   "coverVertical": "https://images.gog-statics.com/v.jpg",
+   "price": {
+    "final": "¥1.00",
+    "base": "¥10.00",
+    "discount": "-90%",
+    "finalMoney": {
+     "amount": "1.00",
+     "currency": "CNY",
+     "discount": "9.00"
+    },
+    "baseMoney": {
+     "amount": "10.00",
+     "currency": "CNY"
+    }
+   },
+   "genres": []
+  }
+ ],
+ "filters": {
+  "releaseDateRange": {
+   "min": 1980,
+   "max": 2026
+  }
+ }
+}

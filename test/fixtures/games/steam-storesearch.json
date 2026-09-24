@@ -1,0 +1,37 @@
+{
+ "total": 2,
+ "items": [
+  {
+   "type": "app",
+   "name": "ELDEN RING",
+   "id": 1245620,
+   "price": {
+    "currency": "CNY",
+    "initial": 29800,
+    "final": 17880
+   },
+   "tiny_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/capsule_231x87.jpg?t=1",
+   "metascore": "94",
+   "platforms": {
+    "windows": true,
+    "mac": false,
+    "linux": false
+   },
+   "streamingvideo": false,
+   "controller_support": "full"
+  },
+  {
+   "type": "app",
+   "name": "ELDEN RING NIGHTREIGN",
+   "id": 2622380,
+   "tiny_image": "https://x/2622380.jpg",
+   "metascore": "",
+   "platforms": {
+    "windows": true,
+    "mac": false,
+    "linux": false
+   },
+   "streamingvideo": false
+  }
+ ]
+}

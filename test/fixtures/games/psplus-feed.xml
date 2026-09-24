@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	xmlns:media="http://search.yahoo.com/mrss/"
+	>
+<channel>
+	<title>PlayStation.Blog</title>
+	<atom:link href="https://blog.playstation.com/feed/" rel="self" type="application/rss+xml" />
+	<link>https://blog.playstation.com/</link>
+	<description>Official PlayStation Blog for news and video updates on PlayStation, PS5, PS4, PS VR, PlayStation Plus and more.</description>
+	<lastBuildDate>Wed, 24 Sep 2026 16:00:00 +0000</lastBuildDate>
+	<language>en-US</language>
+	<item>
+		<title>PlayStation Plus Game Catalog for September: Some Game, Another Game and more</title>
+		<link>https://blog.playstation.com/2026/09/10/playstation-plus-game-catalog-for-september/</link>
+		<dc:creator><![CDATA[Adam Michel]]></dc:creator>
+		<pubDate>Wed, 10 Sep 2026 15:00:00 +0000</pubDate>
+		<category><![CDATA[PS Plus]]></category>
+		<description><![CDATA[<p>Catalog lineup.</p>]]></description>
+		<media:content url="https://blog.playstation.com/tachyon/2026/09/catalog.jpg" medium="image" />
+	</item>
+	<item>
+		<title>PlayStation Plus Monthly Games for October: Stardew Valley, Rock and Roll Racing, and Psychonauts 2</title>
+		<link>https://blog.playstation.com/2026/09/24/playstation-plus-monthly-games-for-october/</link>
+		<dc:creator><![CDATA[Adam Michel]]></dc:creator>
+		<pubDate>Wed, 24 Sep 2026 16:00:00 +0000</pubDate>
+		<category><![CDATA[PS Plus]]></category>
+		<guid isPermaLink="false">https://blog.playstation.com/?p=123456</guid>
+		<description><![CDATA[<p>Farm, race &amp; think your way through October&#8217;s lineup, available October 7.</p>]]></description>
+		<content:encoded><![CDATA[<p><img src="https://blog.playstation.com/tachyon/2026/09/content.jpg" /></p><p>PlayStation Plus members can add these games...</p>]]></content:encoded>
+		<media:content url="https://blog.playstation.com/tachyon/2026/09/oct-featured.jpg?resize=1088%2C612&amp;crop_strategy=smart" medium="image" />
+	</item>
+	<item>
+		<title>PlayStation Plus Monthly Games for January: Game X and Game Y</title>
+		<link>https://blog.playstation.com/2025/12/31/playstation-plus-monthly-games-for-january/</link>
+		<pubDate>Wed, 31 Dec 2025 16:00:00 +0000</pubDate>
+		<description><![CDATA[<p>New year lineup.</p>]]></description>
+		<content:encoded><![CDATA[<p><img src="https://blog.playstation.com/tachyon/2025/12/jan.jpg" /></p>]]></content:encoded>
+	</item>
+</channel>
+</rss>

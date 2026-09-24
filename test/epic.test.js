@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseFreeGames } from '../src/apis/epic.js';
+import { parseFreeGames } from '../src/apis/games/epic.js';
 
 const raw = JSON.parse(readFileSync(new URL('./fixtures/epic.json', import.meta.url)));
 const now = new Date('2026-09-20T00:00:00Z');

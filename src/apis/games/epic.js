@@ -1,5 +1,5 @@
-import { cache } from '../lib/cache.js';
-import { fetchJSON, HttpError } from '../lib/http.js';
+import { cache } from '../../lib/cache.js';
+import { fetchJSON, HttpError } from '../../lib/http.js';
 
 const UPSTREAM = 'https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions';
 const TTL_MS = 10 * 60 * 1000;
@@ -80,17 +80,32 @@ export function parseFreeGames(raw, { locale = 'zh-CN', now = new Date() } = {})
   return { current: current.sort(byStart), upcoming: upcoming.sort(byStart) };
 }
 
+// 缓存原始数据而不是解析结果，这样每次请求都按当前时间判断"正在免费/即将免费"
+export function loadEpicRaw({ locale = 'zh-CN', country = 'CN' } = {}) {
+  const url = `${UPSTREAM}?locale=${locale}&country=${country}&allowCountries=${country}`;
+  return cache.wrap(`epic:${locale}:${country}`, TTL_MS, () => fetchJSON(url));
+}
+
+export async function loadEpicFree(opts = {}) {
+  const res = await loadEpicRaw(opts);
+  return parseFreeGames(res.data, opts);
+}
+
 export default {
   name: 'epic',
+  category: 'games',
   title: 'Epic 每周免费游戏',
+  description: 'Epic Games Store 每周限时免费领取的游戏',
+  source: 'Epic Games Store',
+  unofficial: true,
   routes: [
     {
       method: 'GET',
       path: '/api/epic/free',
       summary: '获取 Epic 当前免费领取与即将免费的游戏',
       params: [
-        { name: 'locale', default: 'zh-CN', desc: '语言，例如 zh-CN、en-US' },
-        { name: 'country', default: 'CN', desc: '地区代码，例如 CN、US' },
+        { name: 'locale', default: 'zh-CN', desc: '语言，例如 zh-CN、en-US', example: 'zh-CN' },
+        { name: 'country', default: 'CN', desc: '地区代码，例如 CN、US', example: 'CN' },
       ],
       async handler({ query }) {
         const locale = query.get('locale') || 'zh-CN';
@@ -98,9 +113,7 @@ export default {
         if (!LOCALE_RE.test(locale)) throw new HttpError(400, 'locale 参数不合法');
         if (!COUNTRY_RE.test(country)) throw new HttpError(400, 'country 参数不合法');
 
-        const url = `${UPSTREAM}?locale=${locale}&country=${country}&allowCountries=${country}`;
-        // 缓存原始数据而不是解析结果，这样每次请求都按当前时间判断"正在免费/即将免费"
-        const res = await cache.wrap(`epic:${locale}:${country}`, TTL_MS, () => fetchJSON(url));
+        const res = await loadEpicRaw({ locale, country });
         return { ...res, data: parseFreeGames(res.data, { locale }) };
       },
     },

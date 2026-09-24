@@ -1,0 +1,64 @@
+{
+ "prices": [
+  {
+   "id": "018d937f-590c-728b-ac35-38bcff85f086",
+   "current": {
+    "shop": {
+     "id": 61,
+     "name": "Steam"
+    },
+    "price": {
+     "amount": 35.99,
+     "amountInt": 3599,
+     "currency": "USD"
+    },
+    "regular": {
+     "amount": 59.99,
+     "amountInt": 5999,
+     "currency": "USD"
+    },
+    "cut": 40,
+    "voucher": null,
+    "flag": null,
+    "drm": [
+     {
+      "id": 61,
+      "name": "Steam"
+     }
+    ],
+    "platforms": [
+     {
+      "id": 1,
+      "name": "Windows"
+     }
+    ],
+    "timestamp": "2026-09-18T17:00:00+00:00",
+    "expiry": "2026-10-02T17:00:00+00:00",
+    "url": "https://itad.link/abc/"
+   },
+   "lowest": {
+    "shop": {
+     "id": 35,
+     "name": "GreenManGaming"
+    },
+    "price": {
+     "amount": 29.39,
+     "amountInt": 2939,
+     "currency": "USD"
+    },
+    "regular": {
+     "amount": 59.99,
+     "amountInt": 5999,
+     "currency": "USD"
+    },
+    "cut": 51,
+    "timestamp": "2025-06-26T17:00:00+00:00"
+   },
+   "bundled": 0,
+   "urls": {
+    "game": "https://isthereanydeal.com/game/elden-ring/"
+   }
+  }
+ ],
+ "bundles": []
+}

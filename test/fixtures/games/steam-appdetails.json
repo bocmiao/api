@@ -1,0 +1,88 @@
+{
+ "1245620": {
+  "success": true,
+  "data": {
+   "type": "game",
+   "name": "ELDEN RING",
+   "steam_appid": 1245620,
+   "required_age": 0,
+   "is_free": false,
+   "controller_support": "full",
+   "dlc": [
+    2778580
+   ],
+   "detailed_description": "<h1>...</h1>",
+   "about_the_game": "...",
+   "short_description": "全新奇幻动作RPG。&quot;艾尔登法环&quot;之王。",
+   "supported_languages": "英语<strong>*</strong>, 简体中文<strong>*</strong>, 日语<strong>*</strong><br><strong>*</strong>具有完全音频支持的语言",
+   "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/header.jpg?t=1726158298",
+   "capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/capsule_231x87.jpg?t=1726158298",
+   "website": "https://www.eldenring.jp",
+   "pc_requirements": {
+    "minimum": "..."
+   },
+   "developers": [
+    "FromSoftware, Inc."
+   ],
+   "publishers": [
+    "FromSoftware, Inc.",
+    "Bandai Namco Entertainment"
+   ],
+   "price_overview": {
+    "currency": "CNY",
+    "initial": 29800,
+    "final": 17880,
+    "discount_percent": 40,
+    "initial_formatted": "¥ 298.00",
+    "final_formatted": "¥ 178.80"
+   },
+   "packages": [
+    512034
+   ],
+   "platforms": {
+    "windows": true,
+    "mac": false,
+    "linux": false
+   },
+   "metacritic": {
+    "score": 94,
+    "url": "https://www.metacritic.com/game/pc/elden-ring"
+   },
+   "categories": [
+    {
+     "id": 2,
+     "description": "单人"
+    },
+    {
+     "id": 1,
+     "description": "多人"
+    }
+   ],
+   "genres": [
+    {
+     "id": "1",
+     "description": "动作"
+    },
+    {
+     "id": "3",
+     "description": "角色扮演"
+    }
+   ],
+   "screenshots": [
+    {
+     "id": 0,
+     "path_thumbnail": "https://x/ss0.600x338.jpg",
+     "path_full": "https://x/ss0.1920x1080.jpg"
+    }
+   ],
+   "recommendations": {
+    "total": 712345
+   },
+   "release_date": {
+    "coming_soon": false,
+    "date": "2022 年 2 月 25 日"
+   },
+   "background": "https://x/bg.jpg"
+  }
+ }
+}

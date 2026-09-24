@@ -1,0 +1,7 @@
+{
+  "deepl": { "translations": [{ "detected_source_language": "EN", "text": "你好，世界！" }] },
+  "baidu": { "from": "en", "to": "zh", "trans_result": [{ "src": "Hello, world!", "dst": "你好，世界！" }] },
+  "baiduError": { "error_code": "54001", "error_msg": "Invalid Sign" },
+  "youdao": { "errorCode": "0", "query": "Hello, world!", "translation": ["你好，世界！"], "l": "en2zh-CHS", "isWord": false },
+  "youdaoError": { "errorCode": "202", "l": "null2null" }
+}

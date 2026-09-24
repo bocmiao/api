@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<title>Example Atom</title>
+<link href="https://example.com/" rel="alternate"/>
+<link href="https://example.com/atom.xml" rel="self"/>
+<entry>
+<title type="html">Hello &amp;amp; World</title>
+<link rel="alternate" type="text/html" href="https://example.com/posts/1"/>
+<link rel="replies" href="https://example.com/posts/1#comments"/>
+<id>tag:example.com,2026:1</id>
+<updated>2026-09-24T01:02:03Z</updated>
+<author><name>Alice</name></author>
+<summary type="html">&lt;p&gt;Summary text&lt;/p&gt;</summary>
+</entry>
+</feed>

@@ -1,0 +1,94 @@
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+// node:sqlite 仍标记为实验特性，屏蔽其启动警告
+const emit = process.emitWarning;
+process.emitWarning = (w, ...a) => (String(w).includes('SQLite') ? undefined : emit.call(process, w, ...a));
+const { DatabaseSync } = await import('node:sqlite');
+process.emitWarning = emit;
+
+const dir = process.env.DATA_DIR || join(process.cwd(), 'data');
+const file = process.env.DB_FILE || (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? ':memory:' : join(dir, 'api-hub.db'));
+if (file !== ':memory:') mkdirSync(dir, { recursive: true });
+
+export const db = new DatabaseSync(file);
+db.exec(`
+  PRAGMA journal_mode = WAL;
+  PRAGMA foreign_keys = ON;
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password_hash TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    disabled INTEGER NOT NULL DEFAULT 0,
+    daily_limit INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS api_keys (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS usage_daily (
+    day TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, subject)
+  );
+  CREATE TABLE IF NOT EXISTS request_log (
+    id INTEGER PRIMARY KEY,
+    ts INTEGER NOT NULL,
+    user_id INTEGER,
+    key_id INTEGER,
+    ip TEXT,
+    path TEXT NOT NULL,
+    status INTEGER NOT NULL,
+    ms INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS request_log_ts ON request_log(ts);
+  CREATE INDEX IF NOT EXISTS request_log_user ON request_log(user_id, ts);
+  CREATE TABLE IF NOT EXISTS channels (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    config TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    topic TEXT NOT NULL,
+    channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    PRIMARY KEY (topic, channel_id)
+  );
+  CREATE TABLE IF NOT EXISTS topic_state (
+    topic TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS short_links (
+    code TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    user_id INTEGER,
+    hits INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// 小工具：db.prepare 的缓存版
+const stmts = new Map();
+export function sql(text) {
+  let s = stmts.get(text);
+  if (!s) stmts.set(text, (s = db.prepare(text)));
+  return s;
+}

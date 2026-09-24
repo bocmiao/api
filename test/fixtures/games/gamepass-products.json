@@ -1,0 +1,142 @@
+{
+ "BigIds": [
+  "9PNB3LVL07XH",
+  "9NQ9CHCTZKTJ"
+ ],
+ "HasMorePages": false,
+ "Products": [
+  {
+   "LastModifiedDate": "2026-09-01T00:00:00.0000000Z",
+   "LocalizedProperties": [
+    {
+     "DeveloperName": "MachineGames",
+     "PublisherName": "Xbox Game Studios",
+     "ShortDescription": "简介",
+     "ProductDescription": "长描述",
+     "ProductTitle": "Indiana Jones and the Great Circle",
+     "ShortTitle": "Indiana Jones and the Great Circle",
+     "Images": [
+      {
+       "FileId": "1",
+       "EISListingIdentifier": null,
+       "BackgroundColor": "",
+       "Caption": "",
+       "FileSizeInBytes": 1,
+       "ForegroundColor": "",
+       "Height": 1080,
+       "ImagePositionInfo": "",
+       "ImagePurpose": "Screenshot",
+       "UnscaledImageSHA256Hash": "",
+       "Uri": "//store-images.s-microsoft.com/image/apps.1.shot",
+       "Width": 1920
+      },
+      {
+       "ImagePurpose": "Poster",
+       "Uri": "//store-images.s-microsoft.com/image/apps.2.poster",
+       "Width": 720,
+       "Height": 1080
+      },
+      {
+       "ImagePurpose": "SuperHeroArt",
+       "Uri": "//store-images.s-microsoft.com/image/apps.3.hero",
+       "Width": 3840,
+       "Height": 2160
+      },
+      {
+       "ImagePurpose": "BoxArt",
+       "Uri": "//store-images.s-microsoft.com/image/apps.4.box",
+       "Width": 1080,
+       "Height": 1080
+      }
+     ],
+     "Language": "zh-cn",
+     "Markets": [
+      "US"
+     ]
+    }
+   ],
+   "MarketProperties": [
+    {
+     "OriginalReleaseDate": "2024-12-09T00:00:00.0000000Z",
+     "UsageData": []
+    }
+   ],
+   "ProductId": "9PNB3LVL07XH",
+   "Properties": {
+    "Category": "Action & adventure",
+    "Categories": [
+     "Action & adventure"
+    ]
+   },
+   "ProductKind": "Game",
+   "ProductType": "Game"
+  },
+  {
+   "LastModifiedDate": "2026-09-01T00:00:00.0000000Z",
+   "LocalizedProperties": [
+    {
+     "DeveloperName": "Obsidian Entertainment",
+     "PublisherName": "Xbox Game Studios",
+     "ShortDescription": "简介",
+     "ProductDescription": "长描述",
+     "ProductTitle": "Avowed",
+     "ShortTitle": "Avowed",
+     "Images": [
+      {
+       "FileId": "1",
+       "EISListingIdentifier": null,
+       "BackgroundColor": "",
+       "Caption": "",
+       "FileSizeInBytes": 1,
+       "ForegroundColor": "",
+       "Height": 1080,
+       "ImagePositionInfo": "",
+       "ImagePurpose": "Screenshot",
+       "UnscaledImageSHA256Hash": "",
+       "Uri": "//store-images.s-microsoft.com/image/apps.1.shot",
+       "Width": 1920
+      },
+      {
+       "ImagePurpose": "Poster",
+       "Uri": "//store-images.s-microsoft.com/image/apps.2.poster",
+       "Width": 720,
+       "Height": 1080
+      },
+      {
+       "ImagePurpose": "SuperHeroArt",
+       "Uri": "//store-images.s-microsoft.com/image/apps.3.hero",
+       "Width": 3840,
+       "Height": 2160
+      },
+      {
+       "ImagePurpose": "BoxArt",
+       "Uri": "//store-images.s-microsoft.com/image/apps.4.box",
+       "Width": 1080,
+       "Height": 1080
+      }
+     ],
+     "Language": "zh-cn",
+     "Markets": [
+      "US"
+     ]
+    }
+   ],
+   "MarketProperties": [
+    {
+     "OriginalReleaseDate": "2024-12-09T00:00:00.0000000Z",
+     "UsageData": []
+    }
+   ],
+   "ProductId": "9NQ9CHCTZKTJ",
+   "Properties": {
+    "Category": "Action & adventure",
+    "Categories": [
+     "Action & adventure"
+    ]
+   },
+   "ProductKind": "Game",
+   "ProductType": "Game"
+  }
+ ],
+ "TotalResultCount": 2
+}

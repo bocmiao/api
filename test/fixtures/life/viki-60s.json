@@ -1,0 +1,28 @@
+{
+  "code": 200,
+  "message": "获取成功。数据来自官方/权威源头，以确保稳定与实时。开源地址 https://github.com/vikiboss/60s",
+  "data": {
+    "date": "2026-09-24",
+    "news": [
+      "国务院常务会议部署进一步扩大内需举措；",
+      "全国铁路国庆黄金周运输9月29日启动，预计发送旅客1.6亿人次；",
+      "中秋国庆假期临近，多地文旅部门发布出行提示；"
+    ],
+    "image": "https://example.cdn/60s/2026-09-24.png",
+    "tip": "人生没有白走的路，每一步都算数。",
+    "cover": "https://example.cdn/cover.jpg",
+    "link": "https://mp.weixin.qq.com/s/abc",
+    "audio": {
+      "music": "",
+      "news": ""
+    },
+    "api_updated": "2026/09/24 07:20:05",
+    "api_updated_at": 1790205605000,
+    "lunar_date": "八月十四",
+    "day_of_week": "星期四",
+    "created": "2026/09/24 07:10:00",
+    "created_at": 1790205000000,
+    "updated": "2026/09/24 07:10:00",
+    "updated_at": 1790205000000
+  }
+}

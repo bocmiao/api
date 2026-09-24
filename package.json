@@ -1,10 +1,12 @@
 {
   "name": "api-hub",
-  "version": "0.1.0",
-  "description": "聚合 API 平台：统一入口、统一响应格式、内置缓存，可插拔扩展（首个接口：Epic 每周免费游戏）",
+  "version": "0.2.0",
+  "description": "聚合 API 平台：统一入口与响应格式、缓存容错、账号与 API Key、分级限流、订阅推送",
   "type": "module",
   "main": "src/server.js",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",

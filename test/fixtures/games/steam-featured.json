@@ -1,0 +1,161 @@
+{
+ "0": {
+  "id": "cat_spotlight",
+  "name": "聚光灯",
+  "items": []
+ },
+ "specials": {
+  "id": "cat_specials",
+  "name": "特惠",
+  "items": [
+   {
+    "id": 1172470,
+    "type": 0,
+    "name": "Free Game One & Friends",
+    "discounted": true,
+    "discount_percent": 100,
+    "original_price": 5800,
+    "final_price": 0,
+    "currency": "CNY",
+    "large_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172470/capsule_616x353.jpg?t=1",
+    "small_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172470/capsule_184x69.jpg?t=1",
+    "windows_available": true,
+    "mac_available": true,
+    "linux_available": false,
+    "streamingvideo_available": false,
+    "discount_expiration": 1758733200,
+    "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1172470/header.jpg?t=1",
+    "headline": "",
+    "controller_support": "full"
+   },
+   {
+    "id": 1245620,
+    "type": 0,
+    "name": "ELDEN RING",
+    "discounted": true,
+    "discount_percent": 40,
+    "original_price": 29800,
+    "final_price": 17880,
+    "currency": "CNY",
+    "large_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/capsule_616x353.jpg?t=1",
+    "small_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/capsule_184x69.jpg?t=1",
+    "windows_available": true,
+    "mac_available": true,
+    "linux_available": false,
+    "streamingvideo_available": false,
+    "discount_expiration": 1759338000,
+    "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/header.jpg?t=1",
+    "headline": "",
+    "controller_support": "full"
+   },
+   {
+    "id": 1245620,
+    "type": 0,
+    "name": "ELDEN RING",
+    "discounted": true,
+    "discount_percent": 40,
+    "original_price": 29800,
+    "final_price": 17880,
+    "currency": "CNY",
+    "large_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/capsule_616x353.jpg?t=1",
+    "small_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/capsule_184x69.jpg?t=1",
+    "windows_available": true,
+    "mac_available": true,
+    "linux_available": false,
+    "streamingvideo_available": false,
+    "discount_expiration": 1759338000,
+    "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/header.jpg?t=1",
+    "headline": "",
+    "controller_support": "full"
+   },
+   {
+    "id": 12345,
+    "type": 1,
+    "name": "Some Bundle Pack",
+    "discounted": true,
+    "discount_percent": 25,
+    "original_price": 10000,
+    "final_price": 7500,
+    "currency": "CNY",
+    "large_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/12345/capsule_616x353.jpg?t=1",
+    "small_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/12345/capsule_184x69.jpg?t=1",
+    "windows_available": true,
+    "mac_available": false,
+    "linux_available": false,
+    "streamingvideo_available": false,
+    "discount_expiration": null,
+    "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/12345/header.jpg?t=1",
+    "headline": "",
+    "controller_support": "full"
+   }
+  ]
+ },
+ "coming_soon": {
+  "id": "cat_comingsoon",
+  "name": "即将推出",
+  "items": [
+   {
+    "id": 3000000,
+    "type": 0,
+    "name": "Upcoming Game",
+    "discounted": false,
+    "discount_percent": 0,
+    "original_price": 9800,
+    "final_price": 9800,
+    "currency": "CNY",
+    "large_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/3000000/capsule_616x353.jpg?t=1",
+    "small_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/3000000/capsule_184x69.jpg?t=1",
+    "windows_available": true,
+    "mac_available": true,
+    "linux_available": false,
+    "streamingvideo_available": false,
+    "discount_expiration": null,
+    "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/3000000/header.jpg?t=1",
+    "headline": "",
+    "controller_support": "full"
+   }
+  ]
+ },
+ "top_sellers": {
+  "id": "cat_topsellers",
+  "name": "热销商品",
+  "items": [
+   {
+    "id": 730,
+    "type": 0,
+    "name": "Counter-Strike 2",
+    "discounted": false,
+    "discount_percent": 0,
+    "original_price": 0,
+    "final_price": 0,
+    "currency": "CNY",
+    "large_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/capsule_616x353.jpg?t=1",
+    "small_capsule_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/capsule_184x69.jpg?t=1",
+    "windows_available": true,
+    "mac_available": true,
+    "linux_available": false,
+    "streamingvideo_available": false,
+    "discount_expiration": null,
+    "header_image": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/header.jpg?t=1",
+    "headline": "",
+    "controller_support": "full"
+   }
+  ]
+ },
+ "new_releases": {
+  "id": "cat_newreleases",
+  "name": "新品",
+  "items": []
+ },
+ "genres": {
+  "id": "cat_genres",
+  "name": "类型",
+  "items": []
+ },
+ "trailerslideshow": {
+  "id": "cat_trailerslideshow",
+  "name": "预告片",
+  "items": []
+ },
+ "status": 1
+}

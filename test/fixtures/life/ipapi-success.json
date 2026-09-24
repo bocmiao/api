@@ -1,0 +1,16 @@
+{
+  "status": "success",
+  "country": "中国",
+  "countryCode": "CN",
+  "regionName": "广东",
+  "city": "深圳",
+  "district": "",
+  "zip": "",
+  "lat": 22.5431,
+  "lon": 114.058,
+  "timezone": "Asia/Shanghai",
+  "isp": "Chinanet",
+  "org": "Chinanet GD",
+  "as": "AS4134 CHINANET-BACKBONE",
+  "query": "113.88.1.1"
+}
