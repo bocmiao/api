@@ -59,6 +59,7 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `QWEATHER_KEY`（+ `QWEATHER_HOST`） | 天气切换到和风天气（默认用免 Key 的 Open-Meteo） |
 | `ITAD_API_KEY` | Steam 游戏详情附带史低价 |
 | `COINGECKO_API_KEY` | 提高 CoinGecko 限额 |
+| `LLM_API_KEY`（+ `LLM_BASE_URL` / `LLM_MODEL`） | AI 分类接口，兼容 OpenAI 格式的任意服务，默认 DeepSeek（`https://api.deepseek.com/v1`、`deepseek-chat`）；`AI_DAILY_LIMIT`（默认 20）为每个账号每天可用次数 |
 
 ## 接口开关
 
@@ -92,6 +93,23 @@ curl http://localhost:3000/api/epic/free -H "X-API-Key: ak_xxx"
 - 响应头 `X-RateLimit-Limit` / `X-RateLimit-Remaining` / `X-RateLimit-Reset` 返回额度信息，额度于北京时间 0 点重置。
 - 错误码：400 参数错误，401 Key 无效，404 不存在，429 超额，502 上游错误，503 未配置密钥，504 上游超时。
 - `GET /api` 返回全部接口的机器可读目录（参数、说明、是否可用）。
+
+**GET 和 POST**：绝大多数接口是 GET，参数放在网址 `?` 后面，可以直接在浏览器打开、写进 `<img src>` 或用 `fetch(url)` 读取；少数接口（短链接生成、AI 系列）是 POST，参数放在 JSON 请求体里：
+
+```js
+// GET：在自己网页里读取 Epic 周免（免 Key，已开启跨域）
+const res = await fetch('https://api.example.com/api/epic/free');
+const { data } = await res.json();
+
+// POST：生成短链接
+await fetch('https://api.example.com/api/shorturl', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-API-Key': 'ak_xxx' },
+  body: JSON.stringify({ url: 'https://example.com' }),
+});
+```
+
+网站「开发文档」页有 HTML、jQuery、Python、PHP、curl 等更多写法，每个接口详情页也有可复制的示例代码。**不要把 API Key 写进公开网页的前端代码**，网页里直接免 Key 调用即可（按访客 IP 计算额度）。
 
 ## 接口列表
 
@@ -186,6 +204,17 @@ curl http://localhost:3000/api/epic/free -H "X-API-Key: ak_xxx"
 |  | `/api/quotes/types` | 列出语录分类及条数 |
 | 温馨提示 | `/api/greeting` | 当前时段的问候语和提示语（北京时间） |
 | 随机头像 | `/api/avatar` | 生成 SVG 头像（直接返回图片） |
+
+### AI
+
+需要登录，并在「系统设置 → AI」里填写 `LLM_API_KEY`。
+
+| 接口 | 路径 | 说明 |
+| --- | --- | --- |
+| 文本摘要 🔑 | `POST /api/ai/summary` | 提炼长文要点 |
+| 情感分析 🔑 | `POST /api/ai/sentiment` | 判断文本情绪倾向 |
+| AI 翻译 🔑 | `POST /api/ai/translate` | 用大模型翻译文本 |
+| AI 对话 🔑 | `POST /api/ai/chat` | 多轮对话 |
 
 ### 工具
 
