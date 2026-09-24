@@ -31,7 +31,7 @@ export const SETTING_GROUPS = [
       { key: 'SMTP_PORT', label: 'SMTP 端口', type: 'int', default: '465', min: 1, max: 65535, help: '465 使用 SSL；587 / 25 使用 STARTTLS' },
       { key: 'SMTP_USER', label: '邮箱账号', type: 'text', placeholder: 'i@miao.club' },
       { key: 'SMTP_PASS', label: '邮箱密码', type: 'secret', help: '腾讯企业邮建议使用「客户端专用密码」' },
-      { key: 'SMTP_FROM', label: '发件人', type: 'text', placeholder: 'Miao API <i@miao.club>', help: '留空则使用邮箱账号' },
+      { key: 'SMTP_FROM', label: '发件人名称', type: 'text', placeholder: 'Miao API', help: '收件人看到的发件人名字；发信地址始终使用上面的邮箱账号' },
       { key: 'EMAIL_VERIFY', label: '注册需要邮箱验证', type: 'bool', default: '1', help: '仅在配置了 SMTP 服务器时生效' },
       { key: 'EMAIL_CODE_COOLDOWN_SEC', label: '验证码发送间隔（秒）', type: 'int', default: '60', min: 10, max: 3600 },
       { key: 'EMAIL_CODE_PER_EMAIL_DAILY', label: '每个邮箱每天最多', type: 'int', default: '10', min: 1, max: 1000 },

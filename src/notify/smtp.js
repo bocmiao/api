@@ -21,6 +21,17 @@ function reader(socket) {
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const encodeHeader = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${b64(s)}?=`);
 
+// 多数邮箱服务（如腾讯企业邮）要求发信地址与登录账号一致：
+// 信封和 From 头的地址一律使用登录账号，SMTP_FROM 只取其中的显示名称
+export function senderOf(from, user) {
+  const raw = String(from ?? '').trim();
+  const addrInFrom = raw.match(/<([^>]+)>/)?.[1]?.trim() ?? (raw.includes('@') ? raw : null);
+  const address = (user || addrInFrom || '').trim();
+  const name = raw.replace(/<[^>]*>/, '').replace(/^["'\s]+|["'\s]+$/g, '') || (raw.includes('@') ? '' : raw);
+  const display = name && !name.includes('@') ? name : '';
+  return { envelope: address, header: display ? `${encodeHeader(display)} <${address}>` : address };
+}
+
 export async function sendMail({ host, port, user, pass, from, to, subject, text }) {
   const implicitTls = port === 465;
   let socket = implicitTls
@@ -52,13 +63,13 @@ export async function sendMail({ host, port, user, pass, from, to, subject, text
       await cmd(b64(user), [334]);
       await cmd(b64(pass || ''), [235]);
     }
-    const addr = (s) => s.match(/<([^>]+)>/)?.[1] ?? s;
-    await cmd(`MAIL FROM:<${addr(from)}>`, [250]);
+    const { envelope, header } = senderOf(from, user);
+    await cmd(`MAIL FROM:<${envelope}>`, [250]);
     await cmd(`RCPT TO:<${to}>`, [250, 251]);
     await cmd('DATA', [354]);
     const body = b64(text).replace(/.{76}/g, '$&\r\n');
     const msg = [
-      `From: ${from}`,
+      `From: ${header}`,
       `To: ${to}`,
       `Subject: ${encodeHeader(subject)}`,
       `Date: ${new Date().toUTCString()}`,

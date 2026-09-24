@@ -31,3 +31,12 @@ test('超过条数上限时淘汰最早写入的', () => {
   assert.equal(c.get('d').value, 'd');
   assert.equal(c.store.size, 3);
 });
+
+test('发件人：地址始终使用登录账号，只取 SMTP_FROM 的显示名称', async () => {
+  const { senderOf } = await import('../src/notify/smtp.js');
+  assert.deepEqual(senderOf('Miao API <noreply@miao.club>', 'i@miao.club'), { envelope: 'i@miao.club', header: 'Miao API <i@miao.club>' });
+  assert.deepEqual(senderOf('Miao API', 'i@miao.club'), { envelope: 'i@miao.club', header: 'Miao API <i@miao.club>' });
+  assert.deepEqual(senderOf('', 'i@miao.club'), { envelope: 'i@miao.club', header: 'i@miao.club' });
+  assert.deepEqual(senderOf('other@miao.club', 'i@miao.club'), { envelope: 'i@miao.club', header: 'i@miao.club' });
+  assert.equal(senderOf('喵喵 API', 'i@miao.club').header, '=?UTF-8?B?5Za15Za1IEFQSQ==?= <i@miao.club>');
+});
