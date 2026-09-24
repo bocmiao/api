@@ -246,3 +246,16 @@ test('系统设置：保存后即时生效，密钥不回显，清除后恢复�
   assert.equal((await normal('GET', '/admin/settings')).status, 403);
   assert.equal((await normal('PUT', '/admin/settings', { USER_DAILY_LIMIT: '1' })).status, 403);
 });
+
+test('静态文件使用 ETag，未变化时返回 304', async () => {
+  const first = await fetch(`${base}/app.js`);
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get('cache-control'), 'no-cache');
+  const etag = first.headers.get('etag');
+  assert.ok(etag);
+  const again = await fetch(`${base}/app.js`, { headers: { 'if-none-match': etag } });
+  assert.equal(again.status, 304);
+  const html = await (await fetch(`${base}/`)).text();
+  assert.match(html, /\/app\.js\?v=[\w-]{10}"/, '首页引用的脚本带内容指纹');
+  assert.match(html, /\/styles\.css\?v=[\w-]{10}"/);
+});

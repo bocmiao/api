@@ -140,7 +140,7 @@ function renderTopbar(route) {
     ['#/', '接口', route === 'home' || route === 'api'],
     ['#/docs', '文档', route === 'docs'],
     ...(u ? [['#/console', '控制台', route === 'console']] : []),
-    ...(u?.isAdmin ? [['#/admin', '管理', route === 'admin']] : []),
+    ...(u?.isAdmin ? [['#/admin', '管理', route === 'admin' && !location.hash.startsWith('#/admin/settings')], ['#/admin/settings', '设置', location.hash.startsWith('#/admin/settings')]] : []),
   ];
   $('#topbar').innerHTML = `<div class="wrap">
     <a class="logo" href="#/"><span class="logo-mark">${icon('logo')}</span>Miao API</a>

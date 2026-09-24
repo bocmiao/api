@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
@@ -83,18 +84,38 @@ function assertSameOrigin(req) {
   }
 }
 
-async function serveStatic(res, pathname) {
+// 静态文件一律 no-cache + ETag：浏览器每次都向服务器确认，未变化时返回 304，
+// 在线更新后无需强制刷新即可拿到新版页面脚本
+async function serveStatic(req, res, pathname) {
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR)) return false;
   try {
-    const body = await readFile(file);
-    const html = file.endsWith('.html');
-    send(res, 200, body, {
+    let body = await readFile(file);
+    // 页面里引用的脚本和样式加上内容指纹，文件一变地址就变，旧缓存自动失效
+    if (file.endsWith('.html')) {
+      let html = body.toString('utf8');
+      for (const asset of ['app.js', 'styles.css']) {
+        try {
+          const h = createHash('sha1').update(await readFile(join(PUBLIC_DIR, asset))).digest('base64url').slice(0, 10);
+          html = html.replaceAll(`"/${asset}"`, `"/${asset}?v=${h}"`);
+        } catch {}
+      }
+      body = Buffer.from(html);
+    }
+    const etag = `"${createHash('sha1').update(body).digest('base64url').slice(0, 16)}"`;
+    const headers = {
       'content-type': MIME[extname(file)] ?? 'application/octet-stream',
-      'cache-control': html ? 'no-cache' : 'public, max-age=300',
-      ...(html ? PAGE_HEADERS : {}),
-    });
+      'cache-control': 'no-cache',
+      etag,
+      ...(file.endsWith('.html') ? PAGE_HEADERS : {}),
+    };
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, headers);
+      res.end();
+    } else {
+      send(res, 200, body, headers);
+    }
     return true;
   } catch {
     return false;
@@ -170,7 +191,7 @@ export async function handle(req, res) {
       return;
     }
 
-    if (req.method === 'GET' && !isApi && (await serveStatic(res, path))) return;
+    if (req.method === 'GET' && !isApi && (await serveStatic(req, res, path))) return;
     throw new HttpError(404, isApi ? '接口不存在，访问 /api 查看全部接口' : '页面不存在');
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
