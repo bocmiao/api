@@ -2,6 +2,7 @@ import { Router } from './lib/router.js';
 import { categories, modules } from './apis/index.js';
 import { HttpError } from './lib/http.js';
 import { config } from './config.js';
+import { isModuleEnabled } from './lib/modules.js';
 
 export const apiRouter = new Router();
 for (const mod of modules) {
@@ -13,12 +14,13 @@ const envStatus = (env = []) => env.map((e) => {
   return { name, optional, configured: Boolean(process.env[name]) };
 });
 
-export function catalog() {
+// includeDisabled：管理员可见被关闭的模块（带 enabled: false）
+export function catalog({ includeDisabled = false } = {}) {
   return {
     auth: { registrationOpen: config.registrationOpen, emailVerify: config.emailVerify },
     limits: { anonDaily: config.limits.anonDaily, userDaily: config.limits.userDaily, anonMinute: config.limits.anonMinute, userMinute: config.limits.userMinute },
-    categories: categories.map((c) => ({ ...c, count: modules.filter((m) => m.category === c.id).length })),
-    modules: modules.map((m) => {
+    categories: categories.map((c) => ({ ...c, count: modules.filter((m) => m.category === c.id && (includeDisabled || isModuleEnabled(m.name))).length })),
+    modules: modules.filter((m) => includeDisabled || isModuleEnabled(m.name)).map((m) => {
       const env = envStatus(m.env);
       return {
         name: m.name,
@@ -28,6 +30,7 @@ export function catalog() {
         source: m.source ?? null,
         unofficial: Boolean(m.unofficial),
         env,
+        enabled: isModuleEnabled(m.name),
         available: m.isAvailable ? Boolean(m.isAvailable()) : env.every((e) => e.optional || e.configured),
         routes: m.routes.map(({ method, path, summary, params = [], raw = false, fields = [], returns = null }) => ({ method, path, summary, params, raw, fields, returns })),
       };
@@ -39,6 +42,7 @@ export function catalog() {
 export async function invoke(path, query = {}) {
   const hit = apiRouter.match('GET', path);
   if (!hit?.route) throw new HttpError(404, `接口不存在：${path}`);
+  if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, `接口已被管理员关闭：${path}`);
   const res = await hit.route.handler({ query: new URLSearchParams(query), params: hit.params, ip: '127.0.0.1', user: null, req: { headers: {} } });
   return res?.data;
 }

@@ -376,3 +376,14 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .code-row .input { flex: 1; min-width: 0; }
 .code-row .btn { flex: none; min-width: 108px; }
 .captcha-img { height: 38px; width: 120px; border-radius: 9px; border: 1px solid var(--border); background: #fff; cursor: pointer; flex: none; object-fit: contain; }
+
+/* 接口开关 */
+.mod-group + .mod-group { margin-top: 18px; }
+.mod-group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.mod-group-head b { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.mod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.mod-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.mod-item.off { background: var(--surface-2); }
+.mod-item.off .mod-title { color: var(--text-3); text-decoration: line-through; }
+.mod-title { display: block; font-size: 14px; }
+.mod-meta { display: block; font-size: 11.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

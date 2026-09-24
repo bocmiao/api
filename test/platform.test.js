@@ -190,3 +190,29 @@ test('raw 路由返回 SVG 时附带禁止脚本的 CSP', async () => {
   assert.match(r.headers.get('content-type'), /svg/);
   assert.match(r.headers.get('content-security-policy'), /default-src 'none'/);
 });
+
+test('管理员可关闭指定接口模块：其他人 403 且目录中隐藏，管理员仍可调用', async () => {
+  const admin = client();
+  await admin('POST', '/auth/login', { email: 'admin@example.com', password: 'password123' });
+  const list = await admin('GET', '/admin/modules');
+  assert.ok(list.body.data.modules.some((m) => m.name === 'devtools' && m.enabled));
+
+  assert.equal((await admin('PUT', '/admin/modules', { names: ['devtools'], enabled: false })).status, 200);
+  assert.equal((await admin('PUT', '/admin/modules', { names: ['no-such'], enabled: false })).status, 400);
+
+  const user = client();
+  await user('POST', '/auth/register', { email: 'toggle@example.com', password: 'password123' });
+  const blocked = await user('GET', '/api/tools/uuid');
+  assert.equal(blocked.status, 403);
+  assert.match(blocked.body.message, /已被管理员关闭/);
+  assert.ok(!(await user('GET', '/api')).body.data.modules.some((m) => m.name === 'devtools'));
+  assert.equal((await client()('GET', '/api/tools/uuid')).status, 403);
+
+  assert.equal((await admin('GET', '/api/tools/uuid')).status, 200);
+  const adminCatalog = (await admin('GET', '/api')).body.data.modules.find((m) => m.name === 'devtools');
+  assert.equal(adminCatalog.enabled, false);
+  assert.equal((await user('PUT', '/admin/modules', { names: ['devtools'], enabled: true })).status, 403);
+
+  assert.equal((await admin('PUT', '/admin/modules', { names: ['devtools'], enabled: true })).status, 200);
+  assert.equal((await user('GET', '/api/tools/uuid')).status, 200);
+});

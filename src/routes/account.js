@@ -13,6 +13,8 @@ import { Router } from '../lib/router.js';
 import { checkUpdate, applyUpdate } from '../lib/updater.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
+import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
+import { isModuleEnabled, setModulesEnabled } from '../lib/modules.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -334,4 +336,36 @@ r('POST', '/admin/update', async (ctx) => {
   // 由守护进程启动时，响应发出后以退出码 75 退出，守护进程立即用新代码重启
   if (result.restart) setTimeout(() => process.exit(75), 500).unref();
   return { data: result };
+});
+
+// ---------- 接口开关 ----------
+
+r('GET', '/admin/modules', (ctx) => {
+  requireAdmin(ctx);
+  const since = Date.now() - 7 * 86400_000;
+  const calls = new Map(sql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(since).map((x) => [x.path, x.n]));
+  return {
+    data: {
+      categories: apiCategories,
+      modules: apiModules.map((m) => ({
+        name: m.name,
+        title: m.title,
+        category: m.category,
+        enabled: isModuleEnabled(m.name),
+        routes: m.routes.map((x) => x.path),
+        calls7d: m.routes.reduce((n, x) => n + (calls.get(x.path) ?? 0), 0),
+      })),
+    },
+  };
+});
+
+// body: { names: [...], enabled: true|false }
+r('PUT', '/admin/modules', (ctx) => {
+  requireAdmin(ctx);
+  const { names, enabled } = ctx.body ?? {};
+  const known = new Set(apiModules.map((m) => m.name));
+  if (!Array.isArray(names) || !names.length || names.some((n) => !known.has(n))) throw new HttpError(400, '模块名无效');
+  if (typeof enabled !== 'boolean') throw new HttpError(400, 'enabled 须为 true 或 false');
+  setModulesEnabled(names, enabled);
+  return { data: { names, enabled } };
 });

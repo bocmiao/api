@@ -5,7 +5,8 @@ import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
 import { accountRouter } from './routes/account.js';
 import { HttpError } from './lib/http.js';
-import { parseCookies, userFromSession, userFromApiKey, extractApiKey } from './lib/auth.js';
+import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
+import { isModuleEnabled } from './lib/modules.js';
 import { consume, logRequest } from './lib/limits.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
@@ -108,7 +109,10 @@ export async function handle(req, res) {
   try {
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
     if (req.method === 'GET' && path === '/health') return send(res, 200, envelope({ data: { status: 'up' } }));
-    if (req.method === 'GET' && path === '/api') return send(res, 200, envelope({ data: catalog() }), CORS);
+    if (req.method === 'GET' && path === '/api') {
+      const viewer = userFromSession(cookies.sid);
+      return send(res, 200, envelope({ data: catalog({ includeDisabled: Boolean(publicUser(viewer)?.isAdmin) }) }), { ...CORS, 'cache-control': 'no-store' });
+    }
 
     // 平台接口（注册登录、控制台、管理后台）
     const acct = accountRouter.match(req.method, path);
@@ -140,6 +144,10 @@ export async function handle(req, res) {
       }
       log.user = user;
       log.logged = !route.public;
+      // 被管理员关闭的模块：管理员本人仍可调用（便于测试），其他人返回 403
+      if (!isModuleEnabled(hit.route.module.name) && !publicUser(user)?.isAdmin) {
+        throw new HttpError(403, '该接口已被管理员关闭');
+      }
 
       const rateHeaders = route.public ? {} : consume({ user, ip });
       const body = await readBody(req);

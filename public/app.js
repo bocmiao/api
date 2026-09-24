@@ -187,6 +187,7 @@ const catOf = (id) => state.catalog?.categories.find((c) => c.id === id) ?? { ti
 // ---------- 首页 ----------
 function moduleBadges(m) {
   return [
+    m.enabled === false ? '<span class="badge danger" title="已被管理员关闭，仅管理员可见和调用">已关闭</span>' : '',
     m.unofficial ? '<span class="badge warn" title="数据来自非官方接口或网页，可能随上游改版失效">非官方</span>' : '',
     !m.available ? '<span class="badge danger" title="服务端未配置所需的密钥">需配置</span>' : '',
     m.env.some((e) => e.optional) && m.available ? '<span class="badge" title="可选配置密钥以增强功能">可选 Key</span>' : '',
@@ -991,6 +992,9 @@ async function pageAdmin() {
           ${s.errors.map((e) => `<tr><td class="mono">${esc(e.path)}</td><td><span class="badge danger">${e.status}</span></td><td class="num">${fmtNum(e.n)}</td></tr>`).join('')}
         </tbody></table>` : '<div class="empty">一切正常</div>'}</div></div>
     </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>接口开关</h2>
+      <div class="row"><span class="small faint" id="mod-count"></span><input class="input" id="mod-q" placeholder="搜索接口" style="width:180px;height:32px"></div></div>
+      <div class="card-pad" id="mod-body"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div></div>
     <div class="card"><div class="card-head"><h2>用户</h2><span class="small faint">额度留空表示使用默认值</span></div><div class="table-wrap" style="padding:8px">
       <table class="table"><thead><tr><th>邮箱</th><th>注册时间</th><th class="num">Key</th><th class="num">今日调用</th><th>每日额度</th><th>状态</th></tr></thead><tbody>
       ${users.map((u) => `<tr><td>${esc(u.email)} ${u.isAdmin ? '<span class="badge brand">管理员</span>' : ''}</td>
@@ -1001,6 +1005,7 @@ async function pageAdmin() {
   </div>`;
   chart.mount($('#main'));
   $('#check-update').onclick = () => checkUpdate();
+  loadModuleSwitches();
 
   $('#main').addEventListener('submit', async (e) => {
     const f = e.target.closest('[data-limit]');
@@ -1022,6 +1027,59 @@ async function pageAdmin() {
       pageAdmin();
     } catch (err) { toast(err.message, true); }
   });
+}
+
+// ---------- 接口开关 ----------
+async function loadModuleSwitches() {
+  const body = $('#mod-body');
+  let data;
+  try {
+    data = await api('GET', '/admin/modules');
+  } catch (err) {
+    body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+    return;
+  }
+  const draw = () => {
+    const q = $('#mod-q').value.trim().toLowerCase();
+    const on = data.modules.filter((m) => m.enabled).length;
+    $('#mod-count').textContent = `已开放 ${on} / ${data.modules.length}`;
+    body.innerHTML = data.categories.map((c) => {
+      const list = data.modules.filter((m) => m.category === c.id && (!q || `${m.title} ${m.name} ${m.routes.join(' ')}`.toLowerCase().includes(q)));
+      if (!list.length) return '';
+      return `<div class="mod-group">
+        <div class="mod-group-head"><b>${icon(c.icon)}${esc(c.title)}</b>
+          <span class="row"><button class="btn sm ghost" data-bulk="${c.id}" data-on="1">全部开启</button><button class="btn sm ghost" data-bulk="${c.id}" data-on="0">全部关闭</button></span></div>
+        <div class="mod-grid">${list.map((m) => `
+          <label class="mod-item ${m.enabled ? '' : 'off'}" title="${esc(m.routes.join('\n'))}">
+            <span class="switch"><input type="checkbox" data-mod="${esc(m.name)}" ${m.enabled ? 'checked' : ''}><span></span></span>
+            <span class="grow"><span class="mod-title">${esc(m.title)}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
+            <span class="small faint" title="近 7 天调用">${fmtNum(m.calls7d)}</span>
+          </label>`).join('')}</div></div>`;
+    }).join('') || '<div class="empty">没有匹配的接口</div>';
+  };
+  const save = async (names, enabled) => {
+    await api('PUT', '/admin/modules', { names, enabled });
+    for (const m of data.modules) if (names.includes(m.name)) m.enabled = enabled;
+    state.catalog = null; // 首页目录重新加载
+    draw();
+    toast(enabled ? `已开启 ${names.length} 个接口` : `已关闭 ${names.length} 个接口`);
+  };
+  body.onchange = async (e) => {
+    const cb = e.target.closest('input[data-mod]');
+    if (!cb) return;
+    try { await save([cb.dataset.mod], cb.checked); } catch (err) { cb.checked = !cb.checked; toast(err.message, true); }
+  };
+  body.onclick = async (e) => {
+    const b = e.target.closest('[data-bulk]');
+    if (!b) return;
+    const enabled = b.dataset.on === '1';
+    const names = data.modules.filter((m) => m.category === b.dataset.bulk && m.enabled !== enabled).map((m) => m.name);
+    if (!names.length) return toast(enabled ? '该分类已全部开启' : '该分类已全部关闭');
+    if (!enabled && !(await confirmDialog('关闭接口', `确定关闭该分类下的 ${names.length} 个接口？关闭后普通用户调用会返回 403。`, { okText: '关闭' }))) return;
+    try { await save(names, enabled); } catch (err) { toast(err.message, true); }
+  };
+  $('#mod-q').oninput = draw;
+  draw();
 }
 
 // ---------- 在线更新 ----------
