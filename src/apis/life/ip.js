@@ -86,6 +86,21 @@ export default {
       path: '/api/ip',
       summary: '查询 IP 归属地（默认调用者 IP）',
       params: [{ name: 'ip', desc: 'IPv4 或 IPv6 地址，留空为调用者 IP', example: '114.114.114.114' }],
+      fields: [
+        { name: 'ip', type: 'string', desc: '实际查询的 IP 地址（IPv4 映射的 IPv6 地址会还原为 IPv4）' },
+        { name: 'country', type: 'string|null', desc: '国家（中文），如 中国' },
+        { name: 'countryCode', type: 'string|null', desc: '国家代码（ISO 3166-1 两位字母），如 CN' },
+        { name: 'region', type: 'string|null', desc: '省/州，如 广东；上游未返回时为 null' },
+        { name: 'city', type: 'string|null', desc: '城市，如 深圳；上游未返回时为 null' },
+        { name: 'district', type: 'string|null', desc: '区县；上游多数情况下不提供，此时为 null' },
+        { name: 'isp', type: 'string|null', desc: '运营商/ISP 名称（上游多为英文，如 Chinanet）；未返回时为 null' },
+        { name: 'org', type: 'string|null', desc: '所属组织名称，如 Chinanet GD；未返回时为 null' },
+        { name: 'asn', type: 'string|null', desc: '自治系统编号与名称，如 "AS4134 CHINANET-BACKBONE"；未返回时为 null' },
+        { name: 'lat', type: 'number|null', desc: '大致纬度（十进制度，城市级精度，仅供参考）' },
+        { name: 'lon', type: 'number|null', desc: '大致经度（十进制度，城市级精度，仅供参考）' },
+        { name: 'timezone', type: 'string|null', desc: '所在时区（IANA 名称），如 Asia/Shanghai' },
+        { name: 'location', type: 'string', desc: '拼接好的归属地：国家、省、市、区县依次以空格连接，去掉空值和重复值，如 "中国 广东 深圳"' },
+      ],
       async handler({ query, ip: callerIp }) {
         const given = query.get('ip');
         if (given && given.length > 64) throw new HttpError(400, 'ip 参数过长');

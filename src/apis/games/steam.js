@@ -67,7 +67,7 @@ export function parseSteamFreeSearch(raw) {
 function formatPrice(cents, currency) {
   if (cents == null) return null;
   const symbol = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥', HKD: 'HK$', TWD: 'NT$', KRW: '₩', RUB: '₽' }[currency];
-  const amount = currency === 'JPY' || currency === 'KRW' ? String(Math.round(cents / 100)) : (cents / 100).toFixed(2);
+  const amount = currency === 'JPY' || currency === 'KRW' ? Math.round(cents / 100).toLocaleString('en-US') : (cents / 100).toFixed(2);
   return symbol ? `${symbol} ${amount}` : `${amount} ${currency ?? ''}`.trim();
 }
 
@@ -139,6 +139,17 @@ export default {
       path: '/api/steam/free',
       summary: '获取 Steam 当前限时免费（100% 折扣，可永久入库）的游戏',
       params: [CC_PARAM, LANG_PARAM],
+      fields: [
+        { name: '[].type', type: 'string', desc: '条目类型：app 表示单个游戏/应用，sub 表示礼包（package），bundle 表示捆绑包' },
+        { name: '[].id', type: 'number', desc: 'Steam 数字 ID，含义随 type 变化：app 为 AppID，sub 为 PackageID，bundle 为 BundleID' },
+        { name: '[].title', type: 'string|null', desc: '名称（语言由参数 l 决定，没有该语言时为原名）；搜索结果里缺少标题时为 null' },
+        { name: '[].url', type: 'string', desc: 'Steam 商店页面链接，如 https://store.steampowered.com/app/1172470/' },
+        { name: '[].image', type: 'string|null', desc: '封面图链接：app 为 460×215 头图（header.jpg）；sub、bundle 为搜索结果里的 120×45 小图。搜索结果里没有图片时为 null' },
+        { name: '[].originalPrice', type: 'string|null', desc: '原价，Steam 按地区 cc 格式化好的字符串，带货币符号（如 cc=cn 时为 ¥ 58.00）；搜索结果里没有原价时为 null' },
+        { name: '[].releaseDate', type: 'string|null', desc: '发行日期，Steam 按语言 l 显示的原文（如 l=schinese 时为 2020 年 11 月 5 日），不是标准日期格式，不宜直接解析；搜索结果里没有日期时（礼包常见）为 null' },
+        { name: '[].discountPercent', type: 'number', desc: '折扣百分比（0~100，表示减免的比例）。本接口只返回 100% 折扣的条目，因此恒为 100' },
+        { name: '[].endDate', type: 'string|null', desc: '免费截止时间，ISO 8601，UTC（如 2025-09-24T17:00:00.000Z）。搜索页不提供截止时间，只有同时出现在首页精选特惠里的条目才有值，否则为 null' },
+      ],
       async handler({ query }) {
         return loadSteamFree(steamLocale(query));
       },
@@ -151,6 +162,24 @@ export default {
         { name: 'list', default: 'specials', desc: '分组：specials 特惠 / top_sellers 热销 / new_releases 新品 / coming_soon 即将推出', example: 'specials' },
         CC_PARAM,
         LANG_PARAM,
+      ],
+      fields: [
+        { name: '[].type', type: 'string', desc: '条目类型：app 表示单个游戏/应用，sub 表示礼包（package）' },
+        { name: '[].id', type: 'number', desc: 'Steam 数字 ID：type 为 app 时是 AppID，为 sub 时是 PackageID' },
+        { name: '[].title', type: 'string', desc: '名称（语言由参数 l 决定，没有该语言时为原名）' },
+        { name: '[].discountPercent', type: 'number', desc: '折扣百分比，0~100 的整数，表示减免的比例（40 表示减 40%，即打六折；100 表示限时免费）；0 表示未打折' },
+        { name: '[].originalPrice', type: 'string|null', desc: '原价，带货币符号的格式化字符串，符号与金额间有空格，如 ¥ 298.00、$ 59.99；日元、韩元不带小数，没有内置符号的货币写成"金额 货币代码"（如 12.50 CHF）。上游没有价格时为 null' },
+        { name: '[].finalPrice', type: 'string|null', desc: '现价（折后价），格式同 originalPrice，如 ¥ 178.80；免费时为 ¥ 0.00 这样的 0 元字符串。上游没有价格时为 null' },
+        { name: '[].originalPriceCents', type: 'number|null', desc: '原价的整数金额，为实际金额 ×100（人民币即单位为分，29800 表示 ¥298.00）。上游没有价格时为 null' },
+        { name: '[].finalPriceCents', type: 'number|null', desc: '现价的整数金额，为实际金额 ×100（人民币即单位为分，17880 表示 ¥178.80，0 表示免费）。上游没有价格时为 null' },
+        { name: '[].currency', type: 'string|null', desc: '货币代码（ISO 4217，如 CNY、USD），由参数 cc 决定；上游没有给出时为 null' },
+        { name: '[].expiresAt', type: 'string|null', desc: '折扣截止时间，ISO 8601，UTC（如 2025-10-01T17:00:00.000Z）；未打折或上游没有给出截止时间时为 null' },
+        { name: '[].image', type: 'string|null', desc: '封面图链接，优先 460×215 头图，没有则用 616×353 大图；都没有时为 null' },
+        { name: '[].url', type: 'string', desc: 'Steam 商店页面链接，如 https://store.steampowered.com/app/1245620/' },
+        { name: '[].platforms', type: 'object', desc: '支持的操作系统' },
+        { name: '[].platforms.windows', type: 'boolean', desc: '是否支持 Windows' },
+        { name: '[].platforms.mac', type: 'boolean', desc: '是否支持 macOS' },
+        { name: '[].platforms.linux', type: 'boolean', desc: '是否支持 Linux / SteamOS' },
       ],
       async handler({ query }) {
         const list = param(query, 'list', { default: 'specials', oneOf: FEATURED_LISTS });

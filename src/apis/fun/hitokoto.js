@@ -111,6 +111,30 @@ export default {
           example: 'a,d',
         },
       ],
+      fields: [
+        { name: 'id', type: 'number|null', desc: '一言句子 ID；返回内置兜底句子（fallback=true）时为 null' },
+        { name: 'uuid', type: 'string|null', desc: '一言句子 UUID；兜底句子时为 null' },
+        { name: 'hitokoto', type: 'string', desc: '句子正文' },
+        {
+          name: 'type',
+          type: 'string',
+          desc: '分类代码：' + Object.entries(HITOKOTO_TYPES).map(([k, v]) => `${k}=${v}`).join('，'),
+        },
+        { name: 'typeName', type: 'string', desc: 'type 对应的中文分类名（如 "动画"）；上游返回未知代码时为 "其他"' },
+        { name: 'from', type: 'string|null', desc: '出处（作品名、书名、诗词名等）；上游未提供时为 null' },
+        { name: 'fromWho', type: 'string|null', desc: '作者或说出这句话的角色；未知时为 null（上游句子和兜底句子都可能为 null）' },
+        { name: 'creator', type: 'string|null', desc: '在一言网站提交该句子的用户名；兜底句子时为 null' },
+        { name: 'length', type: 'number', desc: '句子长度（字符数，标点计入）；上游未提供时按 Unicode 字符数计算' },
+        { name: 'url', type: 'string|null', desc: '一言网站上该句子的页面（https://hitokoto.cn/?uuid={uuid}）；没有 uuid 时（含兜底句子）为 null' },
+        {
+          name: 'fallback',
+          type: 'boolean',
+          desc:
+            '是否为内置兜底句子。false：正常取自一言上游；true：上游请求失败、超时（5 秒）或返回格式无法识别，' +
+            '改为从内置句子库中按所选分类随机取一条，此时 id、uuid、creator、url 均为 null。' +
+            '所选分类在内置库中没有句子时（如 g=其他）从全部内置句子中取，type 可能与请求的分类不同',
+        },
+      ],
       async handler({ query }) {
         const types = parseTypes(param(query, 'type', { max: 30 }));
         // 随机接口不缓存

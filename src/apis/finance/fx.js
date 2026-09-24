@@ -63,6 +63,13 @@ export default {
         { name: 'base', default: 'USD', desc: '基准货币（ISO 4217 三位代码）', example: 'CNY' },
         { name: 'symbols', desc: '只返回这些货币，逗号分隔', example: 'CNY,EUR,JPY' },
       ],
+      fields: [
+        { name: 'base', type: 'string', desc: '基准货币代码（ISO 4217 大写三位，如 USD）' },
+        { name: 'updatedAt', type: 'string|null', desc: '上游汇率的最近更新时间（ISO 8601，UTC，如 2024-09-23T00:02:31.000Z），上游每日更新一次；上游未提供时为 null。注意与响应外层的 updatedAt（本服务缓存写入时间）不是一回事' },
+        { name: 'nextUpdateAt', type: 'string|null', desc: '上游预计下次更新汇率的时间（ISO 8601，UTC）；上游未提供时为 null' },
+        { name: 'rates', type: 'object', desc: '汇率表，键为货币代码（ISO 4217 大写三位），值见 rates.*。传了 symbols 时只保留其中上游支持的货币，不支持的代码会被直接忽略（不报错），因此可能比请求的少' },
+        { name: 'rates.*', type: 'number', desc: '1 单位基准货币可兑换的该货币数量（未取整）。如 base=USD 时 rates.CNY = 7.0512 表示 1 美元 = 7.0512 元人民币；汇率表里基准货币自身的值为 1' },
+      ],
       async handler({ query }) {
         const base = ccy(query, 'base', 'USD');
         const symbolsRaw = param(query, 'symbols', { pattern: /^[A-Za-z]{3}(,[A-Za-z]{3}){0,49}$/ });
@@ -81,6 +88,14 @@ export default {
         { name: 'from', required: true, default: 'USD', desc: '源货币', example: 'USD' },
         { name: 'to', required: true, default: 'CNY', desc: '目标货币', example: 'CNY' },
         { name: 'amount', default: '1', desc: '金额', example: '100' },
+      ],
+      fields: [
+        { name: 'from', type: 'string', desc: '源货币代码（ISO 4217 大写三位）' },
+        { name: 'to', type: 'string', desc: '目标货币代码（ISO 4217 大写三位）' },
+        { name: 'amount', type: 'number', desc: '待换算的金额，单位为源货币（即请求参数 amount）' },
+        { name: 'rate', type: 'number', desc: '汇率：1 单位源货币可兑换的目标货币数量（如 from=USD、to=CNY 时 7.0512 表示 1 美元 = 7.0512 元人民币）' },
+        { name: 'result', type: 'number', desc: '换算结果，单位为目标货币，= amount × rate，四舍五入保留 6 位小数' },
+        { name: 'updatedAt', type: 'string|null', desc: '所用汇率的上游更新时间（ISO 8601，UTC）；上游未提供时为 null。与响应外层的 updatedAt（本服务缓存写入时间）不是一回事' },
       ],
       async handler({ query }) {
         const from = ccy(query, 'from', 'USD');

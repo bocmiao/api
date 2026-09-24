@@ -64,6 +64,43 @@ export default {
       params: [
         { name: 'weekday', desc: '星期 1~7（7=周日），或 today；留空返回整周', example: 'today' },
       ],
+      fields: [
+        {
+          name: '[].weekday',
+          type: 'number',
+          desc: '未传 weekday 时 data 为数组，每项是一天的放送表，按星期一到星期日排序（上游某天没有番剧时可能缺少该天）。本字段为星期几：1=星期一 … 7=星期日',
+        },
+        { name: '[].weekdayName', type: 'string', desc: '星期中文名，如 "星期一"' },
+        { name: '[].items', type: 'array', desc: '当天放送的番剧，按在看人数从多到少排序，每项字段同 items[]' },
+        { name: '[].items[].*', type: 'number|string|null', desc: '同 items[] 中的同名字段' },
+        {
+          name: 'weekday',
+          type: 'number',
+          desc: '传了 weekday 参数时 data 为单日对象。本字段为星期几：1=星期一 … 7=星期日（weekday=today 时按北京时间取当天）',
+        },
+        { name: 'weekdayName', type: 'string', desc: '星期中文名，如 "星期日"' },
+        { name: 'items', type: 'array', desc: '当天放送的番剧，按在看人数从多到少排序；上游当天没有数据时为空数组' },
+        { name: 'items[].id', type: 'number', desc: 'Bangumi 条目 ID' },
+        { name: 'items[].title', type: 'string', desc: '显示用标题：有中文名时为中文名，否则为原名' },
+        { name: 'items[].name', type: 'string', desc: '原名（通常为日文），如 "葬送のフリーレン"' },
+        { name: 'items[].nameCn', type: 'string|null', desc: '中文名，如 "葬送的芙莉莲"；Bangumi 未登记中文名时为 null' },
+        { name: 'items[].airDate', type: 'string|null', desc: '开播日期（YYYY-MM-DD，Bangumi 登记的首播日期）；未登记时为 null' },
+        { name: 'items[].score', type: 'number|null', desc: 'Bangumi 评分，满分 10；暂无评分时为 null' },
+        { name: 'items[].votes', type: 'number', desc: '评分人数；暂无评分时为 0' },
+        { name: 'items[].rank', type: 'number|null', desc: 'Bangumi 动画排名（数字越小越靠前）；未进入排名时为 null' },
+        { name: 'items[].watching', type: 'number', desc: 'Bangumi 上标记"在看"的人数；列表按此从多到少排序' },
+        {
+          name: 'items[].cover',
+          type: 'string|null',
+          desc: '封面大图链接（Bangumi large 规格，没有时用 common 规格），已转为 https；条目没有封面时为 null',
+        },
+        {
+          name: 'items[].thumb',
+          type: 'string|null',
+          desc: '封面小图链接（Bangumi medium 规格，没有时用 small 规格），已转为 https；条目没有封面时为 null',
+        },
+        { name: 'items[].url', type: 'string', desc: 'Bangumi 条目页面链接（https://bgm.tv/subject/{id}）' },
+      ],
       async handler({ query }) {
         let wd = param(query, 'weekday', { pattern: /^([1-7]|today)$/ });
         const res = await cache.wrap('bgm:calendar', TTL_MS, loadAnimeCalendar);

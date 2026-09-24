@@ -184,7 +184,7 @@ export const SOURCES = {
         headers: { 'user-agent': UA, accept: 'text/html', 'accept-language': 'en-US,en;q=0.9' },
         timeoutMs: 15_000,
       });
-      return { title: `GitHub Trending${language ? ` · ${language}` : ''}`, items: P.parseGithubTrending(html) };
+      return { title: `GitHub Trending${language ? ` · ${language.toLowerCase()}` : ''}`, items: P.parseGithubTrending(html) };
     },
   },
   v2ex: {

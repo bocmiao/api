@@ -66,6 +66,16 @@ export default {
       path: '/api/fund/estimate',
       summary: '基金盘中实时估值与涨跌',
       params: [{ name: 'code', required: true, desc: '6 位基金代码', example: '161725' }],
+      fields: [
+        { name: 'code', type: 'string', desc: '6 位基金代码' },
+        { name: 'name', type: 'string', desc: '基金名称' },
+        { name: 'navDate', type: 'string|null', desc: '最新已公布单位净值（nav）的日期，格式 YYYY-MM-DD，盘中一般为上一交易日；上游为空时为 null' },
+        { name: 'nav', type: 'number|null', desc: 'navDate 当日的单位净值（元/份）；上游为空时为 null' },
+        { name: 'estimateNav', type: 'number|null', desc: '盘中实时估算的单位净值（元/份），为天天基金的估算值，并非实际净值；上游为空时为 null' },
+        { name: 'estimateChange', type: 'number|null', desc: '估算涨跌额（元/份）= estimateNav − nav，保留 4 位小数；两者任一为空时为 null' },
+        { name: 'estimateChangePercent', type: 'number|null', desc: '估算涨跌幅，百分数（1.24 表示 +1.24%），相对 nav；上游为空时为 null' },
+        { name: 'estimateTime', type: 'string|null', desc: '估值时间，格式 YYYY-MM-DD HH:mm，北京时间（UTC+8）；上游为空时为 null' },
+      ],
       async handler({ query }) {
         const code = param(query, 'code', { required: true, pattern: CODE_RE });
         return cache.wrap(`fund:gz:${code}`, 60_000, async () => {
@@ -86,6 +96,20 @@ export default {
         { name: 'size', default: 20, desc: '每页条数（1~49）' },
         { name: 'start', desc: '开始日期 YYYY-MM-DD', example: '2024-01-01' },
         { name: 'end', desc: '结束日期 YYYY-MM-DD', example: '2024-09-30' },
+      ],
+      fields: [
+        { name: 'code', type: 'string', desc: '6 位基金代码（即请求参数 code）' },
+        { name: 'total', type: 'number', desc: '符合条件（日期区间内）的净值记录总条数，用于分页；上游未给出时为 0' },
+        { name: 'page', type: 'number', desc: '当前页码，从 1 开始；上游未给出时为 1' },
+        { name: 'pageSize', type: 'number', desc: '每页条数；上游未给出时为本页实际条数' },
+        { name: 'items', type: 'array', desc: '本页净值记录，按日期从新到旧排列（上游顺序）' },
+        { name: 'items[].date', type: 'string', desc: '净值日期，格式 YYYY-MM-DD' },
+        { name: 'items[].nav', type: 'number|null', desc: '单位净值（元/份）；上游为空时为 null' },
+        { name: 'items[].accNav', type: 'number|null', desc: '累计净值（元/份，含成立以来的历次分红）；上游为空时为 null' },
+        { name: 'items[].changePercent', type: 'number|null', desc: '日增长率，百分数（-0.45 表示 -0.45%），天天基金口径；上游为空时为 null' },
+        { name: 'items[].purchaseStatus', type: 'string|null', desc: '当日申购状态，上游原文（如 开放申购、暂停申购、限制大额申购）；上游为空时为 null' },
+        { name: 'items[].redeemStatus', type: 'string|null', desc: '当日赎回状态，上游原文（如 开放赎回、暂停赎回）；上游为空时为 null' },
+        { name: 'items[].dividend', type: 'string|null', desc: '当日分红送配说明，上游原文（如 每份派现金0.0100元）；当日没有分红、拆分时为 null' },
       ],
       async handler({ query }) {
         const code = param(query, 'code', { required: true, pattern: CODE_RE });

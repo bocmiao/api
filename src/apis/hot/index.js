@@ -1,5 +1,6 @@
 import { HttpError, param } from '../../lib/http.js';
 import { GITHUB_LANG_RE, GITHUB_SINCE, NEWS_FEEDS, SOURCES, SOURCE_IDS, getHot, limitItems } from './sources.js';
+import { SOURCES_FIELDS, allFields, sourceFields } from './fields.js';
 
 export { loadHot, getHot, SOURCES, SOURCE_IDS } from './sources.js';
 
@@ -21,6 +22,7 @@ function hotModule({ id, title, description, source, unofficial = true, extraPar
         path: `/api/hot/${id}`,
         summary: `获取${title}`,
         params: [...extraParams, LIMIT_PARAM],
+        fields: sourceFields(id),
         async handler({ query }) {
           const opts = readOpts(query);
           const limit = readLimit(query);
@@ -106,6 +108,7 @@ modules.push({
         },
         { name: 'limit', required: false, default: '10', desc: '每个来源的条数（1~50）', example: '5' },
       ],
+      fields: allFields(),
       async handler({ query }) {
         const raw = param(query, 'sources', { default: DEFAULT_ALL.join(','), max: 200 });
         const ids = [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))];
@@ -140,6 +143,7 @@ modules.push({
       path: '/api/hot/sources',
       summary: '列出可用的热榜来源 id 与名称',
       params: [],
+      fields: SOURCES_FIELDS,
       async handler() {
         return { data: SOURCE_IDS.map((id) => ({ id, title: SOURCES[id].title })) };
       },

@@ -1,6 +1,8 @@
-import { test } from 'node:test';
+import { test, describe, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { cache } from '../../src/lib/cache.js';
+import { assertFieldsDocumented, matcher } from '../helpers/fields.js';
 import { parseSteamFreeSearch, parseFeaturedCategories, steamLocale } from '../../src/apis/games/steam.js';
 import { parseAppDetails, parseStoreSearch, parsePlayerCount, parseItadOverview } from '../../src/apis/games/steam-info.js';
 import { parseGogFree } from '../../src/apis/games/gog.js';
@@ -173,4 +175,201 @@ test('参数校验：非法 id / platform 返回 400', async () => {
   await assert.rejects(route('/api/steam/players').handler({ query: new URLSearchParams('') }), { status: 400 });
   await assert.rejects(route('/api/games/free').handler({ query: new URLSearchParams('platform=xbox') }), { status: 400 });
   await assert.rejects(route('/api/gamepass').handler({ query: new URLSearchParams('list=all') }), { status: 400 });
+});
+
+// ---------- 返回字段说明：用 fixture + mock fetch 调用真实 handler ----------
+
+const typeOf = (v) => (v == null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
+// 收集 data 里每个字段路径上出现过的所有值（路径写法同 test/helpers/fields.js）
+function collectValues(value, prefix = '', out = new Map()) {
+  if (Array.isArray(value)) {
+    for (const item of value) collectValues(item, `${prefix}[]`, out);
+  } else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      const p = prefix ? `${prefix}.${k}` : k;
+      if (!out.has(p)) out.set(p, []);
+      out.get(p).push(v);
+      collectValues(v, p, out);
+    }
+  }
+  return out;
+}
+
+// 反向检查：fields 里的每一项都要在样例里出现过、至少有一个非 null 的值（防止字段名写错、fixture 没覆盖到可选字段），
+// 并且样例里的实际类型都在声明的 type 之内
+function assertFieldsCovered(route, samples) {
+  const values = new Map();
+  for (const s of samples) {
+    for (const [p, vs] of collectValues(s)) values.set(p, [...(values.get(p) ?? []), ...vs]);
+  }
+  const uncovered = [];
+  const wrongType = [];
+  for (const f of route.fields) {
+    const re = matcher(f.name);
+    const vs = [...values].filter(([p]) => re.test(p)).flatMap(([, v]) => v);
+    if (!vs.some((v) => v != null)) uncovered.push(f.name);
+    const allowed = f.type.split('|');
+    const bad = [...new Set(vs.map(typeOf))].filter((t) => !allowed.includes(t));
+    if (bad.length) wrongType.push(`${f.name}（声明 ${f.type}，实际出现 ${bad.join('/')}）`);
+  }
+  assert.deepEqual(uncovered, [], `${route.path} 的样例没有覆盖这些字段（不存在或只有 null）：${uncovered.join(', ')}`);
+  assert.deepEqual(wrongType, [], `${route.path} 的字段类型与声明不符：${wrongType.join('；')}`);
+}
+
+describe('返回字段说明：fixture + mock fetch 调用 handler', () => {
+  const routes = games.flatMap((m) => m.routes);
+  const routeOf = (path) => routes.find((r) => r.path === path);
+  const checked = new Set();
+  const realFetch = globalThis.fetch;
+  const realItadKey = process.env.ITAD_API_KEY;
+
+  // 按 URL 片段返回预置响应；响应体为数字时返回该 HTTP 状态码
+  function mockFetch(table) {
+    const calls = [];
+    globalThis.fetch = async (url, opts = {}) => {
+      calls.push({ url: String(url), opts });
+      const hit = table.find(([frag]) => String(url).includes(frag));
+      if (!hit) return new Response('no mock', { status: 500 });
+      return typeof hit[1] === 'number' ? new Response('error', { status: hit[1] }) : new Response(hit[1]);
+    };
+    return calls;
+  }
+
+  const call = async (path, qs = '') => (await routeOf(path).handler({ query: new URLSearchParams(qs), params: {} })).data;
+
+  // 同一路由可以传多份样例（如成功 / 部分失败），合起来检查覆盖度
+  function check(path, ...samples) {
+    const route = routeOf(path);
+    for (const data of samples) assertFieldsDocumented(route, data);
+    assertFieldsCovered(route, samples);
+    checked.add(path);
+  }
+
+  const EPIC = ['store-site-backend-static-ipv4.ak.epicgames.com', readFileSync(new URL('../fixtures/epic.json', import.meta.url), 'utf8')];
+  const STEAM_SEARCH = ['store.steampowered.com/search/results/', fixture('steam-search-free.json')];
+  const STEAM_FEATURED = ['store.steampowered.com/api/featuredcategories', fixture('steam-featured.json')];
+  const GOG = ['catalog.gog.com/v1/catalog', fixture('gog-catalog.json')];
+
+  beforeEach(() => {
+    cache.store.clear();
+    cache.pending.clear();
+    // Epic 按当前时间区分"正在免费 / 即将免费"，固定时间让 fixture 里两类都有
+    mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-20T00:00:00Z') });
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    mock.timers.reset();
+    if (realItadKey === undefined) delete process.env.ITAD_API_KEY;
+    else process.env.ITAD_API_KEY = realItadKey;
+  });
+
+  test('/api/games/free：全部成功与单个平台失败', async () => {
+    mockFetch([EPIC, STEAM_SEARCH, STEAM_FEATURED, GOG]);
+    const ok = await call('/api/games/free');
+    assert.deepEqual(ok.items.map((i) => i.id), ['epic:g1', 'epic:g4', 'steam:app:1172470', 'steam:app:2215430', 'steam:sub:54321', 'gog:1207658691']);
+    assert.deepEqual(ok.errors, []);
+    assert.equal(ok.items.find((i) => i.id === 'steam:app:1172470').endDate, '2025-09-24T17:00:00.000Z');
+
+    cache.store.clear();
+    mockFetch([EPIC, STEAM_SEARCH, STEAM_FEATURED, ['catalog.gog.com', 503]]);
+    const partial = await call('/api/games/free', 'platform=epic,gog');
+    assert.deepEqual(partial.items.map((i) => i.platform), ['epic', 'epic']);
+    assert.deepEqual(partial.errors, [{ platform: 'gog', status: 502, message: '上游返回 HTTP 503' }]);
+
+    check('/api/games/free', ok, partial);
+  });
+
+  test('/api/epic/free', async () => {
+    mockFetch([EPIC]);
+    const data = await call('/api/epic/free', 'locale=zh-CN&country=CN');
+    assert.deepEqual(data.current.map((g) => g.id), ['g1', 'g4']);
+    assert.deepEqual(data.upcoming.map((g) => g.id), ['g2']);
+    check('/api/epic/free', data);
+  });
+
+  test('/api/steam/free：搜索结果 + 精选特惠补截止时间', async () => {
+    mockFetch([STEAM_SEARCH, STEAM_FEATURED]);
+    const data = await call('/api/steam/free');
+    assert.deepEqual(data.map((i) => i.endDate), ['2025-09-24T17:00:00.000Z', null, null]);
+    check('/api/steam/free', data);
+  });
+
+  test('/api/steam/specials', async () => {
+    mockFetch([STEAM_FEATURED]);
+    const specials = await call('/api/steam/specials');
+    assert.deepEqual(specials.map((i) => `${i.type}:${i.id}`), ['app:1172470', 'app:1245620', 'sub:12345']);
+    assert.equal(specials[1].originalPriceCents, 29800);
+    const comingSoon = await call('/api/steam/specials', 'list=coming_soon');
+    assert.equal(comingSoon[0].expiresAt, null);
+    check('/api/steam/specials', specials, comingSoon);
+  });
+
+  test('/api/steam/app：未配置 ITAD 时没有 historyLow，配置后附带史低', async () => {
+    delete process.env.ITAD_API_KEY;
+    mockFetch([['store.steampowered.com/api/appdetails', fixture('steam-appdetails.json')]]);
+    const plain = await call('/api/steam/app', 'id=1245620');
+    assert.equal('historyLow' in plain, false);
+
+    cache.store.clear();
+    process.env.ITAD_API_KEY = 'test-key';
+    const calls = mockFetch([
+      ['store.steampowered.com/api/appdetails', fixture('steam-appdetails.json')],
+      ['api.isthereanydeal.com/games/lookup/v1', fixture('itad-lookup.json')],
+      ['api.isthereanydeal.com/games/overview/v2', fixture('itad-overview.json')],
+    ]);
+    const withItad = await call('/api/steam/app', 'id=1245620&cc=us');
+    assert.equal(withItad.historyLow.lowest.price, 29.39);
+    assert.equal(withItad.historyLow.current.expiry, '2026-10-02T17:00:00+00:00');
+    assert.ok(calls.some((c) => c.url.includes('overview/v2') && c.url.includes('country=US')));
+
+    check('/api/steam/app', plain, withItad);
+  });
+
+  test('/api/steam/search', async () => {
+    mockFetch([['store.steampowered.com/api/storesearch', fixture('steam-storesearch.json')]]);
+    const data = await call('/api/steam/search', 'q=elden');
+    assert.equal(data.total, 2);
+    check('/api/steam/search', data);
+  });
+
+  test('/api/steam/players', async () => {
+    mockFetch([['ISteamUserStats/GetNumberOfCurrentPlayers', fixture('steam-players.json')]]);
+    const data = await call('/api/steam/players', 'id=1245620');
+    assert.deepEqual(data, { id: 1245620, players: 812345 });
+    check('/api/steam/players', data);
+  });
+
+  test('/api/gog/free', async () => {
+    mockFetch([GOG]);
+    const data = await call('/api/gog/free');
+    assert.deepEqual(data.map((g) => g.id), ['1207658691']);
+    check('/api/gog/free', data);
+  });
+
+  test('/api/psplus/monthly', async () => {
+    mockFetch([['blog.playstation.com/tag/playstation-plus/feed/', fixture('psplus-feed.xml')]]);
+    const data = await call('/api/psplus/monthly');
+    assert.equal(data.month, '2026-10');
+    assert.deepEqual(data.history.map((h) => h.month), ['2026-01']);
+    check('/api/psplus/monthly', data);
+  });
+
+  test('/api/gamepass', async () => {
+    mockFetch([
+      ['catalog.gamepass.com/sigls/v2', fixture('gamepass-sigls.json')],
+      ['displaycatalog.mp.microsoft.com/v7.0/products', fixture('gamepass-products.json')],
+    ]);
+    const data = await call('/api/gamepass', 'list=leaving&market=US&lang=zh-CN');
+    assert.equal(data.list, 'leaving');
+    assert.equal(data.title, '即将离开');
+    assert.deepEqual(data.items.map((i) => i.id), ['9NQ9CHCTZKTJ', '9PNB3LVL07XH']);
+    check('/api/gamepass', data);
+  });
+
+  test('games 分类的每个非 raw 路由都做了字段校验', () => {
+    const expected = routes.filter((r) => !r.raw).map((r) => r.path).sort();
+    assert.deepEqual([...checked].sort(), expected);
+    for (const r of routes.filter((x) => x.raw)) assert.ok(r.returns, `${r.path} 缺少 returns`);
+  });
 });

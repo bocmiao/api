@@ -1,6 +1,8 @@
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { cache } from '../../src/lib/cache.js';
+import { assertFieldsDocumented, matcher } from '../helpers/fields.js';
 import { parseRates, convert } from '../../src/apis/finance/fx.js';
 import { parseQuotes, parseSearch, normalizeSymbol } from '../../src/apis/finance/stock.js';
 import { parseEstimate, parseHistory } from '../../src/apis/finance/fund.js';
@@ -123,6 +125,8 @@ test('基金历史净值', () => {
   assert.equal(h.total, 1936);
   assert.equal(h.items.length, 3);
   assert.deepEqual(h.items[0], { date: '2024-09-20', nav: 0.6621, accNav: 2.3485, changePercent: -0.45, purchaseStatus: '开放申购', redeemStatus: '开放赎回', dividend: null });
+  assert.equal(h.items[1].dividend, '每份派现金0.0100元');
+  assert.equal(h.items[1].purchaseStatus, '限制大额申购');
   assert.equal(h.items[2].changePercent, null);
   assert.throws(() => parseHistory({ Data: '', ErrCode: 0 }), { status: 502 });
 });
@@ -132,7 +136,7 @@ test('CoinGecko 价格与市值排行', () => {
   assert.deepEqual(p.notFound, ['nope']);
   assert.equal(p.coins[0].prices.usd.price, 63421);
   assert.equal(p.coins[0].prices.cny.price, 447281);
-  assert.equal(p.coins[1].prices.usd.change24h, -0.5432109);
+  assert.equal(p.coins[1].prices.usd.changePercent24h, -0.5432109);
   assert.equal(p.coins[0].updatedAt, '2024-09-23T09:00:00.000Z');
 
   const m = parseMarkets(json('coingecko-markets.json'));
@@ -167,4 +171,195 @@ test('新浪金银价：国际 USD/oz + 国内 元/克', () => {
   const noFx = parseMetals(fx('sina-metals.txt'));
   assert.equal(noFx.international[0].cnyPerGram, undefined);
   assert.throws(() => parseMetals('Forbidden'), { status: 502 });
+});
+
+// ---------- 返回字段说明：mock fetch 后调用 handler，校验真实 data ----------
+const realFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  cache.store.clear();
+});
+
+// 按 URL 片段返回预置响应；body 为 Error 时模拟网络失败
+function mockFetch(routes) {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    for (const [frag, body] of Object.entries(routes)) {
+      if (u.includes(frag)) {
+        if (body instanceof Error) throw body;
+        return new Response(body, { status: 200 });
+      }
+    }
+    return new Response('no mock', { status: 500 });
+  };
+  return calls;
+}
+
+// 腾讯、新浪行情按 GBK 解码，fixture 是 UTF-8，需先转成 GBK 字节再交给 mock。
+// Node 只有 GBK 解码器，这里反查 TextDecoder('gbk') 生成编码表。
+let gbkTable;
+function gbk(str) {
+  if (!gbkTable) {
+    gbkTable = new Map();
+    const dec = new TextDecoder('gbk');
+    for (let hi = 0x81; hi <= 0xfe; hi++) {
+      for (let lo = 0x40; lo <= 0xfe; lo++) {
+        if (lo === 0x7f) continue;
+        const ch = dec.decode(new Uint8Array([hi, lo]));
+        if (ch.length === 1 && ch !== '\ufffd' && !gbkTable.has(ch)) gbkTable.set(ch, [hi, lo]);
+      }
+    }
+  }
+  const out = [];
+  for (const ch of str) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) out.push(c);
+    else {
+      const b = gbkTable.get(ch);
+      assert.ok(b, `无法用 GBK 编码：${ch}`);
+      out.push(...b);
+    }
+  }
+  return new Uint8Array(out);
+}
+
+const routeMap = new Map(finance.flatMap((m) => m.routes.map((r) => [r.path, r])));
+const call = (path, qs = '') => routeMap.get(path).handler({ query: new URLSearchParams(qs), params: {} });
+
+const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+function walk(value, prefix, fn) {
+  if (Array.isArray(value)) {
+    for (const v of value) walk(v, `${prefix}[]`, fn);
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      const p = prefix ? `${prefix}.${k}` : k;
+      fn(p, v);
+      walk(v, p, fn);
+    }
+  }
+}
+
+// 1) 每个返回字段都有说明；2) 实际类型在说明的 type 之内；
+// 3) 样例数据覆盖了说明里的每个字段，且至少出现一次非 null 值（防止说明过时、fixture 覆盖不全）
+function checkFields(route, ...samples) {
+  for (const s of samples) assertFieldsDocumented(route, s);
+  const patterns = route.fields.map((f) => ({ f, re: matcher(f.name) }));
+  const seen = new Set();
+  for (const s of samples) {
+    walk(s, '', (path, v) => {
+      if (v === undefined) return; // JSON 输出时会被省略
+      for (const { f, re } of patterns) {
+        if (!re.test(path)) continue;
+        assert.ok(f.type.split('|').includes(typeOf(v)), `${route.path} ${path} 实际类型为 ${typeOf(v)}，说明写的是 ${f.type}`);
+        if (v !== null) seen.add(f.name);
+      }
+    });
+  }
+  const uncovered = route.fields.map((f) => f.name).filter((n) => !seen.has(n));
+  assert.deepEqual(uncovered, [], `${route.path} 的样例数据没有覆盖这些字段（或始终为 null）：${uncovered.join(', ')}`);
+}
+
+test('字段说明：/api/fx/rates', async () => {
+  const calls = mockFetch({ 'open.er-api.com/v6/latest/USD': fx('er-api-usd.json') });
+  const all = await call('/api/fx/rates', 'base=usd');
+  assert.equal(all.data.rates.CNY, 7.0512);
+  const some = await call('/api/fx/rates', 'base=USD&symbols=cny,EUR,XXX');
+  assert.deepEqual(some.data.rates, { CNY: 7.0512, EUR: 0.896153 });
+  assert.equal(calls.length, 1, '同一基准货币命中缓存');
+  checkFields(routeMap.get('/api/fx/rates'), all.data, some.data);
+});
+
+test('字段说明：/api/fx/convert', async () => {
+  mockFetch({ 'open.er-api.com/v6/latest/USD': fx('er-api-usd.json') });
+  const res = await call('/api/fx/convert', 'from=usd&to=cny&amount=100');
+  assert.deepEqual(res.data, { from: 'USD', to: 'CNY', amount: 100, rate: 7.0512, result: 705.12, updatedAt: '2024-09-23T00:02:31.000Z' });
+  checkFields(routeMap.get('/api/fx/convert'), res.data);
+});
+
+test('字段说明：/api/stock/quote（A 股 / 港股 / 美股 + 未找到）', async () => {
+  const calls = mockFetch({ 'qt.gtimg.cn': gbk(fx('gtimg-quote.txt')) });
+  const res = await call('/api/stock/quote', 'symbols=SH600519,hk00700,usaapl,sz000001');
+  assert.match(calls[0], /q=sh600519,hk00700,usAAPL,sz000001$/);
+  const [a, h, u] = res.data.quotes;
+  assert.equal(a.name, '贵州茅台', 'GBK 解码正确');
+  assert.deepEqual(res.data.notFound, ['sz000001']);
+  // 市场差异：A 股无 enName，港股/美股无 turnoverRate
+  const out = JSON.parse(JSON.stringify(res.data));
+  assert.ok(!('enName' in out.quotes[0]) && 'turnoverRate' in out.quotes[0]);
+  for (const q of out.quotes.slice(1)) assert.ok('enName' in q && !('turnoverRate' in q));
+  assert.equal(h.enName, 'TENCENT');
+  assert.equal(u.enName, 'Apple Inc.');
+  assert.equal(h.marketCap, 3966883000000);
+  assert.equal(u.amount, 72346754380);
+  checkFields(routeMap.get('/api/stock/quote'), res.data);
+});
+
+test('字段说明：/api/stock/search', async () => {
+  mockFetch({ 'smartbox.gtimg.cn': gbk(fx('gtimg-search.txt')) });
+  const res = await call('/api/stock/search', 'q=茅台');
+  assert.equal(res.data.length, 5);
+  assert.equal(res.data[1].name, '茅台概念ETF');
+  checkFields(routeMap.get('/api/stock/search'), res.data);
+});
+
+test('字段说明：/api/fund/estimate', async () => {
+  const calls = mockFetch({ 'fundgz.1234567.com.cn/js/161725.js': fx('fundgz.txt') });
+  const res = await call('/api/fund/estimate', 'code=161725');
+  assert.equal(calls.length, 1);
+  assert.equal(res.data.estimateChangePercent, 1.24);
+  checkFields(routeMap.get('/api/fund/estimate'), res.data);
+});
+
+test('字段说明：/api/fund/history', async () => {
+  const calls = mockFetch({ 'api.fund.eastmoney.com/f10/lsjz': fx('fund-lsjz.json') });
+  const res = await call('/api/fund/history', 'code=161725&size=3&start=2024-09-01');
+  assert.match(calls[0], /fundCode=161725&pageIndex=1&pageSize=3&startDate=2024-09-01&endDate=$/);
+  assert.equal(res.data.code, '161725');
+  assert.equal(res.data.items.length, 3);
+  checkFields(routeMap.get('/api/fund/history'), res.data);
+});
+
+test('字段说明：/api/crypto/price', async () => {
+  const calls = mockFetch({ 'api.coingecko.com/api/v3/simple/price': fx('coingecko-price.json') });
+  const res = await call('/api/crypto/price', 'ids=bitcoin,ethereum,nope&vs=USD,cny');
+  assert.match(calls[0], /ids=bitcoin%2Cethereum%2Cnope&vs_currencies=usd%2Ccny/);
+  assert.deepEqual(res.data.notFound, ['nope']);
+  assert.deepEqual(Object.keys(res.data.coins[0].prices), ['usd', 'cny']);
+  checkFields(routeMap.get('/api/crypto/price'), res.data);
+});
+
+test('字段说明：/api/crypto/markets', async () => {
+  mockFetch({ 'api.coingecko.com/api/v3/coins/markets': fx('coingecko-markets.json') });
+  const res = await call('/api/crypto/markets', 'vs=usd&limit=2');
+  assert.equal(res.data.length, 2);
+  assert.equal(res.data[0].priceChange24h, 773.45);
+  checkFields(routeMap.get('/api/crypto/markets'), res.data);
+});
+
+test('字段说明：/api/metals（有汇率 / 汇率不可用）', async () => {
+  mockFetch({ 'hq.sinajs.cn': gbk(fx('sina-metals.txt')), 'open.er-api.com/v6/latest/USD': fx('er-api-usd.json') });
+  const withFx = (await call('/api/metals')).data;
+  assert.equal(withFx.usdCny, 7.0512);
+  assert.equal(withFx.international[0].name, '伦敦金（现货黄金）', 'GBK 解码正确');
+  assert.equal(withFx.international[0].cnyPerGram, 595.89);
+  assert.equal(withFx.domestic[1].price, 7.718);
+
+  cache.store.clear();
+  mockFetch({ 'hq.sinajs.cn': gbk(fx('sina-metals.txt')), 'open.er-api.com': new TypeError('network') });
+  const noFx = (await call('/api/metals')).data;
+  assert.equal(noFx.usdCny, null);
+  assert.ok(noFx.international.every((q) => !('cnyPerGram' in q)));
+  checkFields(routeMap.get('/api/metals'), withFx, noFx);
+});
+
+test('B 股按代码前缀标注计价货币', async () => {
+  const { parseQuoteFields } = await import('../../src/apis/finance/stock.js');
+  const fields = (code) => ['1', 'B股', code, '1.23', '1.20', '1.21', ...Array(80).fill('')];
+  assert.equal(parseQuoteFields('sh900901', fields('900901')).currency, 'USD');
+  assert.equal(parseQuoteFields('sz200002', fields('200002')).currency, 'HKD');
+  assert.equal(parseQuoteFields('sh600519', fields('600519')).currency, 'CNY');
 });

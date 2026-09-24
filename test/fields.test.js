@@ -7,9 +7,7 @@ const TYPES = /^(string|number|boolean|object|array|null)(\|(string|number|boole
 
 for (const m of modules) {
   for (const r of m.routes) {
-    // 过渡期：尚未补充说明的路由先标记为 todo，补完后移除此逻辑
-    const pending = r.raw ? !r.returns : !r.fields;
-    test(`${r.method} ${r.path} 有返回说明`, { todo: pending && '字段说明补充中' }, () => {
+    test(`${r.method} ${r.path} 有返回说明`, () => {
       if (r.raw) {
         assert.ok(typeof r.returns === 'string' && r.returns.length > 0, 'raw 路由需要 returns 说明返回内容');
         return;

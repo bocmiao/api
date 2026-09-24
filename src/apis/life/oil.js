@@ -60,6 +60,17 @@ export default {
       path: '/api/oil',
       summary: '查询某省今日油价',
       params: [{ name: 'province', default: '北京', desc: '省份名，如 北京、广东、内蒙古', example: '广东' }],
+      fields: [
+        { name: 'province', type: 'string', desc: '省份简称（已去掉"省""市""自治区"等后缀，如 广西、内蒙古）' },
+        { name: 'unit', type: 'string', desc: '价格单位，固定为 "元/升"' },
+        { name: 'prices', type: 'object', desc: '该省当前各油品零售限价，单位 元/升' },
+        { name: 'prices.p92', type: 'number|null', desc: '92 号汽油价格（元/升）；页面未列出时为 null' },
+        { name: 'prices.p95', type: 'number|null', desc: '95 号汽油价格（元/升）；页面未列出时为 null' },
+        { name: 'prices.p98', type: 'number|null', desc: '98 号汽油价格（元/升）；部分省份不公布，页面未列出时为 null' },
+        { name: 'prices.p0', type: 'number|null', desc: '0 号柴油价格（元/升）；页面未列出时为 null' },
+        { name: 'nextAdjust', type: 'string|null', desc: '下一次调价窗口，页面原文，如 "9月29日24时"（北京时间，不含年份）；页面未提供时为 null' },
+        { name: 'trend', type: 'string|null', desc: '本轮调价预期的原文摘录，如 "预计上调油价60元/吨(0.05元/升-0.05元/升)"，含上调/下调/搁浅/不调等字样，吨价单位为元/吨、括号内为折算的元/升；页面未提供时为 null' },
+      ],
       async handler({ query }) {
         const raw = param(query, 'province', { default: '北京', max: 12 });
         const province = normalizeProvince(raw);

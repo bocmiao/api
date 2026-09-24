@@ -4,7 +4,7 @@ COPY package.json ./
 COPY src ./src
 COPY public ./public
 RUN mkdir -p /app/data && chown node:node /app/data
-ENV PORT=3000 DATA_DIR=/app/data NODE_ENV=production
+ENV PORT=3000 DATA_DIR=/app/data NODE_ENV=production TZ=Asia/Shanghai
 EXPOSE 3000
 VOLUME ["/app/data"]
 USER node

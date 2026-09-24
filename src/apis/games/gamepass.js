@@ -90,6 +90,22 @@ export default {
         { name: 'market', default: 'US', desc: '市场地区代码（Game Pass 未在中国大陆上线，默认 US），例如 US、HK、JP', example: 'HK' },
         { name: 'lang', default: 'zh-CN', desc: '语言，例如 zh-CN、zh-TW、en-US', example: 'zh-CN' },
       ],
+      fields: [
+        { name: 'list', type: 'string', desc: '列表 ID，与请求参数 list 相同：new 最近加入 / leaving 即将离开 / coming 即将加入 / popular 最受欢迎' },
+        { name: 'title', type: 'string', desc: '列表中文名：最近加入 / 即将离开 / 即将加入 / 最受欢迎' },
+        { name: 'items', type: 'array', desc: '列表中的游戏，按 Xbox 官网列表顺序，最多 60 个；Microsoft 商店查不到详情的条目会被跳过，列表为空时为空数组' },
+        { name: 'items[].id', type: 'string', desc: 'Microsoft Store 商品 ID（12 位大写字母和数字，如 9NQ9CHCTZKTJ）' },
+        { name: 'items[].title', type: 'string|null', desc: '游戏名称（按参数 lang 的语言，没有该语言时为商店默认语言，通常是英文）；上游缺失时为 null' },
+        { name: 'items[].developer', type: 'string|null', desc: '开发商名称；上游为空时为 null' },
+        { name: 'items[].publisher', type: 'string|null', desc: '发行商名称；上游为空时为 null' },
+        { name: 'items[].description', type: 'string|null', desc: '商店里的简短介绍（纯文本，语言同 title）；上游为空时为 null' },
+        { name: 'items[].image', type: 'object', desc: '封面图' },
+        { name: 'items[].image.wide', type: 'string|null', desc: '横版大图的 https 链接，依次取 SuperHeroArt、TitledHeroArt、BrandedKeyArt、BoxArt（方形），都没有时取第一张图；商品没有任何图片时为 null' },
+        { name: 'items[].image.tall', type: 'string|null', desc: '竖版海报的 https 链接，取 Poster，没有则用 BoxArt（方形），都没有时取第一张图；商品没有任何图片时为 null' },
+        { name: 'items[].releaseDate', type: 'string|null', desc: '首次发行日期，ISO 8601，UTC，上游原样返回，秒后有 7 位小数（如 2024-12-09T00:00:00.0000000Z）；上游缺失时为 null' },
+        { name: 'items[].category', type: 'string|null', desc: '商店主分类，上游原样返回，通常为英文（如 Action & adventure）；上游缺失时为 null' },
+        { name: 'items[].url', type: 'string', desc: 'Xbox 官网商品页链接，格式为 https://www.xbox.com/<lang>/games/store/game/<id>' },
+      ],
       async handler({ query }) {
         const list = param(query, 'list', { default: 'new', oneOf: Object.keys(LISTS) });
         const market = param(query, 'market', { default: 'US', pattern: /^[a-zA-Z]{2}$/ }).toUpperCase();

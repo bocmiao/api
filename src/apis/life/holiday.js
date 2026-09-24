@@ -152,6 +152,16 @@ export default {
       path: '/api/holiday',
       summary: '查询某天是否放假/上班及节日名',
       params: [{ name: 'date', desc: '日期 YYYY-MM-DD，默认今天（北京时间）', example: '2026-10-01' }],
+      fields: [
+        { name: 'date', type: 'string', desc: '查询的日期，YYYY-MM-DD（北京时间的日历日）' },
+        { name: 'weekday', type: 'string', desc: '星期几，如 星期四' },
+        { name: 'isOffDay', type: 'boolean', desc: '当天是否休息：type 为 holiday 或 weekend 时为 true' },
+        { name: 'isWorkday', type: 'boolean', desc: '当天是否要上班（与 isOffDay 相反）：type 为 workday 或 normal 时为 true' },
+        { name: 'type', type: 'string', desc: '日期类型，取值：holiday（法定节假日放假，含假期中的周末）、workday（调休上班日，通常是被调成上班的周末）、weekend（普通周末，休息）、normal（普通工作日，上班）' },
+        { name: 'name', type: 'string|null', desc: '所属节假日名称（如 春节、国庆节；两节连休时可能是 "国庆节、中秋节"）。仅 type 为 holiday 或 workday 时有值，weekend、normal 为 null' },
+        { name: 'note', type: 'string', desc: '中文说明：holiday 为 "<节日>假期"，workday 为 "<节日>调休上班"，weekend 为 "周末"，normal 为 "工作日"' },
+        { name: 'published', type: 'boolean', desc: '该年放假安排是否已有数据。为 false 时表示国务院尚未公布（或数据源暂无），type 只按周末/工作日推断，不包含法定假日与调休' },
+      ],
       async handler({ query }) {
         const date = param(query, 'date', { default: todayBeijing(), pattern: DATE_RE });
         if (parseDate(date) == null) throw new HttpError(400, 'date 不是有效日期');
@@ -164,6 +174,23 @@ export default {
       path: '/api/holiday/next',
       summary: '下一个法定假期及倒计时天数',
       params: [{ name: 'date', desc: '从哪天开始算，默认今天（北京时间）', example: '2026-09-24' }],
+      fields: [
+        { name: 'today', type: 'string', desc: '计算基准日期，YYYY-MM-DD（默认北京时间今天）' },
+        { name: 'current', type: 'object|null', desc: '基准日期正处于的假期；不在假期中时为 null' },
+        { name: 'current.name', type: 'string', desc: '假期名称，如 国庆节' },
+        { name: 'current.start', type: 'string', desc: '放假第一天，YYYY-MM-DD' },
+        { name: 'current.end', type: 'string', desc: '放假最后一天，YYYY-MM-DD' },
+        { name: 'current.days', type: 'number', desc: '连续放假天数（含假期中的周末）' },
+        { name: 'current.workdays', type: 'array', desc: '该节日对应的调休上班日（YYYY-MM-DD 字符串数组），没有调休时为空数组' },
+        { name: 'current.dayIndex', type: 'number', desc: '基准日期是本次假期的第几天（从 1 开始）' },
+        { name: 'next', type: 'object|null', desc: '基准日期之后最近开始的一个假期（开始日期晚于基准日期）。只在今年和明年的放假安排中查找，明年安排尚未公布且今年已没有假期时为 null' },
+        { name: 'next.name', type: 'string', desc: '假期名称，如 国庆节' },
+        { name: 'next.start', type: 'string', desc: '放假第一天，YYYY-MM-DD' },
+        { name: 'next.end', type: 'string', desc: '放假最后一天，YYYY-MM-DD' },
+        { name: 'next.days', type: 'number', desc: '连续放假天数（含假期中的周末）' },
+        { name: 'next.workdays', type: 'array', desc: '该节日对应的调休上班日（YYYY-MM-DD 字符串数组），没有调休时为空数组' },
+        { name: 'next.daysUntil', type: 'number', desc: '距离假期开始还有几天（放假第一天减基准日期）' },
+      ],
       async handler({ query }) {
         const date = param(query, 'date', { default: todayBeijing(), pattern: DATE_RE });
         if (parseDate(date) == null) throw new HttpError(400, 'date 不是有效日期');
@@ -176,6 +203,21 @@ export default {
       path: '/api/holiday/year',
       summary: '某年全部放假安排与调休日',
       params: [{ name: 'year', desc: '年份，默认今年', example: '2026' }],
+      fields: [
+        { name: 'year', type: 'number', desc: '年份' },
+        { name: 'papers', type: 'array', desc: '国务院办公厅放假通知原文链接（字符串数组），来自 holiday-cn；使用内置数据或尚未公布时为空数组' },
+        { name: 'days', type: 'array', desc: '当年所有放假日与调休上班日，按日期升序；不含普通周末。尚未公布时为空数组' },
+        { name: 'days[].name', type: 'string', desc: '所属节假日名称，如 春节' },
+        { name: 'days[].date', type: 'string', desc: '日期，YYYY-MM-DD' },
+        { name: 'days[].isOffDay', type: 'boolean', desc: 'true 为放假，false 为调休上班' },
+        { name: 'source', type: 'string', desc: '数据来源：holiday-cn（从 NateScarlet/holiday-cn 获取）、builtin（上游不可用，使用内置的国务院安排）、none（该年安排尚未公布，days 与 periods 为空）' },
+        { name: 'periods', type: 'array', desc: '按连续日期合并后的假期段，按时间先后排列' },
+        { name: 'periods[].name', type: 'string', desc: '假期名称，如 国庆节' },
+        { name: 'periods[].start', type: 'string', desc: '放假第一天，YYYY-MM-DD' },
+        { name: 'periods[].end', type: 'string', desc: '放假最后一天，YYYY-MM-DD' },
+        { name: 'periods[].days', type: 'number', desc: '连续放假天数（含假期中的周末）' },
+        { name: 'periods[].workdays', type: 'array', desc: '该节日对应的调休上班日（YYYY-MM-DD 字符串数组），没有调休时为空数组' },
+      ],
       async handler({ query }) {
         const year = checkYear(param(query, 'year', { default: Number(todayBeijing().slice(0, 4)), int: true, min: 2007, max: 2100 }));
         const data = await loadHolidayYear(year);

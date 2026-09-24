@@ -169,6 +169,14 @@ export default {
         { name: 'from', default: 'auto', desc: '源语言，auto 为自动检测', example: 'auto' },
         { name: 'provider', required: false, desc: '指定翻译服务 deepl / baidu / youdao（默认取第一个已配置的）', example: 'deepl' },
       ],
+      fields: [
+        { name: 'provider', type: 'string', desc: `实际使用的翻译服务：${Object.entries(PROVIDERS).map(([k, p]) => `${k}（${p.title}）`).join('、')}。请求没有指定 provider 时，按 ${Object.keys(PROVIDERS).join(' → ')} 的顺序取第一个已配置密钥的服务` },
+        { name: 'from', type: 'string', desc: '请求的源语言，与请求参数 from 相同：auto（自动检测）或语言代码（取值同 to）' },
+        { name: 'to', type: 'string', desc: `目标语言代码，与请求参数 to 相同，取值：${Object.entries(LANGS).map(([k, v]) => `${k}（${v.name}）`).join('、')}` },
+        { name: 'detected', type: 'string|null', desc: '翻译服务识别出的源语言，已转换为本接口的语言代码（取值同 to）；指定了 from 时一般与 from 相同。DeepL 不区分简繁，中文一律返回 zh；识别结果不在支持列表内时原样返回服务商自己的代码（如 DeepL 的 NL、百度的 wyw）；服务商没有返回时为 null' },
+        { name: 'text', type: 'string', desc: '原文，即请求参数 text' },
+        { name: 'result', type: 'string', desc: '译文。百度、有道按段落返回多段结果时（如原文含换行）用换行符 \\n 连接' },
+      ],
       async handler({ query }) {
         const text = param(query, 'text', { required: true, max: MAX_TEXT });
         const to = param(query, 'to', { default: 'zh', oneOf: Object.keys(LANGS) });

@@ -73,6 +73,17 @@ export default {
       path: '/api/news/60s',
       summary: '获取每日 60 秒新闻简报',
       params: [{ name: 'date', desc: '日期 YYYY-MM-DD，留空取最新一期', example: '2026-09-24' }],
+      fields: [
+        { name: 'date', type: 'string|null', desc: '简报日期，YYYY-MM-DD。备用源 zhihu.com 按文章发布时间换算为北京时间日期；取不到时为 null' },
+        { name: 'weekday', type: 'string|null', desc: '星期几，如 星期四。仅主源 60s.viki.moe 提供，备用源 zhihu.com 为 null' },
+        { name: 'lunarDate', type: 'string|null', desc: '农历日期，如 八月十四（不含年份）。仅主源 60s.viki.moe 提供，备用源 zhihu.com 为 null' },
+        { name: 'news', type: 'array', desc: '新闻条目（字符串数组，通常 15 条），已去掉序号、HTML 标签和末尾分号' },
+        { name: 'tip', type: 'string|null', desc: '微语（每日一句）；上游没有时为 null' },
+        { name: 'image', type: 'string|null', desc: '图片链接：主源为整期简报的图片版；备用源为知乎文章题图。没有时为 null' },
+        { name: 'cover', type: 'string|null', desc: '封面图链接：主源为封面图；备用源与 image 相同。没有时为 null' },
+        { name: 'link', type: 'string|null', desc: '原文链接：主源为公众号文章，备用源为知乎专栏文章。没有时为 null' },
+        { name: 'source', type: 'string', desc: '本次数据实际来自哪个源：60s.viki.moe（主源）或 zhihu.com（未指定 date 且主源失败时的备用源）' },
+      ],
       async handler({ query }) {
         const date = param(query, 'date', { pattern: /^\d{4}-\d{2}-\d{2}$/ });
         return loadDaily60s(date);

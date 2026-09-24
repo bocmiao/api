@@ -85,6 +85,11 @@ export default {
       params: [
         { name: 'url', in: 'body', required: true, desc: '目标网址，仅支持 http / https，最多 2048 个字符', example: 'https://github.com/nodejs/node' },
       ],
+      fields: [
+        { name: 'code', type: 'string', desc: '短码。新建时随机生成 6 位（0-9、A-Z、a-z）；该网址以前生成过短链时直接返回已有短码（同一网址始终对应最早生成的那个）' },
+        { name: 'short', type: 'string', desc: '完整短链接，格式为 {站点地址}/s/{code}。站点地址取服务端配置的 PUBLIC_URL，未配置时按请求头 X-Forwarded-Proto / X-Forwarded-Host / Host 推断' },
+        { name: 'url', type: 'string', desc: '规范化后的目标网址（按 URL 标准处理：域名转小写、中文域名转 punycode、空格等字符做百分号编码、只有域名时补 /，如 https://Example.com → https://example.com/）' },
+      ],
       async handler({ body, user, req }) {
         const { code, url } = createShortLink(body?.url, user?.id ?? null);
         return { data: { code, short: `${publicOrigin(req)}/s/${code}`, url } };
@@ -95,6 +100,13 @@ export default {
       path: '/api/shorturl/stats',
       summary: '查询短链接的目标网址与访问次数',
       params: [{ name: 'code', required: true, desc: '短码', example: 'aB3dE9' }],
+      fields: [
+        { name: 'code', type: 'string', desc: '短码' },
+        { name: 'short', type: 'string', desc: '完整短链接，格式为 {站点地址}/s/{code}，站点地址的取法同生成短链接口' },
+        { name: 'url', type: 'string', desc: '目标网址（创建时规范化后的形式）' },
+        { name: 'hits', type: 'number', desc: '累计跳转次数：每次通过 /s/{code} 成功跳转加 1，不去重（重复访问、爬虫、聊天软件的链接预览都会计入）；调用本接口不计入' },
+        { name: 'createdAt', type: 'string', desc: '创建时间，ISO 8601 格式的 UTC 时间，精确到秒，如 2026-09-24T08:00:00Z' },
+      ],
       async handler({ query, req }) {
         const code = param(query, 'code', { required: true, pattern: CODE_RE });
         const row = sql('SELECT code, url, hits, created_at FROM short_links WHERE code = ?').get(code);
@@ -115,6 +127,10 @@ export default {
       path: '/s/:code',
       summary: '短链接跳转（302 重定向到目标网址）',
       raw: true,
+      returns: '短码存在时返回 HTTP 302 重定向：Location 头为目标网址，响应体为纯文本 Redirecting to {目标网址}（Content-Type: text/plain; charset=utf-8），'
+        + '带 Cache-Control: no-store（浏览器不缓存，每次访问都经过本站），每次跳转访问次数加 1。'
+        + '短码不存在或格式不合法（不是 1~16 位字母数字）时返回 HTTP 404 的 HTML 页面（Content-Type: text/html; charset=utf-8），'
+        + '提示“短链接不存在或已失效”并附返回首页的链接。公开访问，不限流，也不记入调用日志。',
       public: true,
       params: [{ name: 'code', in: 'path', required: true, desc: '短码', example: 'aB3dE9' }],
       async handler({ params }) {

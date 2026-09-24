@@ -44,6 +44,18 @@ export default {
       path: '/api/english/daily',
       summary: '获取某天的每日一句英语',
       params: [{ name: 'date', desc: '日期 YYYY-MM-DD，留空为今天', example: '2026-09-01' }],
+      fields: [
+        { name: 'date', type: 'string|null', desc: '这句话对应的日期（YYYY-MM-DD，北京时间）；上游缺失时为 null' },
+        { name: 'content', type: 'string', desc: '英文原句（已去掉首尾空白）' },
+        { name: 'translation', type: 'string|null', desc: '中文翻译；上游未提供时为 null' },
+        { name: 'editorNote', type: 'string|null', desc: '"小编的话"点评（已去掉 "小编的话：" 前缀）；当天没有点评时为 null（多数日期为 null）' },
+        { name: 'audio', type: 'string|null', desc: '英文原句朗读音频（MP3）链接，已转为 https；没有时为 null' },
+        { name: 'picture', type: 'string|null', desc: '配图大图链接（上游 picture2，没有时退回 picture 小图），已转为 https；没有配图时为 null' },
+        { name: 'pictureSmall', type: 'string|null', desc: '配图小图链接（上游 picture），已转为 https；没有时为 null' },
+        { name: 'shareImage', type: 'string|null', desc: '分享用海报图链接（上游 fenxiang_img），已转为 https；没有时为 null' },
+        { name: 'sid', type: 'string|null', desc: '金山词霸每日一句编号；缺失时为 null' },
+        { name: 'url', type: 'string|null', desc: '金山词霸网页版该句详情页链接；没有 sid 时为 null' },
+      ],
       async handler({ query }) {
         const date = param(query, 'date', { pattern: /^\d{4}-\d{2}-\d{2}$/ }) ?? todayCN();
         if (Number.isNaN(Date.parse(date)) || date < '2010-01-01' || date > todayCN()) {

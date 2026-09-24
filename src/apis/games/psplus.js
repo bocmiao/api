@@ -100,6 +100,17 @@ export default {
       path: '/api/psplus/monthly',
       summary: '获取最新一期 PS Plus 每月会免游戏，history 为 RSS 中更早的几期',
       params: [],
+      fields: [
+        { name: 'month', type: 'string|null', desc: '会免所属月份，YYYY-MM（如 2026-10）。由标题里的 "for <英文月份>" 结合发布时间推算年份：月份比发布月早半年以上时算作下一年（如 12 月底发布的 1 月会免记为次年 01）。标题里没有月份或缺少发布时间时为 null' },
+        { name: 'games', type: 'array', desc: '会免游戏名（字符串数组，英文原名），从标题冒号后的 "A, B, and C" 列表拆出；标题里没有冒号时为空数组' },
+        { name: 'title', type: 'string', desc: '博客文章标题（英文），如 PlayStation Plus Monthly Games for October: Stardew Valley, Rock and Roll Racing, and Psychonauts 2' },
+        { name: 'url', type: 'string', desc: 'PlayStation Blog 文章链接' },
+        { name: 'image', type: 'string|null', desc: '文章配图链接，依次取 RSS 的 media:content / media:thumbnail、图片类型的 enclosure、正文第一张图；都没有时为 null' },
+        { name: 'summary', type: 'string', desc: '文章摘要（英文纯文本，已去掉 HTML 标签，最多 300 个字符）；RSS 没有摘要时为空字符串' },
+        { name: 'publishedAt', type: 'string|null', desc: '文章发布时间，ISO 8601，UTC（如 2026-09-24T16:00:00.000Z）；RSS 缺少或无法解析发布时间时为 null' },
+        { name: 'history', type: 'array', desc: 'RSS 里更早几期的会免公告，按 RSS 中的顺序（通常新的在前），RSS 只有一期时为空数组。每项字段与顶层相同，但不含 history' },
+        { name: 'history[].*', type: 'string|array|null', desc: '同顶层同名字段：month / games / title / url / image / summary / publishedAt' },
+      ],
       async handler() {
         const res = await cache.wrap('psplus:monthly', TTL_MS, loadFeed);
         const [latest, ...history] = res.data;

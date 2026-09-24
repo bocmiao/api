@@ -21,6 +21,7 @@ const ICONS = {
   trend: '<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',
   sparkle: '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
   wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
   sunSmall: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -324,7 +325,8 @@ function fieldsTable(fields) {
     const depth = path ? path.split('.').length - 1 : 0;
     const leaf = path ? path.split('.').pop() : '[]';
     const types = f.type.split('|').map((t) => `<span class="type type-${t}">${t}</span>`).join('');
-    return `<tr><td class="fname" title="${esc(f.name)}"><span style="padding-left:${depth * 18}px">${depth ? '<i class="tree">└</i>' : ''}${esc(leaf)}</span></td>
+    const label = leaf === '*' ? '<span class="faint">任意键名</span>' : esc(leaf);
+    return `<tr><td class="fname" title="${esc(f.name)}"><span style="padding-left:${depth * 18}px">${depth ? '<i class="tree">└</i>' : ''}${label}</span></td>
       <td class="nowrap">${types}</td><td>${esc(f.desc)}</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table class="table fields-table"><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table></div>`;

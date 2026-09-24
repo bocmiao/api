@@ -70,7 +70,7 @@ export function parseZhihu(raw) {
       const qid = link.match(/questions?\/(\d+)/)?.[1] ?? (t.type === 'question' || !t.type ? t.id : null);
       return {
         title,
-        url: qid ? `https://www.zhihu.com/question/${qid}` : link || null,
+        url: qid ? `https://www.zhihu.com/question/${qid}` : zhihuWebUrl(link),
         hot: v.detail_text ?? t.metrics_area?.text,
         desc: t.excerpt ?? t.excerpt_area?.text ?? null,
         extra: {
@@ -313,14 +313,34 @@ export function parseFeed(xml) {
       const body = unwrap(tag(b, ['description', 'summary', 'content:encoded', 'content']));
       const date = unwrap(tag(b, ['pubDate', 'published', 'updated', 'dc:date']))?.trim();
       const author = unwrap(tag(b, ['dc:creator', 'author']));
-      const time = date && !Number.isNaN(Date.parse(date)) ? new Date(date).toISOString() : null;
+      const time = parseFeedDate(date);
       return {
         title: title ? cleanTitle(title) : null,
-        url: link || null,
+        url: link && /^https?:\/\//i.test(link) ? link : null,
         hot: null,
         desc: body ? stripTags(body) : null,
         extra: { author: author ? stripTags(author) : null, time },
       };
     }),
   );
+}
+
+// 国内 RSS 的时间若没有时区信息，按北京时间理解，避免随服务器时区变化
+function parseFeedDate(date) {
+  if (!date) return null;
+  const hasZone = /(Z|[+-]\d{2}:?\d{2}|\b(GMT|UTC|UT|[ECMP][SD]T)\b)\s*$/i.test(date);
+  const t = Date.parse(hasZone ? date : `${date} +0800`);
+  const fallback = Date.parse(date);
+  const v = Number.isNaN(t) ? fallback : t;
+  return Number.isNaN(v) ? null : new Date(v).toISOString();
+}
+
+// 知乎 api.zhihu.com 的资源地址转成可在浏览器打开的网页地址
+function zhihuWebUrl(link) {
+  if (!link) return null;
+  const article = link.match(/api\.zhihu\.com\/articles\/(\d+)/);
+  if (article) return `https://zhuanlan.zhihu.com/p/${article[1]}`;
+  const answer = link.match(/api\.zhihu\.com\/answers\/(\d+)/);
+  if (answer) return `https://www.zhihu.com/answer/${answer[1]}`;
+  return link.replace('//api.zhihu.com/', '//www.zhihu.com/');
 }

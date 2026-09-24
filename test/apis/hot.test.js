@@ -5,6 +5,7 @@ import * as P from '../../src/apis/hot/parsers.js';
 import { signWbi, getMixinKey, keysFromNav } from '../../src/apis/hot/wbi.js';
 import hotModules, { loadHot, SOURCE_IDS } from '../../src/apis/hot/index.js';
 import { cache } from '../../src/lib/cache.js';
+import { assertFieldsDocumented, matcher } from '../helpers/fields.js';
 
 const fx = (name) => readFileSync(new URL(`../fixtures/hot/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fx(name));
@@ -322,4 +323,111 @@ test('/api/hot/sources 与 /api/hot/news', async () => {
   const res = await call('/api/hot/news', 'source=sspai');
   assert.equal(res.data.source, 'sspai');
   assert.equal(res.data.title, '少数派');
+});
+
+// ---------- 返回字段说明 ----------
+const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
+// 除 assertFieldsDocumented 外再核对两点：每个值的实际类型与说明一致；
+// 说明里的每个字段都在样例中出现过（即样例覆盖了可选字段，说明里没有写错的路径）
+function checkFields(route, samples) {
+  const seen = new Set();
+  for (const data of samples) {
+    assertFieldsDocumented(route, data);
+    const visit = (value, path) => {
+      if (Array.isArray(value)) return value.forEach((v) => visit(v, `${path}[]`));
+      if (!value || typeof value !== 'object') return;
+      for (const [k, v] of Object.entries(value)) {
+        const p = path ? `${path}.${k}` : k;
+        seen.add(p);
+        const f = route.fields.find((x) => matcher(x.name).test(p));
+        assert.ok(f.type.split('|').includes(typeOf(v)), `${route.path} ${p} 实际为 ${typeOf(v)}，说明写的是 ${f.type}`);
+        visit(v, p);
+      }
+    };
+    visit(data, '');
+  }
+  const unseen = route.fields.filter((f) => ![...seen].some((p) => matcher(f.name).test(p))).map((f) => f.name);
+  assert.deepEqual(unseen, [], `${route.path} 的样例没有覆盖这些字段：${unseen.join(', ')}`);
+}
+
+const BILI_NAV = JSON.stringify({
+  code: -101,
+  data: {
+    wbi_img: {
+      img_url: 'https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png',
+      sub_url: 'https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png',
+    },
+  },
+});
+
+// 所有上游的样例响应
+const UPSTREAM = [
+  ['weibo.com/ajax/side/hotSearch', fx('weibo.json')],
+  ['api.zhihu.com', fx('zhihu.json')],
+  ['/x/web-interface/nav', BILI_NAV],
+  ['/x/web-interface/popular', fx('bilibili-popular.json')],
+  ['/x/web-interface/ranking/v2', fx('bilibili-rank.json')],
+  ['login_guiding_strategy', '{}'],
+  ['douyin.com/aweme', fx('douyin.json')],
+  ['top.baidu.com', fx('baidu.html')],
+  ['toutiao.com/hot-event', fx('toutiao.json')],
+  ['github.com/trending', fx('github.html')],
+  ['v2ex.com/api', fx('v2ex.json')],
+  ['ithome.com/rss', fx('ithome.xml')],
+  ['36kr.com/feed', fx('36kr.xml')],
+  ['sspai.com/feed', fx('sspai.xml')],
+  // Firebase：41000009 获取失败（404），41000003 已删除
+  ['topstories.json', JSON.stringify([41000001, 41000009, 41000002, 41000003])],
+  ...json('hn-items.json')
+    .filter(Boolean)
+    .map((it) => [`/item/${it.id}.json`, JSON.stringify(it)]),
+];
+
+// 每个路由的样例请求：[查询参数, 优先匹配的上游 mock]
+const FIELD_CASES = {
+  '/api/hot/weibo': [['']],
+  '/api/hot/zhihu': [[''], ['', [['api.zhihu.com', fx('zhihu-web.json')]]]],
+  '/api/hot/bilibili': [['type=popular'], ['type=rank']],
+  '/api/hot/douyin': [['']],
+  '/api/hot/baidu': [['']],
+  '/api/hot/toutiao': [['']],
+  '/api/hot/github': [[''], ['since=weekly&language=TypeScript']],
+  '/api/hot/v2ex': [['']],
+  '/api/hot/news': [['source=ithome'], ['source=36kr'], ['source=sspai']],
+  '/api/hot/hackernews': [
+    [''],
+    ['', [['firebaseio.com', new TypeError('fetch failed')], ['hn.algolia.com', fx('hn-algolia.json')]]],
+  ],
+  '/api/hot/all': [
+    [`sources=${SOURCE_IDS.join(',')}&limit=50`],
+    ['sources=weibo,baidu', [['top.baidu.com', new TypeError('fetch failed')]]],
+  ],
+  '/api/hot/sources': [['']],
+};
+
+test('返回字段校验覆盖了全部热榜路由', () => {
+  assert.deepEqual(Object.keys(FIELD_CASES).sort(), [...routes.keys()].sort());
+});
+
+for (const [path, cases] of Object.entries(FIELD_CASES)) {
+  test(`${path} 返回字段都有说明且类型一致`, async () => {
+    const samples = [];
+    for (const [qs, overrides = []] of cases) {
+      cache.store.clear();
+      mockFetch([...overrides, ...UPSTREAM]);
+      samples.push((await call(path, qs)).data);
+    }
+    checkFields(routes.get(path), samples);
+  });
+}
+
+test('RSS：非网址链接置空，无时区的时间按北京时间解析', () => {
+  const xml = `<rss><channel><item><title>A</title><guid>tag:example.com,2026:1</guid><pubDate>2026-09-24 08:00:00</pubDate></item>
+    <item><title>B</title><link>https://example.com/b</link><pubDate>Thu, 24 Sep 2026 08:00:00 +0000</pubDate></item></channel></rss>`;
+  const items = P.parseFeed(xml);
+  assert.equal(items[0].url, null);
+  assert.equal(items[0].extra?.time, '2026-09-24T00:00:00.000Z');
+  assert.equal(items[1].url, 'https://example.com/b');
+  assert.equal(items[1].extra?.time, '2026-09-24T08:00:00.000Z');
 });

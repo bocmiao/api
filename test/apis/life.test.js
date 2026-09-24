@@ -13,6 +13,7 @@ import { parse360, carrierBySegment } from '../../src/apis/life/phone.js';
 import { parseBaiduHistory } from '../../src/apis/life/history.js';
 import { parseViki60s, parseZhihu60s } from '../../src/apis/life/news60s.js';
 import { parseOilPage, normalizeProvince } from '../../src/apis/life/oil.js';
+import { assertFieldsDocumented, collectPaths, matcher } from '../helpers/fields.js';
 
 const fx = (name) => readFileSync(new URL(`../fixtures/life/${name}`, import.meta.url), 'utf8');
 const json = (name) => JSON.parse(fx(name));
@@ -392,5 +393,119 @@ describe('油价', () => {
     assert.equal(normalizeProvince('北京市'), '北京');
     assert.equal(normalizeProvince('火星'), null);
     await assert.rejects(call('/api/oil', 'province=火星'), { status: 400 });
+  });
+});
+
+describe('返回字段说明', () => {
+  // 样例数据里的字段都要有说明；反过来，说明里的每个字段也至少在一份样例里出现，确保样例覆盖了可选字段
+  function assertFieldsCovered(path, samples) {
+    const r = route(path);
+    for (const data of samples) assertFieldsDocumented(r, data);
+    const seen = new Set(samples.flatMap((d) => [...collectPaths(d)]));
+    const unseen = r.fields.map((f) => f.name).filter((name) => ![...seen].some((p) => matcher(name).test(p)));
+    assert.deepEqual(unseen, [], `${path} 的样例没有覆盖这些字段：${unseen.join(', ')}`);
+  }
+
+  test('/api/weather：Open-Meteo 与和风天气，按城市与按经纬度', async () => {
+    const samples = [];
+    delete process.env.QWEATHER_KEY;
+    mockFetch({ 'geocoding-api.open-meteo.com': json('openmeteo-geo.json'), 'api.open-meteo.com/v1/forecast': json('openmeteo-forecast.json') });
+    const om = (await call('/api/weather', 'city=字段说明城市OM')).data;
+    assert.equal(om.provider, 'open-meteo');
+    samples.push(om, (await call('/api/weather', 'lat=31.23&lon=121.47')).data);
+
+    process.env.QWEATHER_KEY = 'k-fields';
+    try {
+      mockFetch({ '/geo/v2/city/lookup': json('qweather-geo.json'), '/v7/weather/now': json('qweather-now.json'), '/v7/weather/7d': json('qweather-7d.json') });
+      const qw = (await call('/api/weather', 'city=字段说明城市QW')).data;
+      assert.equal(qw.provider, 'qweather');
+      assert.equal(qw.location.id, '101010100');
+      const qwCoord = (await call('/api/weather', 'lat=22.54&lon=114.06')).data;
+      assert.equal(qwCoord.provider, 'qweather');
+      assert.equal(qwCoord.location.timezone, null);
+      samples.push(qw, qwCoord);
+    } finally {
+      delete process.env.QWEATHER_KEY;
+    }
+    assertFieldsCovered('/api/weather', samples);
+  });
+
+  test('/api/holiday、/api/holiday/next、/api/holiday/year', async () => {
+    mockFetch({ '2026.json': json('holiday-cn-2026.json'), '2027.json': 404 });
+    const days = await Promise.all(['2026-10-01', '2026-10-10', '2026-09-26', '2026-09-24'].map((d) => call('/api/holiday', `date=${d}`)));
+    assert.deepEqual(days.map((r) => r.data.type), ['holiday', 'workday', 'holiday', 'normal']);
+    assertFieldsCovered('/api/holiday', days.map((r) => r.data));
+
+    const next = (await call('/api/holiday/next', 'date=2026-02-16')).data;
+    assert.equal(next.current.name, '春节');
+    assert.equal(next.next.name, '清明节');
+    assertFieldsCovered('/api/holiday/next', [next, (await call('/api/holiday/next', 'date=2026-10-08')).data]);
+
+    const year = (await call('/api/holiday/year', 'year=2026')).data;
+    assert.equal(year.source, 'holiday-cn');
+    assert.ok(year.papers.length && year.periods.length);
+    assertFieldsCovered('/api/holiday/year', [year]);
+  });
+
+  test('/api/lunar', async () => {
+    const samples = await Promise.all(['2026-09-23', '2026-09-25', '2023-03-22'].map((d) => call('/api/lunar', `date=${d}`)));
+    assert.equal(samples[0].data.solarTerm.today, '秋分');
+    assertFieldsCovered('/api/lunar', samples.map((r) => r.data));
+  });
+
+  test('/api/oil', async () => {
+    mockFetch({ 'qiyoujiage.com/beijing': fx('qiyoujiage-beijing.html') });
+    const r = await call('/api/oil', 'province=北京市');
+    assert.equal(r.data.prices.p92, 7.39);
+    assertFieldsCovered('/api/oil', [r.data]);
+  });
+
+  test('/api/express、/api/express/companies', async () => {
+    process.env.KUAIDI100_KEY = 'K';
+    process.env.KUAIDI100_CUSTOMER = 'C';
+    try {
+      mockFetch({ 'autonumber/auto': json('kuaidi100-auto.json'), 'poll.kuaidi100.com': json('kuaidi100-query.json') });
+      const r = await call('/api/express', 'number=YT7530122849021');
+      assert.equal(r.data.com, 'yuantong');
+      assertFieldsCovered('/api/express', [r.data]);
+    } finally {
+      delete process.env.KUAIDI100_KEY;
+      delete process.env.KUAIDI100_CUSTOMER;
+    }
+    const companies = (await call('/api/express/companies')).data;
+    assert.equal(companies.find((c) => c.code === 'shunfeng').needPhone, true);
+    assertFieldsCovered('/api/express/companies', [companies]);
+  });
+
+  test('/api/ip', async () => {
+    mockFetch({ 'ip-api.com': json('ipapi-success.json') });
+    const r = await call('/api/ip', 'ip=113.88.1.1');
+    assert.equal(r.data.location, '中国 广东 深圳');
+    assertFieldsCovered('/api/ip', [r.data]);
+  });
+
+  test('/api/phone', async () => {
+    mockFetch({ 'number=138': json('phone-360.json'), 'number=130': json('phone-360-municipality.json') });
+    const a = (await call('/api/phone', 'number=13800138000')).data;
+    const b = (await call('/api/phone', 'number=13012345678')).data;
+    assert.equal(b.location, '北京');
+    assertFieldsCovered('/api/phone', [a, b]);
+  });
+
+  test('/api/history/today', async () => {
+    mockFetch({ 'eventsOnHistory/09.json': json('baidu-history-09.json') });
+    const r = await call('/api/history/today', 'date=09-24');
+    assert.equal(r.data.events.length, 3);
+    assertFieldsCovered('/api/history/today', [r.data]);
+  });
+
+  test('/api/news/60s：主源与知乎备用源', async () => {
+    mockFetch({ '60s.viki.moe': json('viki-60s.json') });
+    const viki = (await call('/api/news/60s', 'date=2026-09-24')).data;
+    assert.equal(viki.source, '60s.viki.moe');
+    mockFetch({ '60s.viki.moe': 404, 'zhihu.com': json('zhihu-60s.json') });
+    const zhihu = (await call('/api/news/60s')).data;
+    assert.equal(zhihu.source, 'zhihu.com');
+    assertFieldsCovered('/api/news/60s', [viki, zhihu]);
   });
 });

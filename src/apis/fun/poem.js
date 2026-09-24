@@ -90,6 +90,26 @@ export default {
       path: '/api/poem',
       summary: '随机古诗词名句，上游不可用时返回内置诗句',
       params: [],
+      fields: [
+        { name: 'content', type: 'string', desc: '诗词名句（一般是一两句，不是全文），如 "会当凌绝顶，一览众山小。"' },
+        { name: 'title', type: 'string|null', desc: '出处诗词的标题，如 "望岳"；上游未提供时为 null' },
+        { name: 'author', type: 'string|null', desc: '作者，如 "杜甫"；上游未提供时为 null' },
+        {
+          name: 'dynasty',
+          type: 'string|null',
+          desc:
+            '朝代：先秦、两汉、魏晋、唐、五代、宋、元、明、清 之一。上游不返回朝代，由本服务按内置的"作者→朝代"对照表补全，' +
+            '作者不在表中（含 "佚名"）时为 null；兜底诗句总是有值',
+        },
+        { name: 'category', type: 'string|null', desc: '今日诗词的分类路径，用 "-" 分隔层级，如 "古诗文-山水-泰山"；上游未提供或兜底诗句时为 null' },
+        {
+          name: 'fallback',
+          type: 'boolean',
+          desc:
+            '是否为内置兜底诗句。false：正常取自今日诗词；true：上游请求失败、超时（5 秒）或返回格式无法识别，' +
+            '改为从内置的约 30 句名句中随机取一句，此时 title、author、dynasty 都有值，category 为 null',
+        },
+      ],
       async handler() {
         return { data: await loadPoem(), updatedAt: new Date().toISOString() };
       },

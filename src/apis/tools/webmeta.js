@@ -158,7 +158,8 @@ function absolutize(href, base) {
   }
 }
 
-const clean = (s) => (s == null ? null : decodeEntities(String(s)).replace(/\s+/g, ' ').trim() || null);
+// 属性值已在 parseAttrs 中解码过一次，这里只规整空白；<title> 文本需要单独解码
+const clean = (s) => (s == null ? null : String(s).replace(/\s+/g, ' ').trim() || null);
 
 export function parseMeta(html, baseUrl) {
   const head = html.slice(0, 512 * 1024).replace(/<!--[\s\S]*?-->/g, '').replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, '');
@@ -184,15 +185,22 @@ export function parseMeta(html, baseUrl) {
   const canonical = links.find((l) => /(^|\s)canonical(\s|$)/i.test(l.rel ?? ''))?.href;
 
   return {
-    title: clean(meta['og:title']) ?? clean(titleTag) ?? clean(meta['twitter:title']),
+    title: clean(meta['og:title']) ?? clean(titleTag == null ? null : decodeEntities(titleTag)) ?? clean(meta['twitter:title']),
     description: clean(meta.description) ?? clean(meta['og:description']) ?? clean(meta['twitter:description']),
-    image: absolutize(meta['og:image'] ?? meta['og:image:url'] ?? meta['twitter:image'] ?? meta['twitter:image:src'], base),
+    image: absolutize(meta['og:image'] || meta['og:image:url'] || meta['twitter:image'] || meta['twitter:image:src'], base),
     favicon: absolutize(pick?.href, base) ?? absolutize('/favicon.ico', baseUrl),
     siteName: clean(meta['og:site_name']) ?? clean(meta['application-name']) ?? new URL(baseUrl).hostname,
     type: clean(meta['og:type']),
     keywords: clean(meta.keywords),
     canonical: absolutize(canonical ?? meta['og:url'], base),
   };
+}
+
+// 抓取并解析网页，返回值即接口的 data；opts 透传给 fetchPage（blocked 仅供测试替换）
+export async function loadWebMeta(url, opts) {
+  const page = await fetchPage(url, opts);
+  const html = decodeBody(page.body, page.contentType);
+  return { url: page.url, ...parseMeta(html, page.url) };
 }
 
 export default {
@@ -207,14 +215,21 @@ export default {
       path: '/api/webmeta',
       summary: '获取网页标题、描述、og:image、favicon 等信息',
       params: [{ name: 'url', required: true, desc: '网页地址（http / https）', example: 'https://github.com' }],
+      fields: [
+        { name: 'url', type: 'string', desc: '实际抓取的网页地址：跟随重定向（最多 3 次）后的最终地址，已去掉 # 及之后的部分' },
+        { name: 'title', type: 'string|null', desc: '网页标题：依次取 og:title、<title>、twitter:title 中第一个非空的，已解码 HTML 实体并把连续空白合并为一个空格；都没有时为 null' },
+        { name: 'description', type: 'string|null', desc: '网页描述：依次取 meta description、og:description、twitter:description 中第一个非空的；都没有时为 null' },
+        { name: 'image', type: 'string|null', desc: '分享图的绝对地址：依次取 og:image、og:image:url、twitter:image、twitter:image:src 中第一个非空的值，相对地址按 <base href> 或网页地址补全；没有这些标签、取到的值为空或不是 http/https 地址时为 null' },
+        { name: 'favicon', type: 'string', desc: '网站图标的绝对地址：优先取 <link rel="icon"> 或 rel="shortcut icon"，其次 apple-touch-icon；页面没有声明时为网站根目录的 /favicon.ico（不检查该文件是否存在）' },
+        { name: 'siteName', type: 'string', desc: '站点名称：依次取 og:site_name、application-name；都没有时为网页的域名（如 github.com）' },
+        { name: 'type', type: 'string|null', desc: 'Open Graph 类型（og:type 的原值，如 website、article）；没有声明时为 null' },
+        { name: 'keywords', type: 'string|null', desc: 'meta keywords 的原文（未拆分，分隔符由网页决定，通常是英文或中文逗号）；没有声明时为 null' },
+        { name: 'canonical', type: 'string|null', desc: '规范地址（绝对地址）：取 <link rel="canonical">，没有时取 og:url；都没有或不是 http/https 地址时为 null' },
+      ],
       async handler({ query }) {
         const raw = param(query, 'url', { required: true, max: 2048 });
         const normalized = checkUrl(raw).href;
-        return cache.wrap(`webmeta:${normalized}`, 30 * 60_000, async () => {
-          const page = await fetchPage(normalized);
-          const html = decodeBody(page.body, page.contentType);
-          return { url: page.url, ...parseMeta(html, page.url) };
-        });
+        return cache.wrap(`webmeta:${normalized}`, 30 * 60_000, () => loadWebMeta(normalized));
       },
     },
   ],

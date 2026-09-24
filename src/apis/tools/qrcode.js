@@ -409,6 +409,11 @@ export default {
       path: '/api/qrcode',
       summary: '生成二维码图片（直接返回 SVG 或 PNG）',
       raw: true,
+      returns: '直接返回图片，不是 JSON。format=svg（默认）时 Content-Type 为 image/svg+xml; charset=utf-8，响应体是 SVG 文本'
+        + '（width/height 为像素边长，viewBox 以模块为单位，可无损缩放）；format=png 时 Content-Type 为 image/png，响应体是 1 位黑白 PNG 二进制。'
+        + '图片为白底黑码的正方形，四周留 margin 个模块宽的空白；实际边长 =（模块数 + 2×margin）× floor(size ÷（模块数 + 2×margin)) 像素，'
+        + '通常略小于或等于 size；内容很长、模块数 + 2×margin 超过 size 时按每模块 1 像素输出，边长会大于 size。'
+        + '响应头带 Cache-Control: public, max-age=86400。缺少 text、参数不合法或内容过长时返回 HTTP 400 和 JSON 错误 { code, message, data: null }。',
       params: [
         { name: 'text', required: true, desc: `二维码内容，最多 ${MAX_TEXT} 个字符`, example: 'https://example.com' },
         { name: 'size', default: '300', desc: '图片边长（像素，64~1024，按模块取整）', example: '300' },

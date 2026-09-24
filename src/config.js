@@ -1,3 +1,6 @@
+// 未显式设置时区时默认北京时间：不带时区的日期字符串一律按北京时间理解
+process.env.TZ ||= 'Asia/Shanghai';
+
 const int = (name, def) => {
   const n = Number(process.env[name]);
   return Number.isFinite(n) && process.env[name] !== '' && process.env[name] != null ? n : def;

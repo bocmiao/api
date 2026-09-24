@@ -10,13 +10,16 @@ import qrModule, {
   numDataCodewords, penalty, toPNG, toSVG, crc32,
 } from '../../src/apis/tools/qrcode.js';
 import shortModule, { normalizeTarget, publicOrigin, createShortLink, randomCode } from '../../src/apis/tools/shorturl.js';
-import { isBlockedIP, parseIPv6, parseMeta, fetchPage, checkUrl, makeLookup, decodeBody } from '../../src/apis/tools/webmeta.js';
-import { normalizeDomain, parseRdap } from '../../src/apis/tools/whois.js';
-import {
+import webmetaModule, {
+  isBlockedIP, parseIPv6, parseMeta, fetchPage, checkUrl, makeLookup, decodeBody, loadWebMeta,
+} from '../../src/apis/tools/webmeta.js';
+import whoisModule, { normalizeDomain, parseRdap } from '../../src/apis/tools/whois.js';
+import translateModule, {
   baiduSign, youdaoInput, youdaoSign, deeplEndpoint, parseDeepl, parseBaidu, parseYoudao, pickProvider,
 } from '../../src/apis/tools/translate.js';
-import { parseTimestamp, hashText, base64Convert, urlConvert, generatePassword } from '../../src/apis/tools/devtools.js';
+import devModule, { parseTimestamp, hashText, base64Convert, urlConvert, generatePassword } from '../../src/apis/tools/devtools.js';
 import tools from '../../src/apis/tools/index.js';
+import { assertFieldsDocumented, collectPaths, matcher } from '../helpers/fields.js';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/tools/${name}`, import.meta.url));
 const q = (obj) => new URLSearchParams(obj);
@@ -426,9 +429,9 @@ describe('Whois (RDAP)', () => {
     assert.equal(d.registrar.name, 'MarkMonitor Inc.');
     assert.equal(d.registrar.ianaId, '292');
     assert.equal(d.registrar.abuseEmail, 'abusecomplaints@markmonitor.com');
-    assert.equal(d.created, '1997-09-15T04:00:00Z');
-    assert.equal(d.updated, '2019-09-09T15:39:04Z');
-    assert.equal(d.expires, '2028-09-14T04:00:00Z');
+    assert.equal(d.created, '1997-09-15T04:00:00.000Z');
+    assert.equal(d.updated, '2019-09-09T15:39:04.000Z');
+    assert.equal(d.expires, '2028-09-14T04:00:00.000Z');
     assert.deepEqual(d.nameservers, ['ns1.google.com', 'ns2.google.com', 'ns3.google.com', 'ns4.google.com']);
     assert.ok(d.status.includes('client transfer prohibited'));
     assert.equal(d.dnssec, false);
@@ -522,6 +525,15 @@ describe('开发小工具', () => {
     assert.throws(() => parseTimestamp('abc'), { status: 400 });
   });
 
+  test('时间戳：不存在的日期报 400，而不是顺延到下个月', () => {
+    for (const bad of ['2025-02-29', '2025-02-30 12:00', '2025-04-31', '2100/2/29', '2025-13-01', '2025-00-10', '2025-09-00']) {
+      assert.throws(() => parseTimestamp(bad), { status: 400 }, bad);
+    }
+    assert.equal(parseTimestamp('2024-02-29').beijing, '2024-02-29 00:00:00');
+    assert.equal(parseTimestamp('2000.2.29 08:00').beijing, '2000-02-29 08:00:00');
+    assert.equal(parseTimestamp('2025-12-31 23:59:59').beijing, '2025-12-31 23:59:59');
+  });
+
   test('哈希已知值', () => {
     assert.equal(hashText('hello', 'md5').hex, '5d41402abc4b2a76b9719d911017c592');
     assert.equal(hashText('hello', 'sha1').hex, 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d');
@@ -552,4 +564,213 @@ describe('开发小工具', () => {
       assert.match(generatePassword(8, false), /^[A-Za-z0-9]{8}$/);
     }
   });
+});
+
+// ---------------- 返回字段说明 ----------------
+
+describe('返回字段都有说明', () => {
+  const checked = new Set();
+
+  // 两个方向都校验：返回的每个字段都有说明（assertFieldsDocumented），
+  // 说明里的每个字段也都在样例中真实出现（防止字段名写错或写了已不存在的字段）。
+  // 基本类型数组的元素（如 status[]、data 本身是数组时的 []）没有下级路径，只检查数组本身存在。
+  function checkFields(r, ...samples) {
+    for (const s of samples) assertFieldsDocumented(r, s);
+    const paths = new Set();
+    for (const s of samples) collectPaths(s, '', paths);
+    const phantom = r.fields.map((f) => f.name).filter((name) => {
+      if (name === '[]') return !samples.every(Array.isArray);
+      const re = matcher(name.replace(/\[\]$/, ''));
+      return ![...paths].some((p) => re.test(p));
+    });
+    assert.deepEqual(phantom, [], `${r.path} 的 fields 写了样例中没有出现的字段：${phantom.join(', ')}`);
+    checked.add(`${r.method} ${r.path}`);
+  }
+
+  test('POST /api/shorturl、GET /api/shorturl/stats', async () => {
+    const create = route(shortModule, 'POST', '/api/shorturl');
+    const stats = route(shortModule, 'GET', '/api/shorturl/stats');
+    const req = { headers: { host: 'hub.test' } };
+    const a = await create.handler({ body: { url: 'https://Example.com' }, user: null, req });
+    assert.equal(a.data.url, 'https://example.com/');
+    assert.match(a.data.code, /^[0-9A-Za-z]{6}$/);
+    const again = await create.handler({ body: { url: 'https://example.com/' }, user: { id: 1 }, req });
+    assert.equal(again.data.code, a.data.code);
+    checkFields(create, a.data, again.data);
+
+    await route(shortModule, 'GET', '/s/:code').handler({ params: { code: a.data.code } });
+    const s = await stats.handler({ query: q({ code: a.data.code }), req });
+    assert.equal(s.data.hits, 1);
+    assert.match(s.data.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    assert.ok(Math.abs(Date.parse(s.data.createdAt) - Date.now()) < 60_000, 'createdAt 应为 UTC 时间');
+    checkFields(stats, s.data);
+  });
+
+  describe('GET /api/webmeta（本地测试服务器）', () => {
+    let server;
+    let base;
+    before(async () => {
+      server = createServer((req, res) => {
+        if (req.url === '/start') {
+          res.writeHead(302, { location: '/page#top' });
+          return res.end();
+        }
+        if (req.url === '/page') {
+          res.writeHead(200, { 'content-type': 'text/html' });
+          return res.end(fixture('page.html'));
+        }
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        return res.end('<p>没有 head 信息的页面</p>');
+      });
+      await new Promise((r) => server.listen(0, '127.0.0.1', r));
+      base = `http://127.0.0.1:${server.address().port}`;
+    });
+    after(() => server.closeAllConnections?.() ?? server.close());
+
+    test('完整页面与空页面', async () => {
+      const r = route(webmetaModule, 'GET', '/api/webmeta');
+      const allowLoopback = { blocked: () => false };
+      const full = await loadWebMeta(`${base}/start`, allowLoopback);
+      assert.equal(full.url, `${base}/page`);
+      assert.equal(full.title, '示例站点 & 首页');
+      assert.equal(full.favicon, 'http://cdn.example.com/favicon.ico');
+      const empty = await loadWebMeta(`${base}/empty`, allowLoopback);
+      assert.equal(empty.title, null);
+      assert.equal(empty.favicon, `${base}/favicon.ico`);
+      assert.equal(empty.siteName, '127.0.0.1');
+      checkFields(r, full, empty);
+    });
+  });
+
+  test('GET /api/whois（mock RDAP）', async (t) => {
+    const r = route(whoisModule, 'GET', '/api/whois');
+    const rdap = JSON.parse(fixture('rdap-example.json'));
+    rdap.entities[0].links = [{ rel: 'about', href: 'https://www.markmonitor.com/' }];
+    t.mock.method(globalThis, 'fetch', async (url) => {
+      assert.equal(String(url), 'https://rdap.org/domain/google.com');
+      return Response.json(rdap);
+    });
+    const res = await r.handler({ query: q({ domain: 'https://www.Google.com/' }) });
+    assert.equal(res.data.registrar.url, 'https://www.markmonitor.com/');
+    assert.equal(res.data.registrar.abusePhone, '+1.2086851750');
+    // 没有注册商、事件、DNS 服务器的最简响应
+    const bare = parseRdap({ objectClassName: 'domain', ldhName: 'XN--FSQU00A.XN--FIQS8S', unicodeName: '例子.中国' });
+    assert.equal(bare.registrar, null);
+    assert.deepEqual(bare.status, []);
+    assert.equal(bare.dnssec, null);
+    checkFields(r, res.data, bare);
+  });
+
+  test('GET /api/translate（三个翻译服务，mock 上游）', async (t) => {
+    const r = route(translateModule, 'GET', '/api/translate');
+    const responses = JSON.parse(fixture('translate-responses.json'));
+    const env = {
+      DEEPL_API_KEY: 'k:fx', BAIDU_TRANSLATE_APPID: 'a', BAIDU_TRANSLATE_KEY: 'b', YOUDAO_APP_KEY: 'c', YOUDAO_APP_SECRET: 'd',
+    };
+    const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, env);
+    t.mock.method(globalThis, 'fetch', async (url) => {
+      const host = new URL(url).hostname;
+      if (host === 'api-free.deepl.com') return Response.json(responses.deepl);
+      if (host === 'fanyi-api.baidu.com') return Response.json(responses.baidu);
+      if (host === 'openapi.youdao.com') return Response.json(responses.youdao);
+      throw new Error(`unexpected ${url}`);
+    });
+    try {
+      const samples = [];
+      for (const provider of ['deepl', 'baidu', 'youdao']) {
+        const res = await r.handler({ query: q({ text: 'Hello, world! (fields)', provider }) });
+        assert.deepEqual(res.data, { provider, from: 'auto', to: 'zh', detected: 'en', text: 'Hello, world! (fields)', result: '你好，世界！' });
+        samples.push(res.data);
+      }
+      // 不指定 provider 时按 deepl → baidu → youdao 取第一个已配置的
+      const auto = await r.handler({ query: q({ text: 'Hello (fields auto)', from: 'en', to: 'ja' }) });
+      assert.equal(auto.data.provider, 'deepl');
+      checkFields(r, ...samples, auto.data);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+
+  test('GET /api/tools/timestamp', async () => {
+    const r = route(devModule, 'GET', '/api/tools/timestamp');
+    const samples = [];
+    for (const value of ['', '1758700800', '1758700800123', '2025-09-24 16:00:00', '2025-09-24T08:00:00Z']) {
+      const { data } = await r.handler({ query: q({ value }) });
+      assert.match(data.iso, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      assert.match(data.beijing, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+      assert.match(data.weekday, /^星期[日一二三四五六]$/);
+      assert.ok(['now', 'seconds', 'milliseconds', 'date'].includes(data.detected));
+      samples.push(data);
+    }
+    assert.equal(samples[0].input, null);
+    checkFields(r, ...samples);
+  });
+
+  test('GET /api/tools/uuid', async () => {
+    const r = route(devModule, 'GET', '/api/tools/uuid');
+    const { data } = await r.handler({ query: q({ count: '3' }) });
+    assert.equal(data.length, 3);
+    for (const id of data) assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    checkFields(r, data);
+  });
+
+  test('GET /api/tools/hash', async () => {
+    const r = route(devModule, 'GET', '/api/tools/hash');
+    const lengths = { md5: [32, 24], sha1: [40, 28], sha256: [64, 44], sha512: [128, 88] };
+    const samples = [];
+    for (const [algo, [hexLen, b64Len]] of Object.entries(lengths)) {
+      const { data } = await r.handler({ query: q({ text: '你好 hello', algo }) });
+      assert.equal(data.algo, algo);
+      assert.match(data.hex, new RegExp(`^[0-9a-f]{${hexLen}}$`));
+      assert.equal(data.base64.length, b64Len);
+      assert.equal(Buffer.from(data.base64, 'base64').toString('hex'), data.hex);
+      samples.push(data);
+    }
+    assert.equal(samples[0].hex, createHash('md5').update(Buffer.from('你好 hello', 'utf8')).digest('hex'));
+    checkFields(r, ...samples);
+  });
+
+  test('GET /api/tools/base64、GET /api/tools/urlencode', async () => {
+    for (const path of ['/api/tools/base64', '/api/tools/urlencode']) {
+      const r = route(devModule, 'GET', path);
+      const enc = await r.handler({ query: q({ text: '你好 a+b', action: 'encode' }) });
+      const dec = await r.handler({ query: q({ text: enc.data.result, action: 'decode' }) });
+      assert.equal(dec.data.result, '你好 a+b');
+      checkFields(r, enc.data, dec.data);
+    }
+  });
+
+  test('GET /api/tools/password', async () => {
+    const r = route(devModule, 'GET', '/api/tools/password');
+    const { data } = await r.handler({ query: q({ length: '20', symbols: '1', count: '2' }) });
+    assert.equal(data.length, 2);
+    for (const p of data) assert.equal(p.length, 20);
+    checkFields(r, data);
+  });
+
+  test('tools 分类的每个非 raw 路由都做了上面的校验，raw 路由都有 returns', () => {
+    const routes = tools.flatMap((m) => m.routes);
+    const expected = routes.filter((r) => !r.raw).map((r) => `${r.method} ${r.path}`);
+    assert.deepEqual(expected.filter((k) => !checked.has(k)), []);
+    for (const r of routes.filter((x) => x.raw)) {
+      assert.ok(typeof r.returns === 'string' && r.returns.length > 20, `${r.path} 缺少 returns`);
+      assert.equal(r.fields, undefined, `${r.path} 是 raw 路由，用 returns 而不是 fields`);
+    }
+  });
+});
+
+test('whois 时间统一为 ISO UTC', async () => {
+  const { parseRdap } = await import('../../src/apis/tools/whois.js');
+  const d = parseRdap({ objectClassName: 'domain', ldhName: 'x.cn', events: [{ eventAction: 'registration', eventDate: '2020-01-02T08:00:00+08:00' }] });
+  assert.equal(d.created, '2020-01-02T00:00:00.000Z');
+});
+
+test('webmeta 属性值只解码一次，og:image 为空时回退到 twitter:image', async () => {
+  const { parseMeta } = await import('../../src/apis/tools/webmeta.js');
+  const html = '<title>A &amp; B</title><meta name="description" content="a &amp;lt; b"><meta property="og:image" content=""><meta name="twitter:image" content="/t.png">';
+  const m = parseMeta(html, 'https://example.com/');
+  assert.equal(m.title, 'A & B');
+  assert.equal(m.description, 'a &lt; b');
+  assert.equal(m.image, 'https://example.com/t.png');
 });

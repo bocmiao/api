@@ -59,6 +59,15 @@ export default {
       path: '/api/phone',
       summary: '查询手机号归属地与运营商',
       params: [{ name: 'number', required: true, desc: '11 位中国大陆手机号', example: '13800138000' }],
+      fields: [
+        { name: 'number', type: 'string', desc: '查询的 11 位手机号（已去掉 +86 前缀、空格和连字符）' },
+        { name: 'segment', type: 'string', desc: '号段，即手机号前 7 位；归属地由号段决定' },
+        { name: 'province', type: 'string|null', desc: '归属省份，如 广东；上游未返回时为 null' },
+        { name: 'city', type: 'string|null', desc: '归属城市，如 深圳；直辖市上游不返回城市，此时与 province 相同；都未返回时为 null' },
+        { name: 'carrier', type: 'string|null', desc: '运营商：中国移动、中国联通、中国电信、中国广电（上游返回其他名称时原样返回）；上游未返回时按号段推断，可能为"虚拟运营商"，仍无法判断时为 null。均为号段原属运营商，携号转网后可能不准' },
+        { name: 'virtual', type: 'boolean', desc: '是否为虚拟运营商号段（170、171、162、165、167 开头），仅按号段判断' },
+        { name: 'location', type: 'string', desc: '归属地文字：省份与城市以空格连接并去重，如 "广东 深圳"；直辖市为 "北京"；上游只返回运营商时为空字符串' },
+      ],
       async handler({ query }) {
         const number = param(query, 'number', { required: true }).replace(/[\s-]/g, '').replace(/^(\+?86)(?=1\d{10}$)/, '');
         if (!PHONE_RE.test(number)) throw new HttpError(400, 'number 须为 11 位中国大陆手机号');

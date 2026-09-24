@@ -38,7 +38,22 @@ export const COMPANIES = [
 // 快递100 state 状态码
 const STATE_TEXT = {
   0: '在途', 1: '揽收', 2: '疑难', 3: '签收', 4: '退签', 5: '派件', 6: '退回', 7: '转投', 8: '清关', 14: '拒签',
+  // resultv2=4 时的细分状态
+  101: '已下单', 102: '待揽收', 103: '已揽收',
+  1001: '到达派件城市', 1002: '干线运输中', 1003: '转递中',
+  201: '超时未签收', 202: '超时未更新', 203: '拒收', 204: '派件异常', 205: '柜或驿站超时未取',
+  206: '无法联系', 207: '超区', 208: '滞留', 209: '破损', 210: '销单',
+  301: '本人签收', 302: '派件异常后签收', 303: '代签', 304: '投柜或驿站签收',
+  401: '已销单', 501: '已投柜或驿站', 10: '待清关', 11: '清关中', 12: '已清关', 13: '清关异常',
 };
+
+// 未收录的细分码归到所属大类：1xxx 为在途，三位码的首位即大类
+function stateText(state) {
+  if (STATE_TEXT[state]) return STATE_TEXT[state];
+  if (state >= 1000 && state < 2000) return STATE_TEXT[0];
+  if (state >= 100 && state < 1000) return STATE_TEXT[Math.floor(state / 100)] ?? '未知';
+  return '未知';
+}
 
 // sign = MD5(param + key + customer) 转大写
 export function kuaidi100Sign(paramJson, key, customer) {
@@ -68,7 +83,7 @@ export function parseKuaidi100(raw) {
     com: raw.com,
     company: company?.name ?? raw.com,
     state: Number(raw.state),
-    stateText: STATE_TEXT[Number(raw.state)] ?? '未知',
+    stateText: stateText(Number(raw.state)),
     signed: raw.ischeck === '1',
     traces: raw.data.map((d) => ({
       time: d.ftime || d.time,
@@ -121,6 +136,19 @@ export default {
         { name: 'com', desc: '快递公司编码，留空自动识别，见 /api/express/companies', example: 'yuantong' },
         { name: 'phone', desc: '收/寄件人手机号（或后四位），顺丰必填', example: '1234' },
       ],
+      fields: [
+        { name: 'number', type: 'string', desc: '快递单号' },
+        { name: 'com', type: 'string', desc: '快递公司编码（快递100 编码，如 yuantong）；未传 com 时为自动识别出的第一个候选' },
+        { name: 'company', type: 'string', desc: '快递公司中文名，如 圆通速递；不在内置常用公司列表中时为编码本身' },
+        { name: 'state', type: 'number', desc: '快递100 物流状态码。基础状态：0 在途、1 揽收、2 疑难、3 签收、4 退签、5 派件、6 退回、7 转投、8 清关、14 拒签。细分状态码（请求时开启了 resultv2=4）：101 已下单、102 待揽收、103 已揽收、1001 到达派件城市、1002 干线运输中、1003 转递中、201~210 各类疑难（超时未签收、超时未更新、拒收、派件异常、柜或驿站超时未取、无法联系、超区、滞留、破损、销单）、301 本人签收、302 派件异常后签收、303 代签、304 投柜或驿站签收、401 已销单、501 已投柜或驿站、10~13 清关各阶段。是否签收以 signed 为准' },
+        { name: 'stateText', type: 'string', desc: '状态中文名，与 state 对应（含细分状态，如"本人签收""到达派件城市"）；未收录的细分码显示所属大类名，完全无法对应时为"未知"' },
+        { name: 'signed', type: 'boolean', desc: '是否已签收（快递100 ischeck 为 1）' },
+        { name: 'traces', type: 'array', desc: '物流轨迹，按时间倒序（最新一条在前）；刚下单尚无轨迹时为空数组' },
+        { name: 'traces[].time', type: 'string', desc: '轨迹时间，YYYY-MM-DD HH:mm:ss（北京时间）' },
+        { name: 'traces[].context', type: 'string', desc: '轨迹描述原文，如 "快件已到达【上海转运中心】"' },
+        { name: 'traces[].location', type: 'string|null', desc: '所在地：优先用上游 location（如 上海市浦东新区）；为空时用行政区域解析结果 areaName（逗号分隔，如 上海,上海市,浦东新区）；都没有时为 null' },
+        { name: 'traces[].status', type: 'string|null', desc: '该条轨迹的状态名称，如 揽收、在途、派件、签收；上游未返回时为 null' },
+      ],
       async handler({ query }) {
         const number = param(query, 'number', { required: true, pattern: /^[A-Za-z0-9-]{5,40}$/ });
         const com = param(query, 'com', { pattern: /^[a-z0-9]{2,30}$/ });
@@ -133,6 +161,11 @@ export default {
       path: '/api/express/companies',
       summary: '常用快递公司编码列表',
       params: [],
+      fields: [
+        { name: '[].code', type: 'string', desc: '快递公司编码，作为 /api/express 的 com 参数' },
+        { name: '[].name', type: 'string', desc: '快递公司中文名' },
+        { name: '[].needPhone', type: 'boolean', desc: '查询时是否必须提供 phone（收/寄件人手机号或后四位），目前仅顺丰为 true' },
+      ],
       async handler() {
         return { data: COMPANIES.map(({ code, name, needPhone }) => ({ code, name, needPhone: Boolean(needPhone) })) };
       },
