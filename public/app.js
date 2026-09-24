@@ -219,7 +219,7 @@ async function pageHome() {
     <section class="hero">
       <div>
         <h1>一个 Key<br>调用 <em>${routeCount}</em> 个常用接口</h1>
-        <p class="lead">游戏限免、全网热榜、天气节假日、汇率行情、壁纸诗词、开发工具……统一格式、自带缓存与容错，内容更新还能推送到微信、钉钉、飞书、Telegram。</p>
+        <p class="lead">游戏限免、全网热榜、天气节假日、汇率行情、趣味娱乐、开发工具、网络检测……统一格式、自带缓存与容错，内容更新还能推送到微信、钉钉、飞书、Telegram。</p>
         <div class="row">
           <a class="btn primary lg" href="#catalog" id="browse">浏览接口</a>
           ${state.user ? '<a class="btn lg" href="#/console/keys">获取 API Key</a>' : '<a class="btn lg" href="#/register">免费注册</a>'}

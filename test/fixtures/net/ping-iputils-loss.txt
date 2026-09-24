@@ -1,0 +1,9 @@
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from dns.google (8.8.8.8): icmp_seq=1 ttl=117 time=12.3 ms
+64 bytes from dns.google (8.8.8.8): icmp_seq=1 ttl=117 time=14.9 ms (DUP!)
+From 203.0.113.1 icmp_seq=2 Destination Host Unreachable
+64 bytes from dns.google (8.8.8.8): icmp_seq=4 ttl=117 time=11.9 ms
+
+--- 8.8.8.8 ping statistics ---
+4 packets transmitted, 2 received, +1 duplicates, +1 errors, 50% packet loss, time 3010ms
+rtt min/avg/max/mdev = 11.900/12.100/12.300/0.200 ms

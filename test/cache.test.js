@@ -23,3 +23,11 @@ test('无旧数据时上游失败抛出错误', async () => {
   const c = new TTLCache();
   await assert.rejects(c.wrap('k', 1000, async () => { throw new Error('down'); }), /down/);
 });
+
+test('超过条数上限时淘汰最早写入的', () => {
+  const c = new TTLCache({ maxEntries: 3 });
+  for (const k of ['a', 'b', 'c', 'd']) c.set(k, k, 60_000);
+  assert.equal(c.get('a'), undefined);
+  assert.equal(c.get('d').value, 'd');
+  assert.equal(c.store.size, 3);
+});

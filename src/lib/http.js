@@ -65,10 +65,13 @@ export function param(query, name, { default: def, required = false, pattern, on
   return raw;
 }
 
+// 超出 Unicode 范围的数字实体（如 &#99999999999;）保留原文，不抛异常
+const codePoint = (n, raw) => (Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw);
+
 export function decodeEntities(s = '') {
   return s
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (m, n) => codePoint(Number(n), m))
+    .replace(/&#x([0-9a-f]+);/gi, (m, n) => codePoint(parseInt(n, 16), m))
     .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
 }

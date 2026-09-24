@@ -1,8 +1,8 @@
 # Miao API
 
-聚合 API 平台：一个 Key 调用 46 个模块、67 个常用接口，包括游戏限免、全网热榜、天气节假日、金融行情、壁纸诗词和开发工具。
+聚合 API 平台：一个 Key 调用 69 个模块、94 个常用接口，包括游戏限免、全网热榜、天气节假日、金融行情、壁纸诗词、娱乐趣味、开发工具和网络检测。
 
-- **统一格式**：所有接口返回 `{ code, message, data }`，支持跨域调用
+- **统一格式**：所有接口返回 `{ code, message, data }`，支持跨域调用；每个返回字段都有类型和中文说明
 - **缓存与容错**：按接口特性缓存；上游故障时返回最近一次成功的数据
 - **账号体系**：注册登录，生成多个 API Key，查看用量统计
 - **分级额度**：未登录按 IP 每天免费调用 100 次；注册用户每天 10000 次，均可配置
@@ -77,6 +77,8 @@ curl http://localhost:3000/api/epic/free -H "X-API-Key: ak_xxx"
 
 ⚠️ 非官方接口或网页抓取，可能随上游改版失效 · 🔑 需要配置密钥 · 🔓 可选配置密钥增强功能
 
+每个接口的请求参数和**返回字段说明**（字段名、类型、单位、含义）见网站上的接口详情页，或 `GET /api` 返回的 `fields`。
+
 ### 游戏
 
 | 接口 | 路径 | 说明 |
@@ -125,6 +127,8 @@ curl http://localhost:3000/api/epic/free -H "X-API-Key: ak_xxx"
 | 手机号归属地 ⚠️ | `/api/phone` | 查询手机号归属地与运营商 |
 | 历史上的今天 ⚠️ | `/api/history/today` | 历史上的今天大事记 |
 | 60 秒读懂世界 ⚠️ | `/api/news/60s` | 获取每日 60 秒新闻简报 |
+| 摸鱼日历 | `/api/moyu` | 摸鱼日历：周末、发薪日与节假日倒计时 |
+| BMI 计算 | `/api/bmi` | 计算身体质量指数（BMI） |
 
 ### 金融
 
@@ -155,6 +159,13 @@ curl http://localhost:3000/api/epic/free -H "X-API-Key: ak_xxx"
 |  | `/api/douban/nowplaying` | 指定城市正在热映的电影 |
 | 实时票房 ⚠️ | `/api/boxoffice` | 今日全国实时票房排行 |
 | 每日一句英语 | `/api/english/daily` | 获取某天的每日一句英语 |
+| 答案之书 | `/api/answer` | 随机返回一句答案，可传入问题固定当天答案 |
+| 今日运势 | `/api/fortune` | 今日运势（同一名字同一天结果固定，仅供娱乐） |
+| 号码吉凶 | `/api/numerology` | 手机号 / QQ 号 81 数理吉凶（仅供娱乐） |
+| 语录合集 | `/api/quotes` | 按分类随机取语录，一次 1~10 条 |
+|  | `/api/quotes/types` | 列出语录分类及条数 |
+| 温馨提示 | `/api/greeting` | 当前时段的问候语和提示语（北京时间） |
+| 随机头像 | `/api/avatar` | 生成 SVG 头像（直接返回图片） |
 
 ### 工具
 
@@ -173,6 +184,29 @@ curl http://localhost:3000/api/epic/free -H "X-API-Key: ak_xxx"
 |  | `/api/tools/base64` | Base64 编码 / 解码（UTF-8） |
 |  | `/api/tools/urlencode` | URL 编码 / 解码（encodeURIComponent） |
 |  | `/api/tools/password` | 生成加密安全的随机密码 |
+| 图形验证码 | `/api/captcha` | 生成图形验证码（SVG，2 分钟内有效） |
+|  | `/api/captcha/verify` | 校验验证码（每个 token 只能校验一次） |
+| 访客信息 | `/api/visitor` | 查看我的 IP、归属地与浏览器信息 |
+| User-Agent 工具 | `/api/ua/parse` | 解析 User-Agent（默认解析调用者自己的） |
+|  | `/api/ua/random` | 随机生成真实格式的 User-Agent |
+| 颜色工具 | `/api/color/random` | 生成随机颜色 |
+|  | `/api/color/convert` | 颜色格式转换与对比度计算 |
+| IP 签名档 | `/api/ipcard` | IP 签名档图片（SVG） |
+
+### 网络
+
+| 接口 | 路径 | 说明 |
+| --- | --- | --- |
+| DNS 查询 | `/api/dns` | 查询域名的 DNS 记录，可选公共 DNS 服务器 |
+| SSL 证书查询 | `/api/ssl` | 查询网站 SSL/TLS 证书信息 |
+| 网站检测 | `/api/site/check` | 检测网站可达性、响应时间与跳转 |
+| TCPing | `/api/tcping` | TCP 端口连通性与延迟测试（每次只测一个端口） |
+| Ping | `/api/ping` | ICMP Ping 延迟与丢包测试 |
+| 域名注册查询 | `/api/domain/available` | 查询域名是否已被注册 |
+| Robots 分析 | `/api/robots` | 解析 robots.txt，判断爬虫能否抓取某路径 |
+| 网站图标 | `/api/favicon` | 获取网站图标（直接返回图片） |
+| 死链检测 | `/api/links/check` | 检测网页中的死链 |
+| 域名后缀列表 | `/api/tld` | 查询顶级域名后缀列表 |
 
 ## 推送主题
 
@@ -208,5 +242,8 @@ test/                 测试与样例数据
 ## 已知限制
 
 - 开发环境无法访问外网，各上游接口的请求格式和返回结构是按公开资料编写、用样例数据测试的，**部署后需逐个实测**。标记 ⚠️ 的接口最可能需要调整。
-- 缓存和每分钟限流在进程内存中，适合单实例部署。
+- 缓存、每分钟限流和验证码答案保存在进程内存中，适合单实例部署；重启后未使用的验证码失效。
+- `/api/ping` 调用系统 ping 命令。Docker（alpine）镜像以非 root 用户运行时，需要宿主允许非特权 ICMP（`sysctl -w net.ipv4.ping_group_range="0 2147483647"`），否则返回 503，可改用 `/api/tcping`。
+- 访客信息、IP 签名档显示调用者的 IP，部署在反向代理后必须设置 `TRUST_PROXY=1`。
+- 观音 / 文昌灵签的代码已完成，但签文尚未对照可靠底本校订，暂未上线（`src/apis/fun/index.js` 中未注册）。
 - 管理员可调整单个用户每日额度；按 IP 的匿名额度对同一出口 IP 下的用户共享。

@@ -2,7 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import zlib from 'node:zlib';
 import { cache } from '../../lib/cache.js';
-import { HttpError, param, decodeEntities } from '../../lib/http.js';
+import { HttpError, param } from '../../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; APIHubBot/1.0; +webmeta)';
 const TIMEOUT_MS = 5000;
@@ -12,6 +12,7 @@ const MAX_REDIRECTS = 3;
 // IP 检查、安全 DNS 解析与 URL 校验已移至 src/lib/netguard.js，供推送等功能复用
 export { isBlockedIP, parseIPv6, makeLookup, checkUrl } from '../../lib/netguard.js';
 import { isBlockedIP, makeLookup, checkUrl } from '../../lib/netguard.js';
+import { stripNoise, scanTags, asciiLower, safeDecode } from '../../lib/html.js';
 
 function requestOnce(u, signal, blocked) {
   return new Promise((resolve, reject) => {
@@ -121,14 +122,6 @@ export async function fetchPage(rawUrl, { blocked = isBlockedIP, timeoutMs = TIM
 
 // ---------- HTML 解析 ----------
 
-function parseAttrs(tag) {
-  const attrs = {};
-  const re = /([^\s=\/>"']+)\s*(?:=\s*("([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
-  let m;
-  const inner = tag.replace(/^<\s*[a-z]+/i, '').replace(/\/?>$/, '');
-  while ((m = re.exec(inner))) attrs[m[1].toLowerCase()] = decodeEntities(m[3] ?? m[4] ?? m[5] ?? '');
-  return attrs;
-}
 
 export function detectCharset(contentType = '', buf) {
   const fromHeader = /charset=["']?([\w-]+)/i.exec(contentType)?.[1];
@@ -161,14 +154,23 @@ function absolutize(href, base) {
 // 属性值已在 parseAttrs 中解码过一次，这里只规整空白；<title> 文本需要单独解码
 const clean = (s) => (s == null ? null : String(s).replace(/\s+/g, ' ').trim() || null);
 
+// <title> 的内容：顺序查找开始和结束标签，找不到时为 undefined
+function titleOf(html) {
+  const lower = asciiLower(html);
+  const open = lower.indexOf('<title');
+  if (open === -1) return undefined;
+  const gt = lower.indexOf('>', open);
+  const close = gt === -1 ? -1 : lower.indexOf('</title', gt);
+  return close === -1 ? undefined : html.slice(gt + 1, close);
+}
+
 export function parseMeta(html, baseUrl) {
-  const head = html.slice(0, 512 * 1024).replace(/<!--[\s\S]*?-->/g, '').replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, '');
+  // 目标网页不可信：用线性时间的扫描器，避免正则在大量未闭合标签上退化成 O(n²)
+  const head = stripNoise(html.slice(0, 512 * 1024));
   const meta = {};
   const links = [];
   let base = baseUrl;
-  for (const m of head.matchAll(/<(meta|link|base)\b[^>]*>/gi)) {
-    const a = parseAttrs(m[0]);
-    const kind = m[1].toLowerCase();
+  for (const { name: kind, attrs: a } of scanTags(head, ['meta', 'link', 'base'])) {
     if (kind === 'meta') {
       const key = (a.property || a.name || a.itemprop || '').toLowerCase();
       if (key && a.content != null && !(key in meta)) meta[key] = a.content;
@@ -178,14 +180,14 @@ export function parseMeta(html, baseUrl) {
       base = absolutize(a.href, baseUrl) ?? base;
     }
   }
-  const titleTag = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(head)?.[1];
+  const titleTag = titleOf(head);
 
   const icons = links.filter((l) => /(^|\s)(icon|shortcut icon|apple-touch-icon)(\s|$)/i.test(l.rel ?? '') && l.href);
   const pick = icons.find((l) => /(^|\s)icon(\s|$)/i.test(l.rel) && !/apple/i.test(l.rel)) ?? icons[0];
   const canonical = links.find((l) => /(^|\s)canonical(\s|$)/i.test(l.rel ?? ''))?.href;
 
   return {
-    title: clean(meta['og:title']) ?? clean(titleTag == null ? null : decodeEntities(titleTag)) ?? clean(meta['twitter:title']),
+    title: clean(meta['og:title']) ?? clean(titleTag == null ? null : safeDecode(titleTag)) ?? clean(meta['twitter:title']),
     description: clean(meta.description) ?? clean(meta['og:description']) ?? clean(meta['twitter:description']),
     image: absolutize(meta['og:image'] || meta['og:image:url'] || meta['twitter:image'] || meta['twitter:image:src'], base),
     favicon: absolutize(pick?.href, base) ?? absolutize('/favicon.ico', baseUrl),

@@ -164,7 +164,8 @@ export async function handle(req, res) {
     throw new HttpError(404, isApi ? '接口不存在，访问 /api 查看全部接口' : '页面不存在');
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
-    if (status >= 500) console.error(`[${req.method} ${path}]`, err);
+    // 代码错误打印完整堆栈；上游故障、服务不支持等预期内的 5xx 只记一行
+    if (status >= 500) console.error(`[${req.method} ${path}]`, err instanceof HttpError ? `${status} ${err.message}` : err);
     // 被限流的请求不计入日志，避免刷量拖慢数据库
     if (log.logged && status !== 429) logRequest({ ...log, ip, path, status, ms: Date.now() - started });
     if (res.headersSent) return res.end();

@@ -1,0 +1,33 @@
+# 示例 robots.txt（测试用）
+Disallow: /before-any-agent
+
+User-agent: *
+Disallow: /admin/
+Disallow: /search
+Allow: /search/about
+Disallow: /*.pdf$
+Disallow:
+Crawl-delay: 2
+
+User-agent: Googlebot
+User-agent: Bingbot
+Allow: /
+Disallow: /private
+Disallow: /fish*
+
+user-agent: googlebot-news
+disallow: /
+
+User-agent: Baiduspider/2.0
+Disallow: /
+Crawl-delay: 10.5
+
+User-agent: tiebot
+Allow: /page
+Disallow: /page
+Disallow: /中文/
+Unknown-directive: whatever
+
+Sitemap: https://example.com/sitemap.xml
+Sitemap: /sitemap-news.xml
+Sitemap: https://example.com/sitemap.xml

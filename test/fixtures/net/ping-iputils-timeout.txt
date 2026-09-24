@@ -1,0 +1,5 @@
+PING 1.2.3.4 (1.2.3.4) 56(84) bytes of data.
+
+--- 1.2.3.4 ping statistics ---
+3 packets transmitted, 0 received, 100% packet loss, time 2046ms
+

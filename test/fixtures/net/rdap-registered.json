@@ -1,0 +1,24 @@
+{
+  "objectClassName": "domain",
+  "handle": "2336799_DOMAIN_COM-VRSN",
+  "ldhName": "EXAMPLE.COM",
+  "status": ["client delete prohibited", "client transfer prohibited", "client update prohibited"],
+  "events": [
+    { "eventAction": "registration", "eventDate": "1995-08-14T04:00:00Z" },
+    { "eventAction": "expiration", "eventDate": "2027-08-13T04:00:00Z" },
+    { "eventAction": "last changed", "eventDate": "2026-08-14T07:01:34Z" }
+  ],
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "handle": "376",
+      "roles": ["registrar"],
+      "publicIds": [{ "type": "IANA Registrar ID", "identifier": "376" }],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "RESERVED-Internet Assigned Numbers Authority"]]]
+    }
+  ],
+  "nameservers": [
+    { "objectClassName": "nameserver", "ldhName": "A.IANA-SERVERS.NET" },
+    { "objectClassName": "nameserver", "ldhName": "B.IANA-SERVERS.NET" }
+  ]
+}

@@ -776,3 +776,17 @@ test('webmeta 属性值只解码一次，og:image 为空时回退到 twitter:ima
   assert.equal(m.description, 'a &lt; b');
   assert.equal(m.image, 'https://example.com/t.png');
 });
+
+test('webmeta 解析恶意构造的页面仍是线性时间', async () => {
+  const { parseMeta } = await import('../../src/apis/tools/webmeta.js');
+  for (const bad of ['<link '.repeat(80_000), '<!--'.repeat(100_000), '<script>'.repeat(60_000), '<meta '.repeat(80_000)]) {
+    const t0 = Date.now();
+    parseMeta(bad, 'https://example.com/');
+    assert.ok(Date.now() - t0 < 1000, `耗时过长：${Date.now() - t0}ms`);
+  }
+});
+
+test('超出范围的数字实体不会抛异常', async () => {
+  const { decodeEntities } = await import('../../src/lib/http.js');
+  assert.equal(decodeEntities('a&#99999999999;b&#x41;'), 'a&#99999999999;bA');
+});

@@ -1,0 +1,7 @@
+PING 2606:4700:4700::1111(2606:4700:4700::1111) 56 data bytes
+64 bytes from 2606:4700:4700::1111: icmp_seq=1 ttl=58 time=2.05 ms
+64 bytes from 2606:4700:4700::1111: icmp_seq=2 ttl=58 time=1.98 ms
+
+--- 2606:4700:4700::1111 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+rtt min/avg/max/mdev = 1.980/2.015/2.050/0.035 ms

@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>死链检测样例</title><base href="/base/"></head>
+<body>
+<a href="/ok">正常 <b>链接</b></a>
+<a href="rel">相对地址（按 base 补全）</a>
+<a href="/missing">不存在的页面</a>
+<a href="/error">服务器错误</a>
+<a href="/head-405">不支持 HEAD</a>
+<a href="/redirect-ok">跳转到正常页面</a>
+<a href="/redirect-internal">跳转到内网</a>
+<a href="/redirect-dns-internal">跳转到解析为内网的域名</a>
+<a href="/slow">超时</a>
+<a href="http://10.0.0.1/admin">内网地址</a>
+<a href="http://localhost:{{PORT}}/secret">localhost</a>
+<a href="http://[::1]:{{PORT}}/secret">IPv6 回环</a>
+<a href="http://internal.test.example:{{PORT}}/secret">解析到内网的域名</a>
+<a href="http://nx.test.example/">无法解析的域名</a>
+<a href="http://127.0.0.1:{{CLOSED}}/">端口未开放</a>
+<a href="#top">页内锚点</a>
+<a href="mailto:a@example.com">邮件</a>
+<a href="javascript:void(0)">脚本</a>
+<a href="/ok#section">重复链接</a>
+<a href="/img" title="">
+  <img src="x.png" alt="图片链接">
+</a>
+<!-- <a href="/commented">注释中的链接</a> -->
+<script>var s = '<a href="/in-script">脚本中的链接</a>';</script>
+</body>
+</html>
