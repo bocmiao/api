@@ -39,13 +39,13 @@ export async function sendMail({ host, port, user, pass, from, to, subject, text
 
   try {
     await expect([220]);
-    const ehlo = await cmd('EHLO api-hub', [250]);
+    const ehlo = await cmd('EHLO miao-api', [250]);
     if (!implicitTls && /STARTTLS/i.test(ehlo.text)) {
       await cmd('STARTTLS', [220]);
       socket = tls.connect({ socket, servername: host });
       await new Promise((r, j) => { socket.once('secureConnect', r); socket.once('error', j); });
       read = reader(socket);
-      await cmd('EHLO api-hub', [250]);
+      await cmd('EHLO miao-api', [250]);
     }
     if (user) {
       await cmd('AUTH LOGIN', [334]);

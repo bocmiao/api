@@ -1,4 +1,4 @@
-# API Hub
+# Miao API
 
 聚合 API 平台：一个 Key 调用 46 个模块、67 个常用接口，包括游戏限免、全网热榜、天气节假日、金融行情、壁纸诗词和开发工具。
 
@@ -22,8 +22,8 @@ npm test
 Docker：
 
 ```bash
-docker build -t api-hub .
-docker run -d -p 3000:3000 -v api-hub-data:/app/data --env-file .env api-hub
+docker build -t miao-api .
+docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 ```
 
 ## 配置

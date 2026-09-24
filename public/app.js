@@ -1,4 +1,4 @@
-// API Hub 前端：无依赖单页应用（hash 路由）
+// Miao API 前端：无依赖单页应用（hash 路由）
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -14,7 +14,7 @@ const state = { user: null, quota: null, catalog: null };
 
 // ---------- 图标 ----------
 const ICONS = {
-  logo: '<path d="M4 7h16M4 12h10M4 17h6"/><circle cx="18" cy="16" r="3"/>',
+  logo: '<path d="M5 10.5V4l4.2 3.1a9 9 0 0 1 5.6 0L19 4v6.5c.6 1.1 1 2.3 1 3.6C20 18.5 16.4 21 12 21s-8-2.5-8-6.9c0-1.3.4-2.5 1-3.6z"/><path d="M9 13.5v.6M15 13.5v.6M11 16.6l1 .7 1-.7"/>',
   gamepad: '<rect x="2" y="7" width="20" height="10" rx="4"/><path d="M7 10v4M5 12h4M15 11h.01M18 13h.01"/>',
   flame: '<path d="M12 22c4 0 7-3 7-7 0-5-5-7-5-12-3 2-4 5-4 7-1-1-2-2-2-3-2 2-3 5-3 8 0 4 3 7 7 7z"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -142,7 +142,7 @@ function renderTopbar(route) {
     ...(u?.isAdmin ? [['#/admin', '管理', route === 'admin']] : []),
   ];
   $('#topbar').innerHTML = `<div class="wrap">
-    <a class="logo" href="#/"><span class="logo-mark">${icon('logo')}</span>API Hub</a>
+    <a class="logo" href="#/"><span class="logo-mark">${icon('logo')}</span>Miao API</a>
     <nav class="nav" id="nav">${nav.map(([h, t, a]) => `<a href="${h}" class="${a ? 'active' : ''}">${t}</a>`).join('')}</nav>
     <div class="topbar-right">
       ${q ? `<span class="quota-pill" title="今日调用额度，北京时间 0 点重置">今日剩余 ${fmtNum(q.remaining)} / ${fmtNum(q.limit)}</span>` : ''}
@@ -316,6 +316,29 @@ function buildRequest(route, values) {
   return { url: path + (qs ? `?${qs}` : ''), body: Object.keys(body).length ? body : undefined };
 }
 
+// 返回字段表：按层级缩进，显示字段名最后一段，完整路径放在 title 里
+function fieldsTable(fields) {
+  if (!fields?.length) return '<p class="faint small">暂无字段说明</p>';
+  const rows = fields.map((f) => {
+    const path = f.name.replace(/^\[\]\.?/, '');
+    const depth = path ? path.split('.').length - 1 : 0;
+    const leaf = path ? path.split('.').pop() : '[]';
+    const types = f.type.split('|').map((t) => `<span class="type type-${t}">${t}</span>`).join('');
+    return `<tr><td class="fname" title="${esc(f.name)}"><span style="padding-left:${depth * 18}px">${depth ? '<i class="tree">└</i>' : ''}${esc(leaf)}</span></td>
+      <td class="nowrap">${types}</td><td>${esc(f.desc)}</td></tr>`;
+  }).join('');
+  return `<div class="table-wrap"><table class="table fields-table"><thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+const ENVELOPE_FIELDS = [
+  { name: 'code', type: 'number', desc: '状态码，与 HTTP 状态码一致，200 表示成功' },
+  { name: 'message', type: 'string', desc: '结果说明，成功为 ok，失败时为中文错误原因' },
+  { name: 'cached', type: 'boolean', desc: '是否命中服务端缓存（部分本地计算的接口不返回）' },
+  { name: 'stale', type: 'boolean', desc: '仅在为 true 时出现：上游暂时不可用，返回的是最近一次成功获取的旧数据' },
+  { name: 'updatedAt', type: 'string', desc: '数据获取时间（ISO 8601，UTC），部分接口不返回' },
+  { name: 'data', type: 'object|array|null', desc: '接口数据，各接口字段见对应文档；失败时为 null' },
+];
+
 function codeSamples(route, req) {
   const full = location.origin + req.url;
   const bodyJson = req.body ? JSON.stringify(req.body) : null;
@@ -363,11 +386,16 @@ async function pageApi(name) {
         <h2 style="font-size:18px">${esc(r.summary)}</h2>
         <div class="endpoint"><span class="method ${r.method}">${r.method}</span><span class="url">${esc(location.origin + r.path)}</span>
           <button class="btn sm ghost" id="copy-url" title="复制">${icon('copy')}</button></div>
+        <h3 class="sub-title">请求参数</h3>
         ${r.params.length ? `<div class="table-wrap"><table class="table params-table"><thead><tr><th>参数</th><th>位置</th><th>说明</th><th>默认值</th></tr></thead><tbody>
           ${r.params.map((p) => `<tr><td>${esc(p.name)}${p.required ? '<span class="req">*</span>' : ''}</td>
             <td class="faint small">${p.in === 'body' ? 'body' : r.path.includes(':' + p.name) ? 'path' : 'query'}</td>
             <td>${esc(p.desc)}</td><td class="faint">${p.default !== undefined ? `<code>${esc(p.default)}</code>` : '—'}</td></tr>`).join('')}
         </tbody></table></div>` : '<p class="faint small">无需参数</p>'}
+        <h3 class="sub-title">返回字段</h3>
+        ${r.raw
+          ? `<p class="muted small">${esc(r.returns ?? '返回图片或跳转，而不是 JSON')}</p>`
+          : `<p class="faint small" style="margin:0 0 8px">以下为 <code>data</code> 中的字段。外层统一为 <code>{ code, message, cached, stale, updatedAt, data }</code>，<a href="#/docs">查看说明</a>。</p>${fieldsTable(r.fields)}`}
       </div>
 
       <div class="playground">
@@ -450,7 +478,7 @@ async function pageDocs() {
   const o = esc(location.origin);
   $('#main').innerHTML = `<div class="wrap"><article class="doc">
     <h1>开发文档</h1>
-    <p>API Hub 聚合了 ${cat.modules.length} 个常用接口模块。所有接口都是 HTTP GET/POST，返回 JSON，支持跨域调用。</p>
+    <p>Miao API 聚合了 ${cat.modules.length} 个常用接口模块。所有接口都是 HTTP GET/POST，返回 JSON，支持跨域调用。</p>
 
     <h2>快速开始</h2>
     <p>无需注册即可直接调用：</p>
@@ -482,6 +510,9 @@ async function pageDocs() {
     </ul>
 
     <h2>响应格式</h2>
+    <p>所有 JSON 接口的外层结构相同，接口自身的数据放在 <code>data</code> 里，每个接口的 <code>data</code> 字段说明见接口详情页的「返回字段」。</p>
+    ${fieldsTable(ENVELOPE_FIELDS)}
+    <p>示例：</p>
     <pre>{
   "code": 200,          // 与 HTTP 状态码一致
   "message": "ok",
@@ -935,7 +966,7 @@ async function router() {
   } catch (err) {
     $('#main').innerHTML = `<div class="wrap"><div class="empty" style="padding:100px 0">加载失败：${esc(err.message)}</div></div>`;
   }
-  document.title = { home: 'API Hub', api: 'API Hub · 接口', docs: 'API Hub · 文档', auth: 'API Hub · 登录', console: 'API Hub · 控制台', admin: 'API Hub · 管理' }[routeName] ?? 'API Hub';
+  document.title = { home: 'Miao API', api: 'Miao API · 接口', docs: 'Miao API · 文档', auth: 'Miao API · 登录', console: 'Miao API · 控制台', admin: 'Miao API · 管理' }[routeName] ?? 'Miao API';
 }
 
 window.addEventListener('hashchange', router);

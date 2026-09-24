@@ -28,7 +28,7 @@ export function catalog() {
         unofficial: Boolean(m.unofficial),
         env,
         available: m.isAvailable ? Boolean(m.isAvailable()) : env.every((e) => e.optional || e.configured),
-        routes: m.routes.map(({ method, path, summary, params = [], raw = false }) => ({ method, path, summary, params, raw })),
+        routes: m.routes.map(({ method, path, summary, params = [], raw = false, fields = [], returns = null }) => ({ method, path, summary, params, raw, fields, returns })),
       };
     }),
   };

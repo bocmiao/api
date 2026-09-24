@@ -36,3 +36,9 @@ test('按当前时间判断：周期切换后，下周游戏变为当前免费',
 test('上游格式异常时抛出 502', () => {
   assert.throws(() => parseFreeGames({ errors: [] }), { status: 502 });
 });
+
+test('返回字段都有说明', async () => {
+  const { assertFieldsDocumented } = await import('./helpers/fields.js');
+  const { default: epic } = await import('../src/apis/games/epic.js');
+  assertFieldsDocumented(epic.routes[0], parseFreeGames(raw, { now }));
+});

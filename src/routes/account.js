@@ -200,7 +200,7 @@ async function sendOrExplain(fn) {
 
 r('POST', '/account/channels/:id/test', async (ctx) => {
   const channel = ownChannel(requireUser(ctx), ctx.params.id);
-  await sendOrExplain(() => sendToChannel(channel, { title: 'API Hub 测试消息', text: '收到这条消息说明推送渠道配置成功 🎉', topic: 'test' }));
+  await sendOrExplain(() => sendToChannel(channel, { title: 'Miao API 测试消息', text: '收到这条消息说明推送渠道配置成功 🎉', topic: 'test' }));
   return { data: null };
 });
 

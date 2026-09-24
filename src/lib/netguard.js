@@ -129,7 +129,7 @@ export function safePostJson(rawUrl, payload, { timeoutMs = 10_000 } = {}) {
       lookup: makeLookup(isBlockedIP),
       agent: false,
       signal: AbortSignal.timeout(timeoutMs),
-      headers: { 'content-type': 'application/json', 'content-length': body.length, 'user-agent': 'api-hub-notify/1.0' },
+      headers: { 'content-type': 'application/json', 'content-length': body.length, 'user-agent': 'miao-api-notify/1.0' },
     }, (res) => {
       const chunks = [];
       let size = 0;

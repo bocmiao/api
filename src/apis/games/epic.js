@@ -107,6 +107,24 @@ export default {
         { name: 'locale', default: 'zh-CN', desc: '语言，例如 zh-CN、en-US', example: 'zh-CN' },
         { name: 'country', default: 'CN', desc: '地区代码，例如 CN、US', example: 'CN' },
       ],
+      fields: [
+        { name: 'current', type: 'array', desc: '当前正在免费领取的游戏' },
+        { name: 'current[].id', type: 'string', desc: 'Epic 商品 ID' },
+        { name: 'current[].namespace', type: 'string', desc: 'Epic 商品命名空间（与 id 一起唯一确定商品）' },
+        { name: 'current[].title', type: 'string', desc: '游戏名称' },
+        { name: 'current[].description', type: 'string|null', desc: '游戏简介' },
+        { name: 'current[].seller', type: 'string|null', desc: '发行商' },
+        { name: 'current[].originalPrice', type: 'string|null', desc: '原价（已按地区格式化，如 ¥88.00）' },
+        { name: 'current[].startDate', type: 'string', desc: '免费开始时间（ISO 8601，UTC）' },
+        { name: 'current[].endDate', type: 'string', desc: '免费截止时间（ISO 8601，UTC）' },
+        { name: 'current[].url', type: 'string', desc: 'Epic 商店页面链接' },
+        { name: 'current[].image', type: 'object', desc: '封面图' },
+        { name: 'current[].image.wide', type: 'string|null', desc: '横版封面图链接' },
+        { name: 'current[].image.tall', type: 'string|null', desc: '竖版封面图链接' },
+        { name: 'upcoming', type: 'array', desc: '即将免费的游戏，每项字段与 current 相同，startDate 为开始免费的时间' },
+        { name: 'upcoming[].*', type: 'string|object|null', desc: '同 current[] 中的同名字段' },
+        { name: 'upcoming[].image.*', type: 'string|null', desc: '同 current[].image 中的同名字段' },
+      ],
       async handler({ query }) {
         const locale = query.get('locale') || 'zh-CN';
         const country = (query.get('country') || 'CN').toUpperCase();

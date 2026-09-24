@@ -65,7 +65,7 @@ export const channelTypes = {
       return { key: str(c.key, '设备 Key', { max: 100, pattern: /^[A-Za-z0-9_-]+$/ }), server };
     },
     async send({ key, server }, m) {
-      const r = await safePostJson(`${server}/${key}`, { title: m.title, body: m.text.replace(/[*_`#>]/g, ''), url: m.url, group: 'API Hub' });
+      const r = await safePostJson(`${server}/${key}`, { title: m.title, body: m.text.replace(/[*_`#>]/g, ''), url: m.url, group: 'Miao API' });
       if (r?.code !== 200) throw new Error(r?.message || 'Bark 返回错误');
     },
   },

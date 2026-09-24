@@ -8,7 +8,7 @@ const { DatabaseSync } = await import('node:sqlite');
 process.emitWarning = emit;
 
 const dir = process.env.DATA_DIR || join(process.cwd(), 'data');
-const file = process.env.DB_FILE || (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? ':memory:' : join(dir, 'api-hub.db'));
+const file = process.env.DB_FILE || (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? ':memory:' : join(dir, 'miao-api.db'));
 if (file !== ':memory:') mkdirSync(dir, { recursive: true });
 
 export const db = new DatabaseSync(file);
