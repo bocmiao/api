@@ -55,6 +55,16 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `ITAD_API_KEY` | Steam 游戏详情附带史低价 |
 | `COINGECKO_API_KEY` | 提高 CoinGecko 限额 |
 
+## 在线更新
+
+管理后台的「系统更新」可以检查 GitHub 上的新提交，并一键下载更新：
+
+- 下载指定仓库分支的最新代码，先在独立进程里完整加载一遍，确认无误后才替换。
+- `data/` 目录和 `.env` 不会被改动；旧代码自动备份（保留最近 3 份，位于 `.update-backup/`）。
+- 服务需要通过 `npm start`（守护进程 `src/launcher.js`）启动。更新后守护进程自动重启服务；新版本在 20 秒内崩溃会自动回滚到旧版本。
+- 相关环境变量：`UPDATE_REPO`（默认 `bocmiao/api`）、`UPDATE_BRANCH`（默认仓库的默认分支）、`GITHUB_TOKEN`（私有仓库或提高 GitHub 接口限额时填写）。
+- 程序需要对项目目录有写权限。
+
 ## 调用方式
 
 ```bash

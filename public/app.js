@@ -903,6 +903,8 @@ async function pageAdmin() {
   const chart = barChart(rows, [{ key: 'user', label: '注册用户' }, { key: 'anon', label: '未登录', cls: 's2' }]);
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计与用户管理</p></div></div>
+    <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
+      <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><span class="faint small">点击「检查更新」查看 GitHub 上是否有新版本</span></div></div>
     <div class="tiles">
       ${[['24h 调用', t.calls], ['24h 独立 IP', t.ips], ['24h 平均耗时', `${fmtNum(t.avgMs)} ms`], ['24h 失败', t.errors],
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
@@ -925,6 +927,7 @@ async function pageAdmin() {
       </tbody></table></div></div>
   </div>`;
   chart.mount($('#main'));
+  $('#check-update').onclick = () => checkUpdate();
 
   $('#main').addEventListener('submit', async (e) => {
     const f = e.target.closest('[data-limit]');
@@ -946,6 +949,68 @@ async function pageAdmin() {
       pageAdmin();
     } catch (err) { toast(err.message, true); }
   });
+}
+
+// ---------- 在线更新 ----------
+const shortDate = (d) => (d ? new Date(d).toLocaleString('zh-CN', { hour12: false }) : '—');
+
+async function checkUpdate() {
+  const body = $('#update-body');
+  const btn = $('#check-update');
+  btn.disabled = true;
+  body.innerHTML = '<div class="loading" style="padding:12px 0"><span class="spinner"></span></div>';
+  try {
+    const u = await api('GET', '/admin/update');
+    const cur = u.current;
+    const status = u.upToDate
+      ? '<span class="badge ok">已是最新版本</span>'
+      : u.behind ? `<span class="badge warn">有 ${u.behind} 个新提交</span>` : '<span class="badge warn">有可用更新</span>';
+    body.innerHTML = `
+      ${u.lastRollback ? `<div class="form-error">上次更新（${esc(u.lastRollback.failedSha?.slice(0, 7) ?? '')}）启动失败，已于 ${shortDate(u.lastRollback.at)} 自动回滚到旧版本。</div>` : ''}
+      <div class="row small" style="gap:24px;margin-bottom:12px">
+        <div><div class="faint">当前版本</div><div class="mono">${cur ? `${esc(cur.sha.slice(0, 7))} · ${esc(cur.message)}` : '未知（尚未通过在线更新部署）'}</div>
+          ${cur ? `<div class="faint">更新于 ${shortDate(cur.updatedAt)}</div>` : ''}</div>
+        <div><div class="faint">最新版本（${esc(u.repo)} · ${esc(u.branch)}）</div><div class="mono">${esc(u.latest.shortSha)} · ${esc(u.latest.message)}</div>
+          <div class="faint">提交于 ${shortDate(u.latest.date)}</div></div>
+        <div style="margin-left:auto">${status}</div>
+      </div>
+      ${!u.upToDate && u.commits.length ? `<div class="small faint" style="margin-bottom:6px">更新内容</div>
+        <ul class="small" style="margin:0 0 14px;padding-left:18px">${u.commits.map((c) => `<li><span class="mono faint">${esc(c.shortSha)}</span> ${esc(c.message)}</li>`).join('')}</ul>` : ''}
+      ${!u.managed ? '<p class="small" style="color:var(--warn)">当前服务不是通过守护进程（npm start）启动的，更新完成后需要到服务器面板手动重启。</p>' : ''}
+      ${u.upToDate ? '' : `<button class="btn primary" id="do-update" data-sha="${esc(u.latest.sha)}">立即更新到 ${esc(u.latest.shortSha)}</button>`}
+      <p class="small faint" style="margin:10px 0 0">更新会替换程序代码，数据目录（账号、Key、调用记录）和 .env 配置不受影响；旧版本自动备份，新版本启动失败会自动回滚。</p>`;
+    $('#do-update')?.addEventListener('click', (e) => runUpdate(e.currentTarget.dataset.sha, u.managed));
+  } catch (err) {
+    body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runUpdate(sha, managed) {
+  if (!(await confirmDialog('在线更新', '将从 GitHub 下载最新代码并替换当前版本，期间服务会重启几秒钟。确定继续？', { danger: false, okText: '开始更新' }))) return;
+  const body = $('#update-body');
+  body.innerHTML = '<div class="row"><span class="spinner"></span><span>正在下载并校验新版本…</span></div>';
+  try {
+    const r = await api('POST', '/admin/update', { sha });
+    if (!managed) {
+      body.innerHTML = `<p>代码已更新到 <span class="mono">${esc(r.version.sha.slice(0, 7))}</span>，请到服务器面板重启服务后生效。</p>`;
+      return;
+    }
+    body.innerHTML = '<div class="row"><span class="spinner"></span><span>更新完成，正在重启服务…</span></div>';
+    // 等待服务重启后刷新页面
+    await new Promise((r2) => setTimeout(r2, 1500));
+    for (let i = 0; i < 60; i++) {
+      try {
+        const res = await fetch('/health', { cache: 'no-store' });
+        if (res.ok) { location.reload(); return; }
+      } catch {}
+      await new Promise((r2) => setTimeout(r2, 1000));
+    }
+    body.innerHTML = '<div class="form-error">服务长时间没有恢复，请到服务器面板查看运行日志。</div>';
+  } catch (err) {
+    body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+  }
 }
 
 function pageNotFound() {

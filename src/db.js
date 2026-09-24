@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { dataDir } from './lib/paths.js';
 
 // node:sqlite 仍标记为实验特性，屏蔽其启动警告
 const emit = process.emitWarning;
@@ -7,7 +8,7 @@ process.emitWarning = (w, ...a) => (String(w).includes('SQLite') ? undefined : e
 const { DatabaseSync } = await import('node:sqlite');
 process.emitWarning = emit;
 
-const dir = process.env.DATA_DIR || join(process.cwd(), 'data');
+const dir = dataDir();
 const file = process.env.DB_FILE || (process.env.NODE_ENV === 'test' || process.env.NODE_TEST_CONTEXT ? ':memory:' : join(dir, 'miao-api.db'));
 if (file !== ':memory:') mkdirSync(dir, { recursive: true });
 

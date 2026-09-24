@@ -10,6 +10,7 @@ import { channelCatalog, validateChannel, sendToChannel, maskConfig } from '../n
 import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
+import { checkUpdate, applyUpdate } from '../lib/updater.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -285,4 +286,19 @@ r('PATCH', '/admin/users/:id', (ctx) => {
     throw e;
   }
   return { data: null };
+});
+
+// ---------- 在线更新 ----------
+
+r('GET', '/admin/update', async (ctx) => {
+  requireAdmin(ctx);
+  return { data: await checkUpdate() };
+});
+
+r('POST', '/admin/update', async (ctx) => {
+  requireAdmin(ctx);
+  const result = await applyUpdate({ sha: ctx.body?.sha });
+  // 由守护进程启动时，响应发出后以退出码 75 退出，守护进程立即用新代码重启
+  if (result.restart) setTimeout(() => process.exit(75), 500).unref();
+  return { data: result };
 });

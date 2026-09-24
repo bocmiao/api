@@ -169,6 +169,8 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   const normal = client();
   await normal('POST', '/auth/login', { email: 'user2@example.com', password: 'password123' });
   assert.equal((await normal('GET', '/admin/stats')).status, 403);
+  assert.equal((await normal('GET', '/admin/update')).status, 403);
+  assert.equal((await normal('POST', '/admin/update', {})).status, 403);
   assert.equal((await client()('GET', '/admin/stats')).status, 401);
 });
 
