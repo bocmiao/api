@@ -418,3 +418,43 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .upd-release ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; color: var(--text-2); }
 .upd-tech { margin-top: 14px; }
 .upd-tech summary { cursor: pointer; }
+.doc h3 { font-size: 16px; margin: 22px 0 8px; }
+
+/* 首页「今日」 */
+.today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; grid-auto-flow: dense; }
+.today-card { padding: 16px 18px; color: var(--text); display: flex; flex-direction: column; gap: 8px; min-height: 140px; transition: border-color .15s; }
+.today-card:hover { text-decoration: none; border-color: var(--brand); }
+.today-card.wide { grid-column: span 2; }
+.today-card.tall { grid-row: span 2; }
+@media (max-width: 640px) { .today-card.wide { grid-column: auto; } }
+.today-title { font-size: 12.5px; color: var(--text-3); font-weight: 500; }
+.today-big { font-size: 22px; font-weight: 700; line-height: 1.3; }
+.today-sub { font-size: 15px; font-weight: 500; color: var(--text-2); }
+.today-game { display: flex; gap: 10px; align-items: center; }
+.today-game img { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; background: var(--surface-2); flex: none; }
+.today-fx { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.today-hot { margin: 0; padding-left: 0; list-style-position: inside; display: grid; gap: 6px; font-size: 14px; }
+.today-hot li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-quote { font-size: 15px; line-height: 1.7; }
+.today-bing { background-size: cover; background-position: center; min-height: 180px; justify-content: flex-end; padding: 0; overflow: hidden; }
+.today-bing-text { padding: 14px 18px; background: linear-gradient(transparent, rgb(0 0 0 / .7)); color: #fff; }
+.today-bing-text .today-title { color: rgb(255 255 255 / .75); }
+
+/* 字段注释 */
+.j-cmt { color: var(--text-3); font-style: italic; }
+.cmt-toggle { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; margin-left: 8px; }
+.response-bar .faint[style*="margin-left:auto"] + .cmt-toggle { margin-left: 8px; }
+/* 运行状态 */
+.status-hero { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-3); display: inline-block; flex: none; opacity: .5; }
+.status-dot.ok { background: var(--ok); opacity: 1; }
+.status-dot.warn { background: var(--warn); opacity: 1; }
+.status-dot.danger { background: var(--danger); opacity: 1; }
+.status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 16px; }
+.status-item { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); color: var(--text); font-size: 14px; }
+.status-item:hover { text-decoration: none; background: var(--surface-2); }
+/* Ctrl+K */
+.modal:has(.search-modal) { max-width: 560px; align-self: start; margin-top: 12vh; }
+.sk-list { margin-top: 10px; display: grid; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.sk-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--text); }
+.sk-item:hover, .sk-item.active { background: var(--brand-soft); text-decoration: none; }

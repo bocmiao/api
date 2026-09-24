@@ -237,10 +237,15 @@ async function pageHome() {
       <div class="code-window"><div class="bar"><i></i><i></i><i></i></div><pre>${sample}</pre></div>
     </section>
 
+    <section class="section" id="today" style="padding-top:8px">
+      <div class="section-title"><h2>今日</h2><span class="small faint" id="today-note"></span></div>
+      <div class="today-grid" id="today-grid"><div class="loading" style="grid-column:1/-1"><span class="spinner"></span></div></div>
+    </section>
+
     <section class="section" id="catalog">
       <div class="section-title">
         <h2>全部接口</h2>
-        <label class="search">${icon('search')}<input class="input" id="q" placeholder="搜索接口，如 天气、热搜、汇率" autocomplete="off"></label>
+        <label class="search">${icon('search')}<input class="input" id="q" placeholder="搜索接口，如 天气、热搜、汇率（Ctrl+K）" autocomplete="off"></label>
       </div>
       <div class="cat-tabs" id="cats">
         <button class="chip" data-cat="all">全部 <span class="n">${cat.modules.length}</span></button>
@@ -284,7 +289,73 @@ async function pageHome() {
     draw();
   };
   $('#q').oninput = draw;
+  loadToday();
   draw();
+}
+
+// ---------- 首页「今日」 ----------
+function countdown(iso) {
+  const ms = new Date(iso) - Date.now();
+  if (!(ms > 0)) return '已结束';
+  const d = Math.floor(ms / 86400_000);
+  const h = Math.floor((ms % 86400_000) / 3600_000);
+  return d ? `还剩 ${d} 天 ${h} 小时` : `还剩 ${h} 小时`;
+}
+
+async function loadToday() {
+  const grid = $('#today-grid');
+  if (!grid) return;
+  let t;
+  try {
+    t = await api('GET', '/home/today');
+  } catch {
+    $('#today').remove();
+    return;
+  }
+  const card = (api, title, inner, cls = '') => `<a class="card today-card ${cls}" href="#/api/${api}"><div class="today-title">${title}</div>${inner}</a>`;
+  const cards = [];
+
+  if (t.greeting) {
+    cards.push(card('greeting', `${esc(t.greeting.date ?? '')} ${esc(t.greeting.weekday ?? '')}`, `
+      <div class="today-big">${esc(t.greeting.greeting)}</div><div class="muted small">${esc(t.greeting.tip ?? '')}</div>`));
+  }
+  if (t.epic?.current?.length) {
+    cards.push(card('epic', 'Epic 本周免费', t.epic.current.slice(0, 3).map((g) => `
+      <div class="today-game">${g.image?.wide ? `<img src="${esc(g.image.wide)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}
+        <div><b>${esc(g.title)}</b><div class="small faint">${countdown(g.endDate)}${g.originalPrice ? ` · 原价 ${esc(g.originalPrice)}` : ''}</div></div></div>`).join(''), 'wide'));
+  }
+  if (t.holiday) {
+    const h = t.holiday;
+    cards.push(card('holiday', '节假日', h.current
+      ? `<div class="today-big">${esc(h.current.name)}假期中</div><div class="muted small">放假第 ${h.current.dayIndex ?? ''} 天，共 ${h.current.days} 天</div>`
+      : h.next ? `<div class="today-big">${esc(h.next.name)}</div><div class="muted small">还有 <b>${h.next.daysUntil}</b> 天 · ${esc(h.next.start)} 起放 ${h.next.days} 天</div>`
+        : '<div class="muted">暂无放假安排</div>'));
+  }
+  if (t.weather?.current) {
+    const w = t.weather;
+    cards.push(card('weather', `${esc(w.location?.name ?? '')} 天气`, `
+      <div class="today-big">${Math.round(w.current.temp)}°C <span class="today-sub">${esc(w.current.weather ?? '')}</span></div>
+      <div class="muted small">体感 ${Math.round(w.current.feelsLike)}°C · 湿度 ${w.current.humidity}%${w.daily?.[0] ? ` · ${Math.round(w.daily[0].tempMin)}~${Math.round(w.daily[0].tempMax)}°C` : ''}</div>`));
+  }
+  if (t.fx?.rates) {
+    const names = { CNY: '人民币', EUR: '欧元', JPY: '日元', HKD: '港币', GBP: '英镑' };
+    cards.push(card('fx', '汇率（1 美元）', `<div class="today-fx">${Object.entries(t.fx.rates).map(([k, v]) =>
+      `<span><span class="faint">${names[k] ?? k}</span> <b>${Number(v).toFixed(k === 'JPY' ? 2 : 4)}</b></span>`).join('')}</div>`));
+  }
+  if (t.hot?.items?.length) {
+    cards.push(card('hot-weibo', '微博热搜', `<ol class="today-hot">${t.hot.items.slice(0, 6).map((i) => `<li>${esc(i.title)}</li>`).join('')}</ol>`, 'tall'));
+  }
+  if (t.hitokoto?.hitokoto) {
+    cards.push(card('hitokoto', '一言', `<div class="today-quote">「${esc(t.hitokoto.hitokoto)}」</div>
+      <div class="small faint">—— ${esc([t.hitokoto.fromWho, t.hitokoto.from].filter(Boolean).join('《') + (t.hitokoto.fromWho && t.hitokoto.from ? '》' : ''))}</div>`));
+  }
+  const bing = Array.isArray(t.bing) ? t.bing[0] : null;
+  if (bing?.url) {
+    cards.push(`<a class="card today-card today-bing wide" href="#/api/bing" style="background-image:url('${esc(bing.url1080 ?? bing.url)}')">
+      <div class="today-bing-text"><div class="today-title">必应今日壁纸</div><b>${esc(bing.title ?? '')}</b><div class="small">${esc(bing.description ?? '')}</div></div></a>`);
+  }
+  grid.innerHTML = cards.join('') || '<div class="empty" style="grid-column:1/-1">数据暂时获取不到</div>';
+  $('#today-note').textContent = '实时数据，每 5 分钟更新 · 点卡片查看对应接口';
 }
 
 // ---------- 接口详情 + 在线调试 ----------
@@ -304,6 +375,59 @@ function placeholderOf(p) {
   if (p.default !== undefined && p.default !== '') parts.push(`默认 ${p.default}`);
   if (p.example !== undefined && String(p.example) !== String(p.default)) parts.push(`例 ${p.example}`);
   return parts.join(' · ');
+}
+
+// 带中文字段注释的 JSON：外层字段用通用说明，data 内按接口的 fields 匹配；数组只注释第一项
+const fieldRegex = (name) => new RegExp(`^${name.split('*').map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^.\\[\\]]+')}$`);
+function commentedJson(body, fields = []) {
+  const env = new Map(ENVELOPE_FIELDS.map((f) => [f.name, f.desc]));
+  const pats = fields.map((f) => [fieldRegex(f.name), f.desc]);
+  const descOf = (path) => pats.find(([re]) => re.test(path))?.[1];
+  const short = (d) => { const t = d.split(/[；。]/)[0]; return t.length > 40 ? `${t.slice(0, 40)}…` : t; };
+  const cmt = (d) => (d ? ` <span class="j-cmt" title="${esc(d)}">// ${esc(short(d))}</span>` : '');
+  const prim = (v) => v === null ? '<span class="j-null">null</span>'
+    : typeof v === 'string' ? `<span class="j-str">${esc(JSON.stringify(v))}</span>`
+    : typeof v === 'number' ? `<span class="j-num">${v}</span>`
+    : typeof v === 'boolean' ? `<span class="j-bool">${v}</span>` : esc(JSON.stringify(v));
+  const lines = [];
+  const emit = (v, path, depth, label, comma, d, annotate) => {
+    const ind = '  '.repeat(depth);
+    const c = annotate ? cmt(d) : '';
+    if (Array.isArray(v)) {
+      if (!v.length) return lines.push(`${ind}${label}[]${comma}${c}`);
+      lines.push(`${ind}${label}[${c}`);
+      v.forEach((item, i) => emit(item, `${path}[]`, depth + 1, '', i < v.length - 1 ? ',' : '', null, annotate && i === 0));
+      return lines.push(`${ind}]${comma}`);
+    }
+    if (v && typeof v === 'object') {
+      const keys = Object.keys(v);
+      if (!keys.length) return lines.push(`${ind}${label}{}${comma}${c}`);
+      lines.push(`${ind}${label}{${c}`);
+      keys.forEach((k, i) => {
+        const p = path ? `${path}.${k}` : k;
+        emit(v[k], p, depth + 1, `<span class="j-key">${esc(JSON.stringify(k))}</span>: `, i < keys.length - 1 ? ',' : '', descOf(p), annotate);
+      });
+      return lines.push(`${ind}}${comma}`);
+    }
+    lines.push(`${ind}${label}${prim(v)}${comma}${c}`);
+  };
+  if (!body || typeof body !== 'object') return highlightJson(body);
+  lines.push('{');
+  const keys = Object.keys(body);
+  keys.forEach((k, i) => {
+    const label = `<span class="j-key">${esc(JSON.stringify(k))}</span>: `;
+    const comma = i < keys.length - 1 ? ',' : '';
+    if (k === 'data' && body.data && typeof body.data === 'object') {
+      lines.push(`  ${label}${Array.isArray(body.data) ? '[' : '{'}${cmt(env.get('data'))}`);
+      if (Array.isArray(body.data)) body.data.forEach((item, j) => emit(item, '[]', 2, '', j < body.data.length - 1 ? ',' : '', null, j === 0));
+      else Object.keys(body.data).forEach((dk, j, arr) => emit(body.data[dk], dk, 2, `<span class="j-key">${esc(JSON.stringify(dk))}</span>: `, j < arr.length - 1 ? ',' : '', descOf(dk), true));
+      lines.push(`  ${Array.isArray(body.data) ? ']' : '}'}${comma}`);
+    } else {
+      emit(body[k], null, 1, label, comma, env.get(k), true);
+    }
+  });
+  lines.push('}');
+  return lines.join('\n');
 }
 
 function buildRequest(route, values) {
@@ -470,7 +594,15 @@ async function pageApi(name) {
           <span class="badge ${res.ok ? 'ok' : 'danger'}">${res.status}</span><span class="faint">${ms} ms</span>
           ${body.cached ? '<span class="badge">缓存</span>' : ''}${body.stale ? '<span class="badge warn">旧数据</span>' : ''}
           ${remaining != null ? `<span class="faint" style="margin-left:auto">今日剩余 ${fmtNum(remaining)}</span>` : ''}
-        </div><pre>${highlightJson(body)}</pre>`;
+          <label class="small faint cmt-toggle" title="在每个字段后面显示中文说明"><input type="checkbox" id="cmt-on" ${storage.get('cmt') !== '0' ? 'checked' : ''}> 字段注释</label>
+        </div><pre id="resp-json"></pre>`;
+      const drawJson = () => {
+        const on = $('#cmt-on').checked;
+        storage.set('cmt', on ? '1' : '0');
+        $('#resp-json').innerHTML = on ? commentedJson(body, r.fields) : highlightJson(body);
+      };
+      $('#cmt-on').onchange = drawJson;
+      drawJson();
       // 返回里带 data:image 图片（如验证码）时直接预览
       const inlineImage = body?.data && typeof body.data === 'object'
         ? Object.values(body.data).find((v) => typeof v === 'string' && /^data:image\/(svg\+xml|png|jpeg|gif|webp);base64,/.test(v)) : null;
@@ -496,13 +628,89 @@ async function pageDocs() {
   const o = esc(location.origin);
   $('#main').innerHTML = `<div class="wrap"><article class="doc">
     <h1>开发文档</h1>
-    <p>Miao API 聚合了 ${cat.modules.length} 个常用接口模块。所有接口都是 HTTP GET/POST，返回 JSON，支持跨域调用。</p>
+    <p>Miao API 聚合了 ${cat.modules.length} 个常用接口模块。调用方式就是访问一个网址：把参数带上发出请求，服务器返回一段 JSON 数据。支持跨域，网页、小程序、后端程序都能直接调用。</p>
 
     <h2>快速开始</h2>
     <p>无需注册即可直接调用：</p>
     <pre>curl ${o}/api/epic/free</pre>
     <p>注册后在 <a href="#/console/keys">控制台</a> 创建 API Key，通过请求头传入即可获得更高额度：</p>
     <pre>curl ${o}/api/epic/free -H "X-API-Key: ak_xxxxxxxx"</pre>
+
+    <h2>请求方式：GET 和 POST</h2>
+    <p>每个接口详情页的路径前面都标着请求方式：<span class="method GET">GET</span> 或 <span class="method POST">POST</span>。两者的区别只在于<b>参数放在哪里</b>。</p>
+
+    <h3>GET：参数写在网址里（绝大多数接口）</h3>
+    <p>在接口地址后面加 <code>?</code>，参数写成 <code>参数名=值</code>，多个参数之间用 <code>&amp;</code> 连接。例如查上海的天气：</p>
+    <pre>${o}/api/weather?city=上海</pre>
+    <p>GET 接口可以直接粘到浏览器地址栏里打开，马上就能看到返回结果，这是最快的测试方法。</p>
+    <p>参数里有中文、空格或 <code>&amp;</code> 等特殊字符时需要编码。浏览器地址栏会自动处理；写代码时用 <code>URLSearchParams</code>（JavaScript）或 <code>params=</code>（Python）会自动编码，不要自己拼字符串。</p>
+
+    <h3>POST：参数放在请求体里（少数接口）</h3>
+    <p>短链接生成、AI 这类会「创建内容」或内容较长的接口使用 POST。参数写成 JSON 放在请求体里，并加上请求头 <code>Content-Type: application/json</code>。POST 接口不能直接在浏览器地址栏打开，可以用接口详情页的「在线调试」测试。</p>
+
+    <h3>怎么看参数写在哪里</h3>
+    <p>接口详情页的参数表有一列「位置」：</p>
+    <div class="table-wrap"><table class="table"><tbody>
+      <tr><td><code>query</code></td><td>写在网址 <code>?</code> 后面（GET 接口）</td></tr>
+      <tr><td><code>body</code></td><td>写在 JSON 请求体里（POST 接口）</td></tr>
+      <tr><td><code>path</code></td><td>替换路径里的 <code>:名字</code>，例如 <code>/s/:code</code> → <code>/s/abc123</code></td></tr>
+    </tbody></table></div>
+    <p>标 <span class="req">*</span> 的是必填参数，其他参数不填就使用「默认值」一列的值。</p>
+
+    <h3>各种语言的写法</h3>
+    <p><b>浏览器 / HTML</b>（GET 接口直接打开；返回图片的接口可以直接当图片用）：</p>
+    <pre>&lt;img src="${o}/api/bing/image" alt="今日壁纸"&gt;
+&lt;img src="${o}/api/qrcode?text=https://miao.club" alt="二维码"&gt;</pre>
+    <p><b>JavaScript（网页、Node.js）</b>：</p>
+    <pre>// GET：用 URLSearchParams 拼参数，会自动编码中文
+const qs = new URLSearchParams({ city: '上海' });
+const res = await fetch('${o}/api/weather?' + qs);
+const { code, message, data } = await res.json();
+if (code === 200) console.log(data);   // 成功
+else console.warn(message);             // 失败原因（中文）
+
+// POST：参数放在 JSON 请求体里
+const r2 = await fetch('${o}/api/shorturl', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ url: 'https://github.com' }),
+});
+console.log((await r2.json()).data.short);</pre>
+    <p><b>jQuery</b>：</p>
+    <pre>$.getJSON('${o}/api/weather', { city: '上海' }, function (res) {
+  if (res.code === 200) console.log(res.data);
+});</pre>
+    <p><b>Python</b>：</p>
+    <pre>import requests
+
+# GET
+res = requests.get('${o}/api/weather', params={'city': '上海'})
+print(res.json()['data'])
+
+# POST
+res = requests.post('${o}/api/shorturl', json={'url': 'https://github.com'})
+print(res.json()['data']['short'])</pre>
+    <p><b>PHP</b>：</p>
+    <pre>&lt;?php
+// GET
+$json = file_get_contents('${o}/api/weather?' . http_build_query(['city' =&gt; '上海']));
+$res = json_decode($json, true);
+if ($res['code'] === 200) print_r($res['data']);
+
+// POST
+$ctx = stream_context_create(['http' =&gt; [
+  'method'  =&gt; 'POST',
+  'header'  =&gt; "Content-Type: application/json\\r\\n",
+  'content' =&gt; json_encode(['url' =&gt; 'https://github.com']),
+]]);
+$res = json_decode(file_get_contents('${o}/api/shorturl', false, $ctx), true);</pre>
+    <p><b>命令行 curl</b>：</p>
+    <pre>curl "${o}/api/weather?city=%E4%B8%8A%E6%B5%B7"
+curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"https://github.com"}'</pre>
+    <p>每个接口详情页底部都有 cURL / JavaScript / Python / 网页前端的示例代码，会根据你在「在线调试」里填的参数自动生成，可以直接复制使用。</p>
+
+    <h3>处理返回结果</h3>
+    <p>先看 <code>code</code>：等于 200 表示成功，数据在 <code>data</code> 里；不等于 200 时 <code>message</code> 是中文的失败原因，<code>data</code> 为 <code>null</code>。常见错误码见下方「错误码」一节。</p>
 
     <h2>在网站 / 博客主题里调用</h2>
     <p>接口支持跨域（CORS），可以在网页里由访客的浏览器直接请求，适合博客主题、个人主页的小卡片。</p>
@@ -1289,6 +1497,64 @@ async function runUpdate(sha, managed) {
   }
 }
 
+// ---------- 运行状态 ----------
+async function pageStatus() {
+  $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
+  const st = await api('GET', '/status');
+  const LABEL = { ok: ['正常', 'ok'], degraded: ['部分失败', 'warn'], down: ['故障', 'danger'], idle: ['24 小时内无调用', ''] };
+  const count = (k) => st.modules.filter((m) => m.status === k).length;
+  const up = st.uptimeSec;
+  const upText = up > 86400 ? `${Math.floor(up / 86400)} 天 ${Math.floor((up % 86400) / 3600)} 小时` : up > 3600 ? `${Math.floor(up / 3600)} 小时 ${Math.floor((up % 3600) / 60)} 分钟` : `${Math.floor(up / 60)} 分钟`;
+  const overall = count('down') ? ['部分接口故障', 'danger'] : count('degraded') ? ['部分接口不稳定', 'warn'] : ['所有接口运行正常', 'ok'];
+  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+    <div class="page-head"><div><h1>运行状态</h1><p>根据最近 24 小时的真实调用统计；上游网站故障时对应接口会显示异常</p></div></div>
+    <div class="card card-pad status-hero ${overall[1]}"><span class="status-dot ${overall[1]}"></span><b>${overall[0]}</b>
+      <span class="faint small" style="margin-left:auto">版本 v${esc(st.version ?? '')} · 已连续运行 ${upText}</span></div>
+    <div class="tiles" style="margin:16px 0">
+      ${[['正常', count('ok')], ['部分失败', count('degraded')], ['故障', count('down')], ['无调用', count('idle')]].map(([l, v]) => `<div class="card tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('')}
+    </div>
+    ${st.categories.map((c) => {
+      const list = st.modules.filter((m) => m.category === c.id);
+      if (!list.length) return '';
+      return `<div class="card card-pad" style="margin-bottom:14px"><h2 style="font-size:15px;margin-bottom:10px">${icon(c.icon)} ${esc(c.title)}</h2>
+        <div class="status-grid">${list.map((m) => `<a class="status-item" href="#/api/${encodeURIComponent(m.name)}" title="${esc(LABEL[m.status][0])}">
+          <span class="status-dot ${LABEL[m.status][1]}"></span><span class="grow">${esc(m.title)}</span>
+          <span class="small faint">${m.calls ? `${fmtNum(m.calls)} 次 · ${m.avgMs} ms${m.errorRate ? ` · 失败 ${m.errorRate}%` : ''}` : '—'}</span></a>`).join('')}</div></div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ---------- Ctrl+K 快速搜索 ----------
+async function openSearch() {
+  if ($('.search-modal')) return;
+  const cat = await loadCatalog();
+  let sel = 0;
+  modal(`<div class="search-modal"><input class="input" id="sk" placeholder="搜索接口名称、路径或用途，回车打开" autocomplete="off">
+    <div class="sk-list" id="sk-list"></div><div class="small faint" style="margin-top:8px">↑ ↓ 选择 · 回车打开 · Esc 关闭</div></div>`, (root, close) => {
+    const list = $('#sk-list', root);
+    let items = [];
+    const draw = () => {
+      const q = $('#sk', root).value.trim().toLowerCase();
+      items = cat.modules.filter((m) => !q || [m.title, m.name, m.description, ...m.routes.map((r) => r.path + r.summary)].join(' ').toLowerCase().includes(q)).slice(0, 12);
+      sel = Math.min(sel, Math.max(items.length - 1, 0));
+      list.innerHTML = items.map((m, i) => `<a class="sk-item ${i === sel ? 'active' : ''}" href="#/api/${encodeURIComponent(m.name)}" data-i="${i}">
+        <span>${icon(catOf(m.category).icon)}</span><span class="grow"><b>${esc(m.title)}</b><span class="small faint mono"> ${esc(m.routes[0]?.path ?? '')}</span></span></a>`).join('') || '<div class="empty">没有匹配的接口</div>';
+    };
+    $('#sk', root).addEventListener('input', () => { sel = 0; draw(); });
+    $('#sk', root).addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, items.length - 1); draw(); e.preventDefault(); }
+      if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); }
+      if (e.key === 'Enter' && items[sel]) { location.hash = `#/api/${encodeURIComponent(items[sel].name)}`; close(); }
+    });
+    list.addEventListener('click', () => close());
+    draw();
+  });
+  $('#sk')?.focus();
+}
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openSearch(); }
+});
+
 function pageNotFound() {
   $('#main').innerHTML = '<div class="wrap"><div class="empty" style="padding:120px 0"><h1 style="font-size:48px;margin-bottom:8px">404</h1><p>页面不存在，<a href="#/">返回首页</a></p></div></div>';
 }
@@ -1298,7 +1564,7 @@ async function router() {
   const hash = location.hash.replace(/^#\/?/, '');
   if (hash === 'catalog') return;
   const [page, arg, sub, extra] = hash.split('/');
-  const routeName = { '': 'home', api: 'api', docs: 'docs', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
+  const routeName = { '': 'home', api: 'api', docs: 'docs', status: 'status', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
   renderTopbar(routeName);
   window.scrollTo(0, 0);
   try {
@@ -1307,6 +1573,7 @@ async function router() {
       case '': await pageHome(); break;
       case 'api': await pageApi(decodeURIComponent(arg ?? '')); break;
       case 'docs': await pageDocs(); break;
+      case 'status': await pageStatus(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
       case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : pageAdmin()); break;

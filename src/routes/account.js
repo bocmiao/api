@@ -17,6 +17,9 @@ import { modules as apiModules, categories as apiCategories } from '../apis/inde
 import { isModuleEnabled, setModulesEnabled } from '../lib/modules.js';
 import { listSettings, saveSettings } from '../lib/settings.js';
 import { sendMail } from '../notify/smtp.js';
+import { invoke, apiRouter } from '../registry.js';
+import { localVersion } from '../lib/updater.js';
+import { cache } from '../lib/cache.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -396,4 +399,70 @@ r('POST', '/admin/settings/test-mail', async (ctx) => {
     throw new HttpError(502, `发送失败：${err.message}`);
   }
   return { data: { to } };
+});
+
+// ---------- 首页「今日」 ----------
+// 服务器统一聚合并缓存 5 分钟，不计入访客额度；单个数据源失败只影响对应卡片
+const TODAY_SOURCES = {
+  greeting: ['/api/greeting'],
+  epic: ['/api/epic/free'],
+  holiday: ['/api/holiday/next'],
+  weather: ['/api/weather', { city: '北京' }],
+  hot: ['/api/hot/weibo', { limit: '6' }],
+  fx: ['/api/fx/rates', { base: 'USD', symbols: 'CNY,EUR,JPY,HKD,GBP' }],
+  bing: ['/api/bing'],
+  hitokoto: ['/api/hitokoto'],
+};
+
+r('GET', '/home/today', async () => {
+  const res = await cache.wrap('home:today', 5 * 60_000, async () => {
+    const keys = Object.keys(TODAY_SOURCES);
+    const settled = await Promise.allSettled(keys.map((k) => invoke(...TODAY_SOURCES[k])));
+    return Object.fromEntries(keys.map((k, i) => [k, settled[i].status === 'fulfilled' ? settled[i].value : null]));
+  });
+  return { data: res.data };
+});
+
+// ---------- 运行状态 ----------
+const STARTED_AT = Date.now();
+
+r('GET', '/status', () => {
+  const since = Date.now() - 86400_000;
+  const rows = sql(`SELECT path, COUNT(*) AS calls,
+                           SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) AS errors,
+                           CAST(AVG(ms) AS INTEGER) AS avgMs,
+                           MAX(CASE WHEN status >= 500 THEN ts END) AS lastErrorAt
+                    FROM request_log WHERE ts >= ? GROUP BY path`).all(since);
+  const byModule = new Map();
+  for (const row of rows) {
+    const hit = apiRouter.match('GET', row.path) ?? apiRouter.match('POST', row.path);
+    const name = hit?.route?.module?.name;
+    if (!name) continue;
+    const m = byModule.get(name) ?? { calls: 0, errors: 0, msTotal: 0, lastErrorAt: null };
+    m.calls += row.calls;
+    m.errors += row.errors;
+    m.msTotal += row.avgMs * row.calls;
+    if (row.lastErrorAt && (!m.lastErrorAt || row.lastErrorAt > m.lastErrorAt)) m.lastErrorAt = row.lastErrorAt;
+    byModule.set(name, m);
+  }
+  const modules = apiModules.filter((m) => isModuleEnabled(m.name)).map((m) => {
+    const st = byModule.get(m.name);
+    const errorRate = st?.calls ? st.errors / st.calls : 0;
+    return {
+      name: m.name, title: m.title, category: m.category,
+      calls: st?.calls ?? 0,
+      errorRate: Math.round(errorRate * 1000) / 10,
+      avgMs: st?.calls ? Math.round(st.msTotal / st.calls) : null,
+      lastErrorAt: st?.lastErrorAt ? new Date(st.lastErrorAt).toISOString() : null,
+      status: !st?.calls ? 'idle' : errorRate >= 0.5 ? 'down' : errorRate >= 0.1 ? 'degraded' : 'ok',
+    };
+  });
+  return {
+    data: {
+      version: localVersion(),
+      uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
+      categories: apiCategories,
+      modules,
+    },
+  };
 });

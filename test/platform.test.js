@@ -259,3 +259,16 @@ test('静态文件使用 ETag，未变化时返回 304', async () => {
   assert.match(html, /\/app\.js\?v=[\w-]{10}"/, '首页引用的脚本带内容指纹');
   assert.match(html, /\/styles\.css\?v=[\w-]{10}"/);
 });
+
+test('首页今日聚合与运行状态接口', async () => {
+  const c = client();
+  const today = await c('GET', '/home/today');
+  assert.equal(today.status, 200);
+  assert.ok('epic' in today.body.data && 'weather' in today.body.data);
+  const st = await c('GET', '/status');
+  assert.equal(st.status, 200);
+  assert.ok(st.body.data.modules.length > 50);
+  assert.ok(st.body.data.modules.every((m) => ['ok', 'degraded', 'down', 'idle'].includes(m.status)));
+  const epic = st.body.data.modules.find((m) => m.name === 'epic');
+  assert.ok(epic.calls > 0, '有调用记录的模块计入统计');
+});
