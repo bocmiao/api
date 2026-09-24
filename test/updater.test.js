@@ -109,25 +109,75 @@ test('替换中途失败时恢复原样', () => {
   assert.equal(readFileSync(join(root, 'src/a.js'), 'utf8'), 'old');
 });
 
-test('检查更新：对比当前版本与远端最新提交', async () => {
-  const commit = (sha, msg) => ({ sha, commit: { message: `${msg}\n\n详细说明`, author: { name: 'bocmiao', date: '2026-09-24T10:00:00Z' }, committer: { date: '2026-09-24T10:00:00Z' } } });
-  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
-  rmSync(join(process.env.DATA_DIR, 'update-rollback.json'), { force: true });
+function mockGitHub({ version, changelog, sha = 'ccc3333' }) {
+  const commit = (h, msg) => ({ sha: h, commit: { message: `${msg}\n\n详细说明`, author: { name: 'bocmiao', date: '2026-09-25T10:00:00Z' }, committer: { date: '2026-09-25T10:00:00Z' } } });
   mock.method(globalThis, 'fetch', async (url) => {
     const u = String(url);
-    if (u.endsWith('/repos/bocmiao/api')) return Response.json({ default_branch: 'main' });
-    if (u.includes('/commits/main')) return Response.json(commit('ccc3333', '第三次提交'));
-    if (u.includes('/compare/aaa1111...ccc3333')) return Response.json({ ahead_by: 2, commits: [commit('bbb2222', '第二次提交'), commit('ccc3333', '第三次提交')] });
+    if (u.endsWith('/repos/bocmiao/api')) return Response.json({ default_branch: 'Miao-API' });
+    if (u.includes('/commits/Miao-API')) return Response.json(commit(sha, 'Latest'));
+    if (u.includes('/contents/package.json')) return new Response(JSON.stringify({ version }));
+    if (u.includes('/contents/CHANGELOG.md')) return changelog == null ? new Response('', { status: 404 }) : new Response(changelog);
+    if (u.includes('/compare/')) return Response.json({ ahead_by: 1, commits: [commit(sha, 'Latest')] });
     return new Response('', { status: 404 });
   });
+}
+
+const CHANGELOG = `# 更新日志
+
+## v9.1.0 · 2099-01-02
+- 新功能 B
+- 修复 C
+
+## v9.0.0 · 2099-01-01
+- 新功能 A
+
+## v0.1.0 · 2026-09-24
+- 首个版本
+`;
+
+test('版本号与更新日志解析', async () => {
+  const { compareVersions, parseChangelog } = await import('../src/lib/updater.js');
+  assert.equal(compareVersions('0.10.0', '0.9.9'), 1);
+  assert.equal(compareVersions('v1.0', '1.0.0'), 0);
+  assert.equal(compareVersions('0.2.0', '0.3.0'), -1);
+  const log = parseChangelog(CHANGELOG);
+  assert.deepEqual(log.map((e) => e.version), ['9.1.0', '9.0.0', '0.1.0']);
+  assert.equal(log[0].date, '2099-01-02');
+  assert.deepEqual(log[0].items, ['新功能 B', '修复 C']);
+});
+
+test('检查更新：远端版本更高时列出之间所有版本的中文更新内容', async () => {
+  rmSync(join(process.env.DATA_DIR, 'update-rollback.json'), { force: true });
+  rmSync(join(process.env.DATA_DIR, 'version.json'), { force: true });
+  mockGitHub({ version: '9.1.0', changelog: CHANGELOG });
   const u = await checkUpdate();
   mock.restoreAll();
-  assert.equal(u.branch, 'main');
-  assert.equal(u.latest.shortSha, 'ccc3333');
-  assert.equal(u.latest.message, '第三次提交');
-  assert.equal(u.behind, 2);
-  assert.equal(u.upToDate, false);
-  assert.deepEqual(u.commits.map((c) => c.message), ['第三次提交', '第二次提交']);
+  assert.equal(u.branch, 'Miao-API');
+  assert.ok(u.current.version, '当前版本从本地 package.json 读取，不再是未知');
+  assert.equal(u.latest.version, '9.1.0');
+  assert.equal(u.hasUpdate, true);
+  assert.equal(u.remoteOlder, false);
+  assert.deepEqual(u.changes.map((e) => e.version), ['9.1.0', '9.0.0']);
+});
+
+test('检查更新：仓库中的版本比当前旧时不提示更新', async () => {
+  mockGitHub({ version: '0.0.1', changelog: CHANGELOG });
+  const u = await checkUpdate();
+  mock.restoreAll();
+  assert.equal(u.hasUpdate, false);
+  assert.equal(u.remoteOlder, true);
+  assert.deepEqual(u.changes, []);
+});
+
+test('检查更新：版本号相同但代码不同视为小修复', async () => {
+  const { localVersion } = await import('../src/lib/updater.js');
+  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222' });
+  const u = await checkUpdate();
+  mock.restoreAll();
+  assert.equal(u.hasUpdate, true);
+  assert.equal(u.patch, true);
+  assert.equal(u.commits.length, 1);
 });
 
 test('GitHub 不可达时给出明确错误', async () => {

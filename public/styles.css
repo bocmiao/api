@@ -401,3 +401,20 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 @media (max-width: 640px) { .set-grid { grid-template-columns: 1fr; } }
 .set-field.focus { outline: 2px solid var(--brand); outline-offset: 6px; border-radius: 6px; }
 .notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--warn-soft); color: var(--warn); padding: 10px 14px; border-radius: 9px; font-size: 14px; }
+
+/* 系统更新 */
+.ver-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.ver-box { padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; min-width: 180px; }
+.ver-box .ver { font-size: 22px; font-weight: 700; margin: 2px 0; }
+.ver-arrow { font-size: 20px; color: var(--text-3); }
+.upd-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-radius: 9px; font-size: 14px; }
+.upd-status.new { background: var(--brand-soft); color: var(--brand); }
+.upd-status.ok { background: var(--ok-soft); color: var(--ok); }
+.upd-status.warn { background: var(--warn-soft); color: var(--warn); }
+.upd-status .small { flex-basis: 100%; color: var(--text-2); }
+.upd-changes { display: grid; gap: 10px; margin-bottom: 16px; }
+.upd-release { border-left: 3px solid var(--brand); padding: 2px 0 2px 12px; }
+.upd-release-head { display: flex; gap: 10px; align-items: baseline; }
+.upd-release ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; color: var(--text-2); }
+.upd-tech { margin-top: 14px; }
+.upd-tech summary { cursor: pointer; }

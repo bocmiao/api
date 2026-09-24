@@ -984,7 +984,7 @@ async function pageAdmin() {
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计与用户管理</p></div>${adminTabs('overview')}</div>
     <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
-      <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><span class="faint small">点击「检查更新」查看 GitHub 上是否有新版本</span></div></div>
+      <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><span class="faint small">点击右上角「检查更新」，看看有没有新版本</span></div></div>
     <div class="tiles">
       ${[['24h 调用', t.calls], ['24h 独立 IP', t.ips], ['24h 平均耗时', `${fmtNum(t.avgMs)} ms`], ['24h 失败', t.errors],
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
@@ -1200,23 +1200,39 @@ async function checkUpdate() {
   try {
     const u = await api('GET', '/admin/update');
     const cur = u.current;
-    const status = u.upToDate
-      ? '<span class="badge ok">已是最新版本</span>'
-      : u.behind ? `<span class="badge warn">有 ${u.behind} 个新提交</span>` : '<span class="badge warn">有可用更新</span>';
+    const latestV = u.latest.version ? `v${u.latest.version}` : '最新代码';
+    const verBox = (label, value, sub) => `<div class="ver-box"><div class="faint small">${label}</div><div class="ver">${value}</div><div class="faint small">${sub}</div></div>`;
+
+    let status;
+    if (u.hasUpdate) status = `<div class="upd-status new">${icon('zap')}<b>${u.patch ? '有新的修复可以更新' : `发现新版本 ${esc(latestV)}`}</b></div>`;
+    else if (u.remoteOlder) status = `<div class="upd-status warn">${icon('shield')}<b>GitHub 上的版本（${esc(latestV)}）比当前还旧</b>
+        <span class="small">通常是更新分支设置不对：请到「系统设置 → 在线更新」确认分支，当前读取的是 <code>${esc(u.branch)}</code></span></div>`;
+    else status = `<div class="upd-status ok">${icon('check')}<b>已经是最新版本</b></div>`;
+
+    const changes = u.changes.length
+      ? `<div class="upd-changes">${u.changes.map((c) => `<div class="upd-release">
+          <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}</div>
+          <ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div>`
+      : u.hasUpdate ? '<p class="small muted">这次更新包含问题修复和细节改进。</p>' : '';
+
     body.innerHTML = `
-      ${u.lastRollback ? `<div class="form-error">上次更新（${esc(u.lastRollback.failedSha?.slice(0, 7) ?? '')}）启动失败，已于 ${shortDate(u.lastRollback.at)} 自动回滚到旧版本。</div>` : ''}
-      <div class="row small" style="gap:24px;margin-bottom:12px">
-        <div><div class="faint">当前版本</div><div class="mono">${cur ? `${esc(cur.sha.slice(0, 7))} · ${esc(cur.message)}` : '未知（尚未通过在线更新部署）'}</div>
-          ${cur ? `<div class="faint">更新于 ${shortDate(cur.updatedAt)}</div>` : ''}</div>
-        <div><div class="faint">最新版本（${esc(u.repo)} · ${esc(u.branch)}）</div><div class="mono">${esc(u.latest.shortSha)} · ${esc(u.latest.message)}</div>
-          <div class="faint">提交于 ${shortDate(u.latest.date)}</div></div>
-        <div style="margin-left:auto">${status}</div>
+      ${u.lastRollback ? `<div class="form-error">上次更新后新版本没能正常启动，已于 ${shortDate(u.lastRollback.at)} 自动恢复到更新前的版本。</div>` : ''}
+      <div class="ver-row">
+        ${verBox('当前版本', cur.version ? `v${esc(cur.version)}` : '—', cur.updatedAt ? `${shortDate(cur.updatedAt)} 更新` : '手动部署')}
+        <div class="ver-arrow">→</div>
+        ${verBox('GitHub 最新版本', esc(latestV), `${shortDate(u.latest.date)} 发布`)}
       </div>
-      ${!u.upToDate && u.commits.length ? `<div class="small faint" style="margin-bottom:6px">更新内容</div>
-        <ul class="small" style="margin:0 0 14px;padding-left:18px">${u.commits.map((c) => `<li><span class="mono faint">${esc(c.shortSha)}</span> ${esc(c.message)}</li>`).join('')}</ul>` : ''}
-      ${!u.managed ? '<p class="small" style="color:var(--warn)">当前服务不是通过守护进程（npm start）启动的，更新完成后需要到服务器面板手动重启。</p>' : ''}
-      ${u.upToDate ? '' : `<button class="btn primary" id="do-update" data-sha="${esc(u.latest.sha)}">立即更新到 ${esc(u.latest.shortSha)}</button>`}
-      <p class="small faint" style="margin:10px 0 0">更新会替换程序代码，数据目录（账号、Key、调用记录）和 .env 配置不受影响；旧版本自动备份，新版本启动失败会自动回滚。</p>`;
+      ${status}
+      ${changes ? `<div class="small faint" style="margin:14px 0 6px">更新内容</div>${changes}` : ''}
+      ${u.hasUpdate ? `
+        ${!u.managed ? '<p class="small" style="color:var(--warn)">当前服务不是通过 npm start 启动的，更新完成后需要到服务器面板手动重启。</p>' : ''}
+        <button class="btn primary" id="do-update" data-sha="${esc(u.latest.sha)}">${icon('zap')}立即更新${u.patch ? '' : `到 ${esc(latestV)}`}</button>
+        <p class="small faint" style="margin:10px 0 0">只替换程序代码，账号、API Key、调用记录和系统设置都不受影响。更新前会自动备份，新版本启动失败会自动恢复。</p>` : ''}
+      <details class="upd-tech"><summary class="small faint">技术细节</summary>
+        <div class="small faint mono" style="margin-top:6px">仓库 ${esc(u.repo)} · 分支 ${esc(u.branch)}<br>
+          当前提交 ${esc(cur.sha?.slice(0, 7) ?? '未知（手动部署）')} · 最新提交 ${esc(u.latest.shortSha)} ${esc(u.latest.message)}</div>
+        ${u.commits.length ? `<ul class="small faint mono">${u.commits.map((c) => `<li>${esc(c.shortSha)} ${esc(c.message)}</li>`).join('')}</ul>` : ''}
+      </details>`;
     $('#do-update')?.addEventListener('click', (e) => runUpdate(e.currentTarget.dataset.sha, u.managed));
   } catch (err) {
     body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
@@ -1226,16 +1242,16 @@ async function checkUpdate() {
 }
 
 async function runUpdate(sha, managed) {
-  if (!(await confirmDialog('在线更新', '将从 GitHub 下载最新代码并替换当前版本，期间服务会重启几秒钟。确定继续？', { danger: false, okText: '开始更新' }))) return;
+  if (!(await confirmDialog('确认更新', '将下载新版本并自动重启，网站会中断几秒钟。账号和数据不受影响。', { danger: false, okText: '开始更新' }))) return;
   const body = $('#update-body');
-  body.innerHTML = '<div class="row"><span class="spinner"></span><span>正在下载并校验新版本…</span></div>';
+  body.innerHTML = '<div class="row"><span class="spinner"></span><span>正在下载新版本并检查是否完整，大约需要十几秒…</span></div>';
   try {
     const r = await api('POST', '/admin/update', { sha });
     if (!managed) {
-      body.innerHTML = `<p>代码已更新到 <span class="mono">${esc(r.version.sha.slice(0, 7))}</span>，请到服务器面板重启服务后生效。</p>`;
+      body.innerHTML = `<p>新版本${r.version.version ? ` v${esc(r.version.version)}` : ''} 已下载完成，请到服务器面板重启服务后生效。</p>`;
       return;
     }
-    body.innerHTML = '<div class="row"><span class="spinner"></span><span>更新完成，正在重启服务…</span></div>';
+    body.innerHTML = '<div class="row"><span class="spinner"></span><span>下载完成，正在重启，页面会自动刷新…</span></div>';
     // 等待服务重启后刷新页面
     await new Promise((r2) => setTimeout(r2, 1500));
     for (let i = 0; i < 60; i++) {

@@ -71,7 +71,8 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 - 下载指定仓库分支的最新代码，先在独立进程里完整加载一遍，确认无误后才替换。
 - `data/` 目录和 `.env` 不会被改动；旧代码自动备份（保留最近 3 份，位于 `.update-backup/`）。
 - 服务需要通过 `npm start`（守护进程 `src/launcher.js`）启动。更新后守护进程自动重启服务；新版本在 20 秒内崩溃会自动回滚到旧版本。
-- 相关环境变量：`UPDATE_REPO`（默认 `bocmiao/api`）、`UPDATE_BRANCH`（默认仓库的默认分支）、`GITHUB_TOKEN`（私有仓库或提高 GitHub 接口限额时填写）。
+- 以 `package.json` 的 `version` 判断是否有新版本，并展示 `CHANGELOG.md` 中比当前版本新的中文更新内容。**发布新版本时记得同时修改这两个文件。**
+- 相关设置（可在「系统设置 → 在线更新」中修改）：`UPDATE_REPO`（默认 `bocmiao/api`）、`UPDATE_BRANCH`（默认仓库的默认分支）、`GITHUB_TOKEN`（私有仓库或提高 GitHub 接口限额时填写）。
 - 程序需要对项目目录有写权限。
 
 ## 调用方式

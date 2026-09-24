@@ -66,33 +66,91 @@ const commitInfo = (c) => ({
   date: c.commit.committer?.date ?? c.commit.author?.date ?? null,
 });
 
-// 检查更新：返回当前版本、最新版本以及两者之间的提交列表
+// ---------- 版本号与更新日志 ----------
+
+export function compareVersions(a, b) {
+  const pa = String(a ?? '0').replace(/^v/, '').split('.').map((x) => parseInt(x, 10) || 0);
+  const pb = String(b ?? '0').replace(/^v/, '').split('.').map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+export function localVersion() {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// 解析 CHANGELOG.md：## v0.3.0 · 2026-09-25 下面的 "- " 列表
+export function parseChangelog(md) {
+  const out = [];
+  let cur = null;
+  for (const line of String(md ?? '').split(/\r?\n/)) {
+    const h = line.match(/^##\s+v?(\d+(?:\.\d+)*)\s*(?:[·\-–—|]\s*(.+))?$/);
+    if (h) {
+      cur = { version: h[1], date: h[2]?.trim() || null, items: [] };
+      out.push(cur);
+    } else if (cur && /^\s*[-*]\s+/.test(line)) {
+      cur.items.push(line.replace(/^\s*[-*]\s+/, '').trim());
+    }
+  }
+  return out;
+}
+
+async function remoteFile(repo, sha, path) {
+  try {
+    const buf = await gh(`/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${sha}`, { accept: 'application/vnd.github.raw', raw: true });
+    return buf.toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+// 检查更新：按版本号比较，并附上中文更新日志
 export async function checkUpdate() {
   const cfg = updateConfig();
   const branch = cfg.branch || (await gh(`/repos/${cfg.repo}`)).default_branch;
-  const latest = commitInfo(await gh(`/repos/${cfg.repo}/commits/${encodeURIComponent(branch)}`));
-  const current = currentVersion();
+  const latestCommit = commitInfo(await gh(`/repos/${cfg.repo}/commits/${encodeURIComponent(branch)}`));
+  const [pkgText, changelogText] = await Promise.all([
+    remoteFile(cfg.repo, latestCommit.sha, 'package.json'),
+    remoteFile(cfg.repo, latestCommit.sha, 'CHANGELOG.md'),
+  ]);
+  let remoteVersion = null;
+  try { remoteVersion = JSON.parse(pkgText).version ?? null; } catch {}
+
+  const deployed = currentVersion();
+  const current = { version: localVersion(), sha: deployed?.sha ?? null, updatedAt: deployed?.updatedAt ?? null };
+  const cmp = remoteVersion && current.version ? compareVersions(remoteVersion, current.version) : 0;
+  const sameCode = current.sha === latestCommit.sha;
+  // 版本号更高 → 新版本；版本号相同但代码不同 → 小修复；版本号更低 → 分支落后，不提示更新
+  const hasUpdate = cmp > 0 || (cmp === 0 && Boolean(current.sha) && !sameCode) || (!remoteVersion && !sameCode);
+  const changelog = parseChangelog(changelogText);
+  const changes = cmp > 0 ? changelog.filter((e) => compareVersions(e.version, current.version) > 0) : [];
+
+  // 技术细节：两个版本之间的提交（仅当部署过的提交已知）
   let commits = [];
-  let behind = null;
-  if (current?.sha && current.sha !== latest.sha) {
+  if (hasUpdate && current.sha && !sameCode) {
     try {
-      const cmp = await gh(`/repos/${cfg.repo}/compare/${current.sha}...${latest.sha}`);
-      behind = cmp.ahead_by;
-      commits = cmp.commits.map(commitInfo).reverse().slice(0, 50);
-    } catch {
-      // 当前版本不在该分支历史里（比如切换过分支），只显示最新提交
-    }
-  } else if (current?.sha === latest.sha) {
-    behind = 0;
+      const c = await gh(`/repos/${cfg.repo}/compare/${current.sha}...${latestCommit.sha}`);
+      commits = c.commits.map(commitInfo).reverse().slice(0, 50);
+    } catch {}
   }
-  if (!current?.sha) commits = [latest];
+
   return {
     repo: cfg.repo,
     branch,
     current,
-    latest,
-    behind,
-    upToDate: current?.sha === latest.sha,
+    latest: { ...latestCommit, version: remoteVersion },
+    hasUpdate,
+    upToDate: !hasUpdate,
+    patch: hasUpdate && cmp === 0,
+    remoteOlder: cmp < 0,
+    changes,
     commits,
     managed: process.env.MIAO_LAUNCHER === '1',
     lastRollback: lastRollback(),
@@ -165,6 +223,7 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
   try {
     const cfg = updateConfig();
     const info = await checkUpdate();
+    if (!info.hasUpdate) throw new HttpError(409, info.remoteOlder ? '仓库中的版本比当前版本旧，已取消更新' : '已是最新版本');
     const target = info.latest;
     if (expectedSha && expectedSha !== target.sha) throw new HttpError(409, '远端已有更新的提交，请重新检查更新后再试');
     const tarGz = await gh(`/repos/${cfg.repo}/tarball/${target.sha}`, { raw: true });
@@ -176,7 +235,7 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
     swapIn(backup);
     rmSync(STAGING, { recursive: true, force: true });
 
-    const version = { sha: target.sha, message: target.message, date: target.date, branch: info.branch, repo: cfg.repo, updatedAt: new Date().toISOString() };
+    const version = { version: target.version, sha: target.sha, message: target.message, date: target.date, branch: info.branch, repo: cfg.repo, updatedAt: new Date().toISOString() };
     mkdirSync(dataDir(), { recursive: true });
     writeFileSync(versionFile(), JSON.stringify(version, null, 2));
     rmSync(join(dataDir(), 'update-rollback.json'), { force: true });
