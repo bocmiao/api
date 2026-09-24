@@ -353,6 +353,9 @@ function codeSamples(route, req) {
     cURL: `curl${route.method !== 'GET' ? ` -X ${route.method}` : ''} "${full}" \\\n  -H "X-API-Key: YOUR_API_KEY"${bodyJson ? ` \\\n  -H "Content-Type: application/json" \\\n  -d '${bodyJson}'` : ''}`,
     JavaScript: `const res = await fetch("${full}", {\n  method: "${route.method}",\n  headers: { "X-API-Key": "YOUR_API_KEY"${bodyJson ? ', "Content-Type": "application/json"' : ''} },${bodyJson ? `\n  body: JSON.stringify(${bodyJson}),` : ''}\n});\nconst { code, message, data } = await res.json();`,
     Python: `import requests\n\nres = requests.${route.method.toLowerCase()}(\n    "${full}",\n    headers={"X-API-Key": "YOUR_API_KEY"},${pyBody ? `\n    json=${pyBody},` : ''}\n)\nprint(res.json()["data"])`,
+    '网页前端': route.raw && route.method === 'GET'
+      ? `<!-- 直接当图片地址使用，无需 Key -->\n<img src="${full}" alt="">`
+      : `// 在网页 / 博客主题里由访客浏览器直接调用：不要带 API Key（前端代码所有人可见）\n// 免 Key 调用按每个访客的 IP 计算额度（每天 ${fmtNum(state.catalog?.limits?.anonDaily ?? 100)} 次），接口已支持跨域\nfetch("${full}"${route.method !== 'GET' ? `, {\n  method: "${route.method}",\n  headers: { "Content-Type": "application/json" },\n  body: JSON.stringify(${bodyJson ?? '{}'}),\n}` : ''})\n  .then((r) => r.json())\n  .then(({ code, message, data }) => {\n    if (code !== 200) return console.warn(message);\n    console.log(data); // 在这里把数据渲染到页面\n  });`,
   };
 }
 
@@ -500,6 +503,25 @@ async function pageDocs() {
     <pre>curl ${o}/api/epic/free</pre>
     <p>注册后在 <a href="#/console/keys">控制台</a> 创建 API Key，通过请求头传入即可获得更高额度：</p>
     <pre>curl ${o}/api/epic/free -H "X-API-Key: ak_xxxxxxxx"</pre>
+
+    <h2>在网站 / 博客主题里调用</h2>
+    <p>接口支持跨域（CORS），可以在网页里由访客的浏览器直接请求，适合博客主题、个人主页的小卡片。</p>
+    <ul>
+      <li><b>不要带 API Key。</b>主题和前端代码会原样发到每个访客的浏览器，Key 写进去等于公开。</li>
+      <li>不带 Key 时按每个访客自己的 IP 计算额度（每天 ${fmtNum(L.anonDaily)} 次），访客再多也不会互相影响；建议在主题里缓存几个小时。</li>
+      <li>返回图片的接口（二维码、Bing 壁纸、随机头像、IP 签名档等）可以直接写在 <code>&lt;img src="..."&gt;</code> 里。</li>
+    </ul>
+    <p>例：在主题的「数据接口」里填 Epic 周免地址：</p>
+    <pre>${o}/api/epic/free</pre>
+    <p>返回的 <code>data.current</code> 是正在免费的游戏，<code>data.upcoming</code> 是即将免费的游戏，每个游戏的字段见 <a href="#/api/epic">接口详情</a>。在自己的网页里调用：</p>
+    <pre>fetch("${o}/api/epic/free")
+  .then((r) =&gt; r.json())
+  .then(({ data }) =&gt; {
+    for (const g of data.current) {
+      console.log(g.title, g.url, g.image.wide, g.endDate);
+    }
+  });</pre>
+    <p>需要更高额度、在服务器端调用时，才使用 API Key（见下一节）。</p>
 
     <h2>认证方式</h2>
     <p>以下三种方式任选其一（推荐请求头，避免 Key 出现在日志里）：</p>
