@@ -147,7 +147,12 @@ export async function handle(req, res) {
       const result = await route.handler(ctx);
 
       if (route.raw) {
-        send(res, result.status ?? 200, result.body ?? '', { ...CORS, ...rateHeaders, ...result.headers });
+        const headers = { ...CORS, ...rateHeaders, ...result.headers };
+        // 从本站域名直接返回的 SVG 可能被当作页面打开，统一禁止脚本
+        if (/svg/i.test(headers['content-type'] ?? '')) {
+          headers['content-security-policy'] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+        }
+        send(res, result.status ?? 200, result.body ?? '', headers);
       } else {
         send(res, 200, envelope(result), { ...CORS, ...rateHeaders });
       }

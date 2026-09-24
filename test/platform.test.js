@@ -178,3 +178,13 @@ test('404 与参数错误', async () => {
   const k = await c('GET', '/api/epic/free?country=china');
   assert.ok([400, 429].includes(k.status));
 });
+
+test('raw 路由返回 SVG 时附带禁止脚本的 CSP', async () => {
+  // 匿名额度在前面的用例里已用完，这里用登录用户请求
+  const c = client();
+  await c('POST', '/auth/register', { email: 'svg@example.com', password: 'password123' });
+  const r = await c('GET', '/api/qrcode?text=hi');
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /svg/);
+  assert.match(r.headers.get('content-security-policy'), /default-src 'none'/);
+});

@@ -368,3 +368,5 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .type-number { color: var(--warn); }
 .type-string { color: var(--ok); }
 .type-boolean, .type-object, .type-array { color: var(--brand); }
+.response .inline-preview { flex: none; padding: 16px; border-bottom: 1px solid var(--border); }
+.response .inline-preview img { max-height: 160px; }

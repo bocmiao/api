@@ -461,6 +461,12 @@ async function pageApi(name) {
           ${body.cached ? '<span class="badge">缓存</span>' : ''}${body.stale ? '<span class="badge warn">旧数据</span>' : ''}
           ${remaining != null ? `<span class="faint" style="margin-left:auto">今日剩余 ${fmtNum(remaining)}</span>` : ''}
         </div><pre>${highlightJson(body)}</pre>`;
+      // 返回里带 data:image 图片（如验证码）时直接预览
+      const inlineImage = body?.data && typeof body.data === 'object'
+        ? Object.values(body.data).find((v) => typeof v === 'string' && /^data:image\/(svg\+xml|png|jpeg|gif|webp);base64,/.test(v)) : null;
+      if (inlineImage) {
+        resp.querySelector('.response-bar').insertAdjacentHTML('afterend', `<div class="preview inline-preview"><img alt="图片预览" src="${esc(inlineImage)}"></div>`);
+      }
       if (res.status === 429 && !state.user) {
         resp.insertAdjacentHTML('beforeend', '<div class="card-pad"><a class="btn primary" href="#/register">免费注册获取更多额度</a></div>');
       }
