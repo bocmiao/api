@@ -9,5 +9,6 @@ import history from './history.js';
 import news60s from './news60s.js';
 import moyu from './moyu.js';
 import bmi from './bmi.js';
+import garbage from './garbage.js';
 
-export default [weather, holiday, lunar, oil, express, ip, phone, history, news60s, moyu, bmi];
+export default [weather, holiday, lunar, oil, express, ip, phone, history, news60s, moyu, bmi, garbage];

@@ -13,8 +13,15 @@ import numerology from './numerology.js';
 import quotes from './quotes.js';
 import greeting from './greeting.js';
 import avatar from './avatar.js';
+import idiom from './idiom.js';
+import xiehouyu from './xiehouyu.js';
+import brainTeaser from './brain-teaser.js';
+import coldFact from './cold-fact.js';
+import compliment from './compliment.js';
+import joke from './joke.js';
 
 export default [
   hitokoto, poem, bing, wallpaper, anime, douban, boxoffice, english,
   answer, fortune, numerology, quotes, greeting, avatar,
+  idiom, xiehouyu, brainTeaser, coldFact, compliment, joke,
 ];

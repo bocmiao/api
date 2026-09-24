@@ -5,5 +5,6 @@ import gog from './gog.js';
 import psplus from './psplus.js';
 import gamepass from './gamepass.js';
 import free from './free.js';
+import mcServer from './mc-server.js';
 
-export default [free, epic, steam, gog, psplus, gamepass, steamInfo];
+export default [free, epic, steam, gog, psplus, gamepass, steamInfo, mcServer];

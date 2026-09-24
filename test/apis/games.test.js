@@ -368,7 +368,8 @@ describe('返回字段说明：fixture + mock fetch 调用 handler', () => {
   });
 
   test('games 分类的每个非 raw 路由都做了字段校验', () => {
-    const expected = routes.filter((r) => !r.raw).map((r) => r.path).sort();
+    // /api/mc/server 的字段在 absorbed.test.js 里校验
+    const expected = routes.filter((r) => !r.raw && r.path !== '/api/mc/server').map((r) => r.path).sort();
     assert.deepEqual([...checked].sort(), expected);
     for (const r of routes.filter((x) => x.raw)) assert.ok(r.returns, `${r.path} 缺少 returns`);
   });
