@@ -1,0 +1,45 @@
+{
+  "data": { "Catalog": { "searchStore": { "elements": [
+    {
+      "title": "Current Free Game", "id": "g1", "namespace": "ns1", "description": "desc1",
+      "offerType": "BASE_GAME", "productSlug": "current-free-game/home", "urlSlug": "abc123",
+      "seller": { "name": "Studio A" },
+      "keyImages": [ { "type": "Thumbnail", "url": "https://img/thumb1" }, { "type": "OfferImageWide", "url": "https://img/wide1" } ],
+      "price": { "totalPrice": { "discountPrice": 0, "originalPrice": 8800, "fmtPrice": { "originalPrice": "¥88.00", "discountPrice": "0" } } },
+      "promotions": {
+        "promotionalOffers": [ { "promotionalOffers": [ { "startDate": "2026-09-17T15:00:00.000Z", "endDate": "2026-09-24T15:00:00.000Z", "discountSetting": { "discountType": "PERCENTAGE", "discountPercentage": 0 } } ] } ],
+        "upcomingPromotionalOffers": []
+      }
+    },
+    {
+      "title": "Next Week Game", "id": "g2", "namespace": "ns2", "description": "desc2",
+      "offerType": "BASE_GAME", "productSlug": null, "urlSlug": "zzz",
+      "offerMappings": [ { "pageSlug": "next-week-game", "pageType": "productHome" } ],
+      "seller": { "name": "Studio B" },
+      "keyImages": [ { "type": "OfferImageTall", "url": "https://img/tall2" } ],
+      "price": { "totalPrice": { "fmtPrice": { "originalPrice": "¥50.00" } } },
+      "promotions": {
+        "promotionalOffers": [],
+        "upcomingPromotionalOffers": [ { "promotionalOffers": [ { "startDate": "2026-09-24T15:00:00.000Z", "endDate": "2026-10-01T15:00:00.000Z", "discountSetting": { "discountType": "PERCENTAGE", "discountPercentage": 0 } } ] } ]
+      }
+    },
+    {
+      "title": "Half Price Game", "id": "g3", "namespace": "ns3", "productSlug": "half-price",
+      "keyImages": [],
+      "promotions": {
+        "promotionalOffers": [ { "promotionalOffers": [ { "startDate": "2026-09-17T15:00:00.000Z", "endDate": "2026-09-24T15:00:00.000Z", "discountSetting": { "discountType": "PERCENTAGE", "discountPercentage": 50 } } ] } ],
+        "upcomingPromotionalOffers": []
+      }
+    },
+    {
+      "title": "Free Bundle", "id": "g4", "namespace": "ns4", "offerType": "BUNDLE", "productSlug": "[]",
+      "catalogNs": { "mappings": [ { "pageSlug": "cool-bundle", "pageType": "productHome" } ] },
+      "keyImages": [ { "type": "DieselStoreFrontWide", "url": "https://img/wide4" } ],
+      "promotions": {
+        "promotionalOffers": [ { "promotionalOffers": [ { "startDate": "2026-09-17T15:00:00.000Z", "endDate": "2026-09-24T15:00:00.000Z", "discountSetting": { "discountType": "PERCENTAGE", "discountPercentage": 0 } } ] } ],
+        "upcomingPromotionalOffers": []
+      }
+    },
+    { "title": "No Promo Game", "id": "g5", "namespace": "ns5", "promotions": null }
+  ] } } }
+}

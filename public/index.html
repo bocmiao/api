@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Hub</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2129; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --free:#16a34a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111317; --card:#1b1e24; --text:#e6e8eb; --muted:#9aa1ab; --line:#2a2e36; --accent:#60a5fa; --free:#4ade80; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { margin:0 0 4px; font-size:28px; }
+  h2 { font-size:18px; margin:36px 0 12px; }
+  .muted { color:var(--muted); }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
+  .route { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:10px; }
+  .route a { color:var(--accent); text-decoration:none; }
+  .method { display:inline-block; font-weight:600; font-size:12px; padding:1px 6px; border-radius:4px; background:var(--accent); color:var(--card); margin-right:6px; }
+  .params { margin:6px 0 0; padding-left:18px; color:var(--muted); font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
+  .game { background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; color:inherit; text-decoration:none; display:flex; flex-direction:column; }
+  .game img { width:100%; aspect-ratio:16/9; object-fit:cover; background:var(--line); display:block; }
+  .game div { padding:10px 12px; }
+  .game strong { display:block; }
+  .tag { font-size:12px; font-weight:600; color:var(--free); }
+  .tag.soon { color:var(--muted); }
+  del { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>API Hub</h1>
+  <p class="muted">聚合 API 平台 · 统一响应格式 <code>{ code, message, data }</code> · 内置缓存 · 支持跨域</p>
+
+  <h2>Epic 本周免费</h2>
+  <div id="epic" class="grid"><p class="muted">加载中…</p></div>
+
+  <h2>接口列表</h2>
+  <div id="routes"><p class="muted">加载中…</p></div>
+</main>
+<script>
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
+  const fmt = (d) => new Date(d).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' });
+
+  fetch('/api').then((r) => r.json()).then(({ data }) => {
+    document.getElementById('routes').innerHTML = data.flatMap((m) => m.routes.map((r) => `
+      <div class="route">
+        <span class="method">${esc(r.method)}</span><a href="${esc(r.path)}"><code>${esc(r.path)}</code></a>
+        <span class="muted"> — ${esc(r.summary)}</span>
+        ${r.params.length ? `<ul class="params">${r.params.map((p) => `<li><code>${esc(p.name)}</code> ${esc(p.desc)}（默认 ${esc(p.default)}）</li>`).join('')}</ul>` : ''}
+      </div>`)).join('');
+  });
+
+  const card = (g, soon) => `
+    <a class="game" href="${esc(g.url)}" target="_blank" rel="noopener">
+      <img src="${esc(g.image.wide || g.image.tall)}" alt="" loading="lazy">
+      <div>
+        <strong>${esc(g.title)}</strong>
+        ${g.originalPrice ? `<del>${esc(g.originalPrice)}</del> ` : ''}
+        <span class="tag ${soon ? 'soon' : ''}">${soon ? `${fmt(g.startDate)} 开始免费` : `免费至 ${fmt(g.endDate)}`}</span>
+      </div>
+    </a>`;
+
+  fetch('/api/epic/free').then((r) => r.json()).then(({ code, message, data }) => {
+    const el = document.getElementById('epic');
+    if (code !== 200) { el.innerHTML = `<p class="muted">加载失败：${esc(message)}</p>`; return; }
+    const html = data.current.map((g) => card(g, false)).join('') + data.upcoming.map((g) => card(g, true)).join('');
+    el.innerHTML = html || '<p class="muted">暂无免费游戏</p>';
+  }).catch(() => { document.getElementById('epic').innerHTML = '<p class="muted">加载失败</p>'; });
+</script>
+</body>
+</html>
