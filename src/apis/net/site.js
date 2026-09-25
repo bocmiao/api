@@ -9,7 +9,7 @@ const MAX_REDIRECTS = 5;
 const HOP_TIMEOUT_MS = 5000;
 const TOTAL_TIMEOUT_MS = 10_000;
 const MAX_BODY = 1024 * 1024;
-const gate = createGate(20);
+export const gate = createGate(20);
 
 // 用 ALPN 探测是否支持 HTTP/2：单独做一次 TLS 握手，只提供 h2 / http/1.1，看服务器选哪个。
 // 连接同样经过 lookup 钩子检查。失败或超时返回 null（无法判断）。

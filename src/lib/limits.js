@@ -17,16 +17,17 @@ setInterval(() => {
   for (const [k, w] of minuteWindows) if (w.start < cutoff) minuteWindows.delete(k);
 }, 60_000).unref();
 
-function hitMinute(subject, limit) {
+function hitMinute(subject, limit, cost = 1) {
   const now = Date.now();
   let w = minuteWindows.get(subject);
   if (!w || now - w.start >= 60_000) minuteWindows.set(subject, (w = { start: now, count: 0 }));
-  w.count++;
+  w.count += cost;
   return w.count <= limit;
 }
 
-// user 为 null 时按 IP 限流（未注册用户），否则按用户限流（该用户所有 Key 共享额度）
-export function consume({ user, ip }) {
+// user 为 null 时按 IP 限流（未注册用户），否则按用户限流（该用户所有 Key 共享额度）。
+// cost：本次计入的调用次数（批量接口按目标数多计，见 app.js 的 ctx.charge）；额度不足时整笔拒绝、不部分扣减
+export function consume({ user, ip }, cost = 1) {
   const subject = user ? `user:${user.id}` : `ip:${ip}`;
   const daily = user ? (user.daily_limit ?? config.limits.userDaily) : config.limits.anonDaily;
   const minute = user ? config.limits.userMinute : config.limits.anonMinute;
@@ -35,7 +36,7 @@ export function consume({ user, ip }) {
   const used = sql('SELECT count FROM usage_daily WHERE day = ? AND subject = ?').get(day, subject)?.count ?? 0;
   const headers = {
     'x-ratelimit-limit': String(daily),
-    'x-ratelimit-remaining': String(Math.max(0, daily - used - 1)),
+    'x-ratelimit-remaining': String(Math.max(0, daily - used - cost)),
     'x-ratelimit-reset': String(secondsUntilReset()),
   };
 
@@ -46,14 +47,19 @@ export function consume({ user, ip }) {
     err.headers = { ...headers, 'x-ratelimit-remaining': '0' };
     throw err;
   }
-  if (!hitMinute(subject, minute)) {
+  if (cost > 1 && used + cost > daily) {
+    const err = new HttpError(429, `今日剩余额度不足：本次请求需要 ${cost} 次，剩余 ${daily - used} 次`);
+    err.headers = { ...headers, 'x-ratelimit-remaining': String(daily - used) };
+    throw err;
+  }
+  if (!hitMinute(subject, minute, cost)) {
     const err = new HttpError(429, `请求过于频繁，每分钟最多 ${minute} 次`);
     err.headers = headers;
     throw err;
   }
 
-  sql(`INSERT INTO usage_daily (day, subject, count) VALUES (?, ?, 1)
-       ON CONFLICT(day, subject) DO UPDATE SET count = count + 1`).run(day, subject);
+  sql(`INSERT INTO usage_daily (day, subject, count) VALUES (?, ?, ?)
+       ON CONFLICT(day, subject) DO UPDATE SET count = count + excluded.count`).run(day, subject, cost);
   return headers;
 }
 

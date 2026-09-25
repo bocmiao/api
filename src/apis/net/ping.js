@@ -4,7 +4,7 @@ import { HttpError, param } from '../../lib/http.js';
 import { createGate, requireHost, resolvePublic, isBlockedIP, BLOCKED_MSG, round2 } from './common.js';
 
 // 每个 ping 都是一个子进程，并发上限比其他接口更低
-const gate = createGate(5);
+export const gate = createGate(5);
 export const UNSUPPORTED_MSG = '服务器不支持 ICMP Ping，可改用 /api/tcping';
 
 const num = (s) => (s == null ? null : Number(s));

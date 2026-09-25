@@ -175,6 +175,8 @@ export async function handle(req, res) {
       const rateHeaders = route.public ? {} : consume({ user, ip });
       const body = await readBody(req);
       const ctx = { req, ip, params: hit.params, query: url.searchParams, body, user: user && { id: user.id, email: user.email } };
+      // 批量接口按目标数计费：入口已计 1 次，handler 调用 ctx.charge(n) 再多计 n 次（额度不足时抛 429）
+      ctx.charge = (n) => { if (!route.public && n > 0) Object.assign(rateHeaders, consume({ user, ip }, n)); };
       const result = await route.handler(ctx);
 
       if (route.raw) {

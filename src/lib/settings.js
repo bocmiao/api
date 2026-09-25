@@ -52,6 +52,7 @@ export const SETTING_GROUPS = [
       { key: 'QWEATHER_HOST', label: '和风天气 API Host', type: 'text', placeholder: 'xxxx.re.qweatherapi.com', help: '和风控制台「设置」里的专属 API Host' },
       { key: 'ITAD_API_KEY', label: 'IsThereAnyDeal Key', type: 'secret', help: '可选，Steam 游戏详情附带史低价（isthereanydeal.com/apps）' },
       { key: 'COINGECKO_API_KEY', label: 'CoinGecko Demo Key', type: 'secret', help: '可选，提高加密货币接口限额' },
+      { key: 'GLOBALPING_TOKEN', label: 'Globalping Token', type: 'secret', help: '可选，多节点检测（/api/probe/*）使用；不填也可用（匿名约每小时 250 次），在 globalping.io 注册后创建 Token 可提高额度' },
     ],
   },
   {

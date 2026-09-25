@@ -59,6 +59,7 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `QWEATHER_KEY`（+ `QWEATHER_HOST`） | 天气切换到和风天气（默认用免 Key 的 Open-Meteo） |
 | `ITAD_API_KEY` | Steam 游戏详情附带史低价 |
 | `COINGECKO_API_KEY` | 提高 CoinGecko 限额 |
+| `GLOBALPING_TOKEN` | 多节点检测提高额度（不填也可用，匿名约每小时 250 次） |
 | `LLM_API_KEY`（+ `LLM_BASE_URL` / `LLM_MODEL`） | AI 分类接口，兼容 OpenAI 格式的任意服务，默认 DeepSeek（`https://api.deepseek.com/v1`、`deepseek-chat`）；`AI_DAILY_LIMIT`（默认 20）为每个账号每天可用次数 |
 
 ## 接口开关
@@ -295,6 +296,15 @@ await fetch('https://api.example.com/api/shorturl', {
 | 整站文字抓取 | `POST /api/crawl` | 沿站内链接抓取多个页面的文字，遵守 robots.txt（后台任务） |
 |  | `/api/crawl/result` | 查询抓取进度与结果（不计调用次数） |
 | 苹果应用搜索 | `/api/appstore/search` | App Store 应用搜索与详情 |
+| 多节点检测 | `/api/probe/ping` | 全球 / 中国多节点 Ping（支持 TCP 模式），按国家、城市汇总 |
+|  | `/api/probe/http` | 多节点 HTTP 测速（DNS、TCP、TLS、首字节、下载耗时） |
+|  | `/api/probe/dns` | 多节点 DNS 查询 |
+|  | `/api/probe/traceroute` | 多节点路由追踪 |
+| DNS 传播检测 | `/api/dns/propagation` | 对比 7 个公共 DNS 的解析结果 |
+| 批量检测 | `/api/batch/ping` | 批量 Ping（最多 10 个，按目标数计次） |
+|  | `/api/batch/tcping` | 批量 TCP 端口检测 |
+|  | `/api/batch/http` | 批量 HTTP 访问测速 |
+| IP 信誉 | `/api/ip/reputation` | 黑名单、机房 IP、反向解析与风险评分 |
 
 ## 推送主题
 

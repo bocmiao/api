@@ -3,7 +3,7 @@ import { param } from '../../lib/http.js';
 import { createGate, requireHost, resolvePublic, isBlockedIP, reasonOf, since, round2 } from './common.js';
 
 const TIMEOUT_MS = 3000;
-const gate = createGate(20);
+export const gate = createGate(20);
 
 // 建立一次 TCP 连接并测量耗时，连上后立即断开。ip 必须是已经检查过的 IP 字面量（不会再触发 DNS 解析）
 export function connectOnce(ip, port, timeoutMs = TIMEOUT_MS) {
