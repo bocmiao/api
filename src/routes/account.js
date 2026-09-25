@@ -169,10 +169,10 @@ function lastDays(n) {
   return days;
 }
 
-function endpointStats(where, args, since) {
+function endpointStats(where, args, since, limit = 15) {
   return sql(`SELECT path, COUNT(*) AS calls, CAST(AVG(ms) AS INTEGER) AS avgMs,
                      SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors
-              FROM request_log WHERE ts >= ? ${where} GROUP BY path ORDER BY calls DESC LIMIT 15`).all(since, ...args);
+              FROM request_log WHERE ts >= ? ${where} GROUP BY path ORDER BY calls DESC LIMIT ?`).all(since, ...args, limit);
 }
 
 r('GET', '/account/usage', (ctx) => {
@@ -288,21 +288,38 @@ r('GET', '/admin/stats', (ctx) => {
         ...last24,
       },
       daily: days.map((day) => ({ day, count: map[day]?.count ?? 0, anon: map[day]?.anon ?? 0 })),
-      endpoints: endpointStats('', [], Date.now() - 7 * 86400_000),
+      // 管理后台返回全部接口（前端默认只显示前 15 个，可展开）
+      endpoints: endpointStats('', [], Date.now() - 7 * 86400_000, 1000),
       errors: sql(`SELECT path, status, COUNT(*) AS n FROM request_log WHERE ts >= ? AND status >= 500
                    GROUP BY path, status ORDER BY n DESC LIMIT 10`).all(since),
     },
   };
 });
 
+// 用户列表：支持按邮箱搜索、分页（每页 50）
 r('GET', '/admin/users', (ctx) => {
   requireAdmin(ctx);
   const day = today();
+  const q = String(ctx.query.get('q') ?? '').trim().slice(0, 100);
+  const page = Math.max(1, Math.min(10_000, Number.parseInt(ctx.query.get('page') ?? '1', 10) || 1));
+  const size = 50;
+  const where = q ? 'WHERE u.email LIKE ? ESCAPE \'\\\'' : '';
+  const args = q ? [`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`] : [];
+  const total = sql(`SELECT COUNT(*) AS n FROM users u ${where}`).get(...args).n;
+  const since7 = Date.now() - 7 * 86400_000;
   const users = sql(`SELECT u.*, (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id) AS keys,
-                            COALESCE((SELECT count FROM usage_daily d WHERE d.day = ? AND d.subject = 'user:' || u.id), 0) AS usedToday
-                     FROM users u ORDER BY u.id DESC LIMIT 200`).all(day);
+                            COALESCE((SELECT count FROM usage_daily d WHERE d.day = ? AND d.subject = 'user:' || u.id), 0) AS usedToday,
+                            (SELECT COUNT(*) FROM request_log l WHERE l.user_id = u.id AND l.ts >= ?) AS calls7d,
+                            (SELECT MAX(ts) FROM request_log l WHERE l.user_id = u.id) AS lastCallAt
+                     FROM users u ${where} ORDER BY u.id DESC LIMIT ? OFFSET ?`).all(day, since7, ...args, size, (page - 1) * size);
   return {
-    data: users.map((u) => ({ ...publicUser(u), disabled: Boolean(u.disabled), keys: u.keys, usedToday: u.usedToday, customLimit: u.daily_limit })),
+    data: {
+      total, page, size,
+      items: users.map((u) => ({
+        ...publicUser(u), disabled: Boolean(u.disabled), keys: u.keys, usedToday: u.usedToday, customLimit: u.daily_limit,
+        calls7d: u.calls7d, lastCallAt: u.lastCallAt ? new Date(u.lastCallAt).toISOString() : null,
+      })),
+    },
   };
 });
 

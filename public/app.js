@@ -141,7 +141,11 @@ function renderTopbar(route) {
     ['#/', '接口', route === 'home' || route === 'api'],
     ['#/docs', '文档', route === 'docs'],
     ...(u ? [['#/console', '控制台', route === 'console']] : []),
-    ...(u?.isAdmin ? [['#/admin', '管理', route === 'admin' && !location.hash.startsWith('#/admin/settings')], ['#/admin/settings', '设置', location.hash.startsWith('#/admin/settings')]] : []),
+    ...(u?.isAdmin ? [
+      ['#/admin', '管理', route === 'admin' && !/^#\/admin\/(settings|users)/.test(location.hash)],
+      ['#/admin/users', '用户', location.hash.startsWith('#/admin/users')],
+      ['#/admin/settings', '设置', location.hash.startsWith('#/admin/settings')],
+    ] : []),
   ];
   $('#topbar').innerHTML = `<div class="wrap">
     <a class="logo" href="#/"><span class="logo-mark">${icon('logo')}</span>Miao API</a>
@@ -1005,12 +1009,15 @@ function barChart(rows, series) {
   };
 }
 
-function endpointsTable(rows) {
+// limit：先显示前 N 行，其余折叠在「展开全部」里
+function endpointsTable(rows, { limit = Infinity } = {}) {
   if (!rows.length) return '<div class="empty">暂无调用记录</div>';
+  const row = (e, i) => `<tr${i >= limit ? ' class="ep-more" hidden' : ''}><td class="mono">${esc(e.path)}</td><td class="num">${fmtNum(e.calls)}</td><td class="num">${fmtNum(e.avgMs)} ms</td>
+      <td class="num">${e.calls ? ((e.errors / e.calls) * 100).toFixed(1) : 0}%</td></tr>`;
+  const more = rows.length - limit;
   return `<div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th class="num">调用</th><th class="num">平均耗时</th><th class="num">失败率</th></tr></thead><tbody>
-    ${rows.map((e) => `<tr><td class="mono">${esc(e.path)}</td><td class="num">${fmtNum(e.calls)}</td><td class="num">${fmtNum(e.avgMs)} ms</td>
-      <td class="num">${e.calls ? ((e.errors / e.calls) * 100).toFixed(1) : 0}%</td></tr>`).join('')}
-  </tbody></table></div>`;
+    ${rows.map(row).join('')}
+  </tbody></table>${more > 0 ? `<div style="text-align:center;padding:10px 0 4px"><button class="btn sm ghost" type="button" data-ep-more>展开全部（还有 ${more} 个）</button></div>` : ''}</div>`;
 }
 
 // ---------- 控制台 ----------
@@ -1248,12 +1255,12 @@ async function consoleSettings(panel) {
 async function pageAdmin() {
   if (!state.user?.isAdmin) return pageNotFound();
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const [s, users] = await Promise.all([api('GET', '/admin/stats'), api('GET', '/admin/users')]);
+  const s = await api('GET', '/admin/stats');
   const t = s.totals;
   const rows = s.daily.map((d) => ({ day: d.day, user: d.count - d.anon, anon: d.anon }));
   const chart = barChart(rows, [{ key: 'user', label: '注册用户' }, { key: 'anon', label: '未登录', cls: 's2' }]);
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
-    <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计与用户管理</p></div>${adminTabs('overview')}</div>
+    <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计、系统更新与接口开关</p></div>${adminTabs('overview')}</div>
     <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
       <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><span class="faint small">点击右上角「检查更新」，看看有没有新版本</span></div></div>
     <div class="tiles">
@@ -1263,7 +1270,8 @@ async function pageAdmin() {
     </div>
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>近 14 天调用量</h2></div><div style="height:10px"></div>${chart.html}</div>
     <div class="grid-2" style="margin-bottom:16px">
-      <div class="card"><h2 class="card-title">热门接口（近 7 天）</h2><div style="padding:8px">${endpointsTable(s.endpoints)}</div></div>
+      <div class="card"><h2 class="card-title">接口调用排行（近 7 天）<span class="small faint" style="font-weight:400;margin-left:6px">共 ${s.endpoints.length} 个接口有调用</span></h2>
+        <div style="padding:8px">${endpointsTable(s.endpoints, { limit: 15 })}</div></div>
       <div class="card"><h2 class="card-title">24h 服务端错误</h2><div style="padding:8px">
         ${s.errors.length ? `<table class="table"><thead><tr><th>接口</th><th>状态</th><th class="num">次数</th></tr></thead><tbody>
           ${s.errors.map((e) => `<tr><td class="mono">${esc(e.path)}</td><td><span class="badge danger">${e.status}</span></td><td class="num">${fmtNum(e.n)}</td></tr>`).join('')}
@@ -1272,43 +1280,79 @@ async function pageAdmin() {
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>接口开关</h2>
       <div class="row"><span class="small faint" id="mod-count"></span><input class="input" id="mod-q" placeholder="搜索接口" style="width:180px;height:32px"></div></div>
       <div class="card-pad" id="mod-body"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div></div>
-    <div class="card"><div class="card-head"><h2>用户</h2><span class="small faint">额度留空表示使用默认值</span></div><div class="table-wrap" style="padding:8px">
-      <table class="table"><thead><tr><th>邮箱</th><th>注册时间</th><th class="num">Key</th><th class="num">今日调用</th><th>每日额度</th><th>状态</th></tr></thead><tbody>
-      ${users.map((u) => `<tr><td>${esc(u.email)} ${u.isAdmin ? '<span class="badge brand">管理员</span>' : ''}</td>
-        <td class="small faint">${fmtDate(u.createdAt)}</td><td class="num">${u.keys}</td><td class="num">${fmtNum(u.usedToday)}</td>
-        <td><form class="row" data-limit="${u.id}"><input class="input" style="width:120px;height:30px" name="limit" inputmode="numeric" value="${u.customLimit ?? ''}" placeholder="${fmtNum(u.dailyLimit)}"><button class="btn sm">保存</button></form></td>
-        <td>${u.id === state.user.id ? '<span class="faint small">—</span>' : `<button class="btn sm ${u.disabled ? '' : 'danger'}" data-toggle="${u.id}" data-disabled="${u.disabled ? 1 : 0}">${u.disabled ? '启用' : '停用'}</button>`}</td></tr>`).join('')}
-      </tbody></table></div></div>
   </div>`;
   chart.mount($('#main'));
   $('#check-update').onclick = () => checkUpdate();
   loadModuleSwitches();
 
-  $('#main').addEventListener('submit', async (e) => {
-    const f = e.target.closest('[data-limit]');
-    if (!f) return;
-    e.preventDefault();
-    const raw = new FormData(f).get('limit').trim();
-    try {
-      await api('PATCH', `/admin/users/${f.dataset.limit}`, { dailyLimit: raw === '' ? null : Number(raw) });
-      toast('额度已更新');
-    } catch (err) { toast(err.message, true); }
-  });
-  $('#main').addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-toggle]');
-    if (!b) return;
-    const disable = b.dataset.disabled === '0';
-    if (disable && !(await confirmDialog('停用用户', '停用后该用户将无法登录，其 API Key 也将失效。', { okText: '停用' }))) return;
-    try {
-      await api('PATCH', `/admin/users/${b.dataset.toggle}`, { disabled: disable });
-      pageAdmin();
-    } catch (err) { toast(err.message, true); }
-  });
 }
 
 const adminTabs = (active) => `<div class="seg">
   <a href="#/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
+  <a href="#/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
   <a href="#/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
+
+// ---------- 用户管理 ----------
+async function pageAdminUsers(q = '', page = 1) {
+  if (!state.user?.isAdmin) return pageNotFound();
+  const first = !$('#users-page');
+  if (first) {
+    $('#main').innerHTML = `<div class="wrap" id="users-page" style="padding:28px 20px 80px">
+      <div class="page-head"><div><h1>用户</h1><p>查看注册用户、调整每日额度、停用账号</p></div>${adminTabs('users')}</div>
+      <div class="card"><div class="card-head"><h2 id="users-count">用户</h2>
+        <form class="row" id="users-search"><input class="input" name="q" placeholder="按邮箱搜索" style="width:220px;height:32px" value="${esc(q)}"><button class="btn sm">搜索</button></form></div>
+        <div id="users-body"><div class="loading"><span class="spinner"></span></div></div></div></div>`;
+    $('#users-search').addEventListener('submit', (e) => { e.preventDefault(); pageAdminUsers(new FormData(e.target).get('q').trim(), 1); });
+    $('#users-page').addEventListener('submit', async (e) => {
+      const f = e.target.closest('[data-limit]');
+      if (!f) return;
+      e.preventDefault();
+      const raw = new FormData(f).get('limit').trim();
+      try {
+        await api('PATCH', `/admin/users/${f.dataset.limit}`, { dailyLimit: raw === '' ? null : Number(raw) });
+        toast('额度已更新');
+      } catch (err) { toast(err.message, true); }
+    });
+    $('#users-page').addEventListener('click', async (e) => {
+      const pg = e.target.closest('[data-page]');
+      if (pg) return pageAdminUsers(pg.dataset.q, Number(pg.dataset.page));
+      const b = e.target.closest('[data-toggle]');
+      if (!b) return;
+      const disable = b.dataset.disabled === '0';
+      if (disable && !(await confirmDialog('停用用户', '停用后该用户将无法登录，其 API Key 也将失效。', { okText: '停用' }))) return;
+      try {
+        await api('PATCH', `/admin/users/${b.dataset.toggle}`, { disabled: disable });
+        const cur = $('#users-body').dataset;
+        pageAdminUsers(cur.q ?? '', Number(cur.page ?? 1));
+      } catch (err) { toast(err.message, true); }
+    });
+  }
+  const body = $('#users-body');
+  let d;
+  try {
+    d = await api('GET', `/admin/users?q=${encodeURIComponent(q)}&page=${page}`);
+  } catch (err) {
+    body.innerHTML = `<div class="form-error" style="margin:16px">${esc(err.message)}</div>`;
+    return;
+  }
+  body.dataset.q = q;
+  body.dataset.page = String(page);
+  $('#users-count').textContent = q ? `找到 ${fmtNum(d.total)} 个用户` : `共 ${fmtNum(d.total)} 个用户`;
+  const pages = Math.max(1, Math.ceil(d.total / d.size));
+  body.innerHTML = d.items.length ? `<div class="table-wrap" style="padding:8px"><table class="table">
+      <thead><tr><th>邮箱</th><th>注册时间</th><th>最近调用</th><th class="num">Key</th><th class="num">今日调用</th><th class="num">近 7 天</th><th>每日额度 <span class="faint small">留空用默认值</span></th><th>状态</th></tr></thead><tbody>
+      ${d.items.map((u) => `<tr><td>${esc(u.email)} ${u.isAdmin ? '<span class="badge brand">管理员</span>' : ''}${u.disabled ? ' <span class="badge danger">已停用</span>' : ''}</td>
+        <td class="small faint">${fmtDate(u.createdAt)}</td><td class="small faint">${u.lastCallAt ? fmtDate(u.lastCallAt) : '—'}</td>
+        <td class="num">${u.keys}</td><td class="num">${fmtNum(u.usedToday)}</td><td class="num">${fmtNum(u.calls7d)}</td>
+        <td><form class="row" data-limit="${u.id}"><input class="input" style="width:120px;height:30px" name="limit" inputmode="numeric" value="${u.customLimit ?? ''}" placeholder="${fmtNum(u.dailyLimit)}"><button class="btn sm">保存</button></form></td>
+        <td>${u.id === state.user.id ? '<span class="faint small">—</span>' : `<button class="btn sm ${u.disabled ? '' : 'danger'}" data-toggle="${u.id}" data-disabled="${u.disabled ? 1 : 0}">${u.disabled ? '启用' : '停用'}</button>`}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${pages > 1 ? `<div class="row" style="justify-content:center;gap:8px;padding:0 0 16px">
+        <button class="btn sm" data-page="${page - 1}" data-q="${esc(q)}" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+        <span class="small faint">第 ${page} / ${pages} 页</span>
+        <button class="btn sm" data-page="${page + 1}" data-q="${esc(q)}" ${page >= pages ? 'disabled' : ''}>下一页</button></div>` : ''}`
+    : `<div class="empty">${q ? '没有匹配的用户' : '还没有用户'}</div>`;
+}
 
 // ---------- 系统设置 ----------
 const SOURCE_LABEL = { panel: ['后台', 'brand'], env: ['环境变量', ''], default: ['默认', ''] };
@@ -1671,7 +1715,7 @@ async function router() {
       case 'status': await pageStatus(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : pageAdmin()); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {
@@ -1682,3 +1726,11 @@ async function router() {
 
 window.addEventListener('hashchange', router);
 loadMe().then(router);
+
+// 调用排行表的「展开全部」
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ep-more]');
+  if (!b) return;
+  b.closest('.table-wrap').querySelectorAll('.ep-more').forEach((r) => { r.hidden = false; });
+  b.parentElement.remove();
+});

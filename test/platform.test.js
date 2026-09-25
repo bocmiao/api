@@ -162,9 +162,15 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   assert.ok(stats.body.data.totals.users >= 3);
 
   const users = await admin('GET', '/admin/users');
-  const u2 = users.body.data.find((u) => u.email === 'user2@example.com');
+  assert.ok(users.body.data.total >= 3);
+  const u2 = users.body.data.items.find((u) => u.email === 'user2@example.com');
+  assert.equal(typeof u2.calls7d, 'number');
+  // 按邮箱搜索；% 和 _ 按字面匹配
+  const found = await admin('GET', '/admin/users?q=user2');
+  assert.deepEqual(found.body.data.items.map((u) => u.email), ['user2@example.com']);
+  assert.equal((await admin('GET', '/admin/users?q=%25')).body.data.total, 0);
   assert.equal((await admin('PATCH', `/admin/users/${u2.id}`, { dailyLimit: 50 })).status, 200);
-  assert.equal((await admin('GET', '/admin/users')).body.data.find((u) => u.id === u2.id).dailyLimit, 50);
+  assert.equal((await admin('GET', '/admin/users')).body.data.items.find((u) => u.id === u2.id).dailyLimit, 50);
 
   const normal = client();
   await normal('POST', '/auth/login', { email: 'user2@example.com', password: 'password123' });
