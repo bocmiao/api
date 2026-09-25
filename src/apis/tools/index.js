@@ -9,5 +9,14 @@ import visitor from './visitor.js';
 import useragent from './useragent.js';
 import color from './color.js';
 import ipcard from './ipcard.js';
+import netcalc from './netcalc.js';
+import codec from './codec.js';
+import securityTools from './security.js';
+import debugTools from './debug.js';
+import textTools from './texttools.js';
+import svgImage from './svgimage.js';
+import cron from './cron.js';
+import regex from './regex.js';
 
-export default [qrcode, shorturl, webmeta, whois, translate, devtools, captcha, visitor, useragent, color, ipcard];
+export default [qrcode, shorturl, webmeta, whois, translate, devtools, captcha, visitor, useragent, color, ipcard,
+  netcalc, codec, securityTools, debugTools, textTools, svgImage, cron, regex];
