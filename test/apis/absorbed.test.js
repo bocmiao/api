@@ -293,11 +293,11 @@ describe('成语词典', () => {
     assert.ok(d.homophones.every((x) => x.word[0] !== '人' && toneless(x.pinyin.split(' ')[0]) === 'ren'));
 
     // 不在词库里的成语也能接（只看尾字），但没有读音和同音备选
-    const u = await call('/api/idiom/chain', 'word=天下无双');
+    const u = await call('/api/idiom/chain', 'word=天下无双&scope=curated');
     assert.deepEqual([u.known, u.tail, u.tailPinyin, u.homophones], [false, '双', null, []]);
     assert.ok(u.items.every((x) => x.word[0] === '双'));
     // 接不上时 count 为 0
-    const none = idiomChain('一去不回');
+    const none = idiomChain('一去不回', { scope: 'curated' });
     assert.equal(none.count, 0);
     assert.deepEqual(none.items, []);
     // 不把自己接回来：人山人海 → 海 ……

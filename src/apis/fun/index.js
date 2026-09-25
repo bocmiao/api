@@ -19,9 +19,11 @@ import brainTeaser from './brain-teaser.js';
 import coldFact from './cold-fact.js';
 import compliment from './compliment.js';
 import joke from './joke.js';
+import hanzi from './hanzi.js';
+import poetry from './poetry.js';
 
 export default [
   hitokoto, poem, bing, wallpaper, anime, douban, boxoffice, english,
   answer, fortune, numerology, quotes, greeting, avatar,
-  idiom, xiehouyu, brainTeaser, coldFact, compliment, joke,
+  idiom, xiehouyu, brainTeaser, coldFact, compliment, joke, hanzi, poetry,
 ];

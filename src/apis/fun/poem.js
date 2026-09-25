@@ -1,4 +1,6 @@
 import { fetchJSON, HttpError } from '../../lib/http.js';
+import { lazy } from './lazy-json.js';
+import { localPoems } from './poetry.js';
 
 const UPSTREAM = 'https://v1.jinrishici.com/all.json';
 
@@ -51,6 +53,13 @@ const AUTHOR_DYNASTY = new Map([
   ...Object.entries(EXTRA_DYNASTY).flatMap(([d, names]) => names.split(' ').map((n) => [n, d])),
   ...FALLBACK_POEMS.filter((p) => p.author !== '佚名').map((p) => [p.author, p.dynasty]),
 ]);
+const ANONYMOUS = new Set(['佚名', '无名氏']);
+
+// 上面的对照表优先；查不到时再用本地《唐诗三百首》《宋词三百首》里的作者补（第一次用到时才读入）
+const localAuthorDynasty = lazy(() => new Map(localPoems().filter((p) => !ANONYMOUS.has(p.author)).map((p) => [p.author, p.dynasty])));
+export const dynastyOf = (author) => (author && !ANONYMOUS.has(author)
+  ? AUTHOR_DYNASTY.get(author) ?? localAuthorDynasty().get(author) ?? null
+  : null);
 
 // all.json: { content, origin, author, category }，不含朝代
 export function parsePoem(raw) {
@@ -59,14 +68,26 @@ export function parsePoem(raw) {
     content: raw.content,
     title: raw.origin ?? null,
     author: raw.author ?? null,
-    dynasty: AUTHOR_DYNASTY.get(raw.author) ?? null,
+    dynasty: dynastyOf(raw.author),
     category: raw.category ?? null,
     fallback: false,
   };
 }
 
+// 兜底句库的另一半：本地《唐诗三百首》里“上句，下句。”形式的对句（约 1400 联）
+export const localCouplets = lazy(() => localPoems()
+  .filter((p) => p.dynasty === '唐')
+  .flatMap((p) => p.paragraphs
+    .filter((line) => /^[^，。？！；]{3,12}，[^，。？！；]{3,12}[。？！]$/u.test(line))
+    .map((content) => ({ content, title: p.title, author: p.author, dynasty: p.dynasty }))));
+
+// 一半概率取内置名句，一半取本地唐诗对句；只用一个随机数，rand() 为 0 时固定得到第一条内置名句
 export function pickFallbackPoem(rand = Math.random) {
-  const p = FALLBACK_POEMS[Math.floor(rand() * FALLBACK_POEMS.length)];
+  const r = rand();
+  const couplets = r < 0.5 ? null : localCouplets();
+  const p = couplets
+    ? couplets[Math.min(couplets.length - 1, Math.floor((r - 0.5) * 2 * couplets.length))]
+    : FALLBACK_POEMS[Math.min(FALLBACK_POEMS.length - 1, Math.floor(r * 2 * FALLBACK_POEMS.length))];
   return { ...p, category: null, fallback: true };
 }
 
@@ -88,7 +109,7 @@ export default {
     {
       method: 'GET',
       path: '/api/poem',
-      summary: '随机古诗词名句，上游不可用时返回内置诗句',
+      summary: '随机古诗词名句，上游不可用时返回本地诗句',
       params: [],
       fields: [
         { name: 'content', type: 'string', desc: '诗词名句（一般是一两句，不是全文），如 "会当凌绝顶，一览众山小。"' },
@@ -99,7 +120,7 @@ export default {
           type: 'string|null',
           desc:
             '朝代：先秦、两汉、魏晋、唐、五代、宋、元、明、清 之一。上游不返回朝代，由本服务按内置的"作者→朝代"对照表补全，' +
-            '作者不在表中（含 "佚名"）时为 null；兜底诗句总是有值',
+            '表中没有时再按本地《唐诗三百首》《宋词三百首》的作者补全；都查不到（含 "佚名"）时为 null；兜底诗句总是有值',
         },
         { name: 'category', type: 'string|null', desc: '今日诗词的分类路径，用 "-" 分隔层级，如 "古诗文-山水-泰山"；上游未提供或兜底诗句时为 null' },
         {
@@ -107,7 +128,7 @@ export default {
           type: 'boolean',
           desc:
             '是否为内置兜底诗句。false：正常取自今日诗词；true：上游请求失败、超时（5 秒）或返回格式无法识别，' +
-            '改为从内置的约 30 句名句中随机取一句，此时 title、author、dynasty 都有值，category 为 null',
+            '改为本地兜底：一半概率取内置的约 30 句名句，一半取本地《唐诗三百首》中的一联对句，此时 title、author、dynasty 都有值，category 为 null',
         },
       ],
       async handler() {
