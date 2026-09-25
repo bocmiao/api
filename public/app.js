@@ -1009,16 +1009,33 @@ function barChart(rows, series) {
   };
 }
 
-// limit：先显示前 N 行，其余折叠在「展开全部」里
-function endpointsTable(rows, { limit = Infinity } = {}) {
+// pageSize：分页显示（数据已全部取回，在浏览器里翻页）
+function endpointsTable(rows, { pageSize = Infinity } = {}) {
   if (!rows.length) return '<div class="empty">暂无调用记录</div>';
-  const row = (e, i) => `<tr${i >= limit ? ' class="ep-more" hidden' : ''}><td class="mono">${esc(e.path)}</td><td class="num">${fmtNum(e.calls)}</td><td class="num">${fmtNum(e.avgMs)} ms</td>
+  const pages = Math.ceil(rows.length / pageSize);
+  const row = (e, i) => `<tr data-pg="${Math.floor(i / pageSize) + 1}"${i >= pageSize ? ' hidden' : ''}><td class="mono">${esc(e.path)}</td><td class="num">${fmtNum(e.calls)}</td><td class="num">${fmtNum(e.avgMs)} ms</td>
       <td class="num">${e.calls ? ((e.errors / e.calls) * 100).toFixed(1) : 0}%</td></tr>`;
-  const more = rows.length - limit;
-  return `<div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th class="num">调用</th><th class="num">平均耗时</th><th class="num">失败率</th></tr></thead><tbody>
+  return `<div class="table-wrap" data-pages="${pages}" data-cur="1"><table class="table"><thead><tr><th>接口</th><th class="num">调用</th><th class="num">平均耗时</th><th class="num">失败率</th></tr></thead><tbody>
     ${rows.map(row).join('')}
-  </tbody></table>${more > 0 ? `<div style="text-align:center;padding:10px 0 4px"><button class="btn sm ghost" type="button" data-ep-more>展开全部（还有 ${more} 个）</button></div>` : ''}</div>`;
+  </tbody></table>${pages > 1 ? `<div class="row pager" style="justify-content:center;gap:8px;padding:10px 0 4px">
+    <button class="btn sm" type="button" data-pg-go="-1" disabled>上一页</button>
+    <span class="small faint" data-pg-label>第 1 / ${pages} 页</span>
+    <button class="btn sm" type="button" data-pg-go="1">下一页</button></div>` : ''}</div>`;
 }
+
+// 表格翻页（在浏览器里切换显示的行）
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pg-go]');
+  if (!b) return;
+  const wrap = b.closest('[data-pages]');
+  const pages = Number(wrap.dataset.pages);
+  const cur = Math.min(pages, Math.max(1, Number(wrap.dataset.cur) + Number(b.dataset.pgGo)));
+  wrap.dataset.cur = String(cur);
+  wrap.querySelectorAll('tr[data-pg]').forEach((r) => { r.hidden = r.dataset.pg !== String(cur); });
+  wrap.querySelector('[data-pg-label]').textContent = `第 ${cur} / ${pages} 页`;
+  wrap.querySelector('[data-pg-go="-1"]').disabled = cur <= 1;
+  wrap.querySelector('[data-pg-go="1"]').disabled = cur >= pages;
+});
 
 // ---------- 控制台 ----------
 const CONSOLE_TABS = [
@@ -1271,7 +1288,7 @@ async function pageAdmin() {
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>近 14 天调用量</h2></div><div style="height:10px"></div>${chart.html}</div>
     <div class="grid-2" style="margin-bottom:16px">
       <div class="card"><h2 class="card-title">接口调用排行（近 7 天）<span class="small faint" style="font-weight:400;margin-left:6px">共 ${s.endpoints.length} 个接口有调用</span></h2>
-        <div style="padding:8px">${endpointsTable(s.endpoints, { limit: 15 })}</div></div>
+        <div style="padding:8px">${endpointsTable(s.endpoints, { pageSize: 10 })}</div></div>
       <div class="card"><h2 class="card-title">24h 服务端错误</h2><div style="padding:8px">
         ${s.errors.length ? `<table class="table"><thead><tr><th>接口</th><th>状态</th><th class="num">次数</th></tr></thead><tbody>
           ${s.errors.map((e) => `<tr><td class="mono">${esc(e.path)}</td><td><span class="badge danger">${e.status}</span></td><td class="num">${fmtNum(e.n)}</td></tr>`).join('')}
@@ -1727,10 +1744,3 @@ async function router() {
 window.addEventListener('hashchange', router);
 loadMe().then(router);
 
-// 调用排行表的「展开全部」
-document.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-ep-more]');
-  if (!b) return;
-  b.closest('.table-wrap').querySelectorAll('.ep-more').forEach((r) => { r.hidden = false; });
-  b.parentElement.remove();
-});

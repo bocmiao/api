@@ -288,7 +288,7 @@ r('GET', '/admin/stats', (ctx) => {
         ...last24,
       },
       daily: days.map((day) => ({ day, count: map[day]?.count ?? 0, anon: map[day]?.anon ?? 0 })),
-      // 管理后台返回全部接口（前端默认只显示前 15 个，可展开）
+      // 管理后台返回全部接口（前端每页显示 10 个）
       endpoints: endpointStats('', [], Date.now() - 7 * 86400_000, 1000),
       errors: sql(`SELECT path, status, COUNT(*) AS n FROM request_log WHERE ts >= ? AND status >= 500
                    GROUP BY path, status ORDER BY n DESC LIMIT 10`).all(since),
@@ -296,13 +296,13 @@ r('GET', '/admin/stats', (ctx) => {
   };
 });
 
-// 用户列表：支持按邮箱搜索、分页（每页 50）
+// 用户列表：支持按邮箱搜索、分页（每页 10）
 r('GET', '/admin/users', (ctx) => {
   requireAdmin(ctx);
   const day = today();
   const q = String(ctx.query.get('q') ?? '').trim().slice(0, 100);
   const page = Math.max(1, Math.min(10_000, Number.parseInt(ctx.query.get('page') ?? '1', 10) || 1));
-  const size = 50;
+  const size = 10;
   const where = q ? 'WHERE u.email LIKE ? ESCAPE \'\\\'' : '';
   const args = q ? [`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`] : [];
   const total = sql(`SELECT COUNT(*) AS n FROM users u ${where}`).get(...args).n;
