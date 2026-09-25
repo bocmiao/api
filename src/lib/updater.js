@@ -19,7 +19,7 @@ export const updateConfig = () => ({
   token: process.env.GITHUB_TOKEN || '',
 });
 
-async function gh(path, { accept = 'application/vnd.github+json', raw = false } = {}) {
+async function gh(path, { accept = 'application/vnd.github+json', raw = false, onBytes } = {}) {
   const { token } = updateConfig();
   let res;
   try {
@@ -36,9 +36,21 @@ async function gh(path, { accept = 'application/vnd.github+json', raw = false } 
   if (!raw) return res.json();
   const len = Number(res.headers.get('content-length') || 0);
   if (len > MAX_DOWNLOAD) throw new HttpError(502, '更新包过大');
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_DOWNLOAD) throw new HttpError(502, '更新包过大');
-  return buf;
+  // 边下载边汇报进度（GitHub 不一定给出总大小，此时只报已下载字节数）
+  const chunks = [];
+  let got = 0;
+  try {
+    for await (const chunk of res.body) {
+      got += chunk.length;
+      if (got > MAX_DOWNLOAD) throw new HttpError(502, '更新包过大');
+      chunks.push(chunk);
+      onBytes?.(got, len || null);
+    }
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(502, '下载更新包时连接中断，请重试');
+  }
+  return Buffer.concat(chunks);
 }
 
 const versionFile = () => join(dataDir(), 'version.json');
@@ -216,20 +228,52 @@ function pruneBackups() {
 
 let running = false;
 
-// 执行更新：下载 → 解包 → 校验 → 备份并替换 → 记录版本 → 标记待确认
+// 更新进度：供后台轮询显示。percent 为 0~100；stage 为当前步骤的中文说明
+const idle = () => ({ state: 'idle', stage: '', percent: 0, detail: '', error: null, result: null, startedAt: null });
+let progress = idle();
+export const updateProgress = () => ({ ...progress });
+function report(patch) { progress = { ...progress, ...patch }; }
+const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
+
+// 后台启动更新，立即返回；进度通过 updateProgress() 查询。onDone(result) 在成功后调用（用于重启）
+export function startUpdate(opts = {}, onDone) {
+  if (running) throw new HttpError(409, '已有更新正在进行');
+  progress = { ...idle(), state: 'running', stage: '正在检查新版本', percent: 2, startedAt: new Date().toISOString() };
+  applyUpdate(opts)
+    .then((result) => {
+      report({ state: 'done', stage: result.restart ? '更新完成，正在重启服务' : '更新完成，需要手动重启服务', percent: 100, result });
+      onDone?.(result);
+    })
+    .catch((err) => report({ state: 'error', stage: '更新失败', error: err.message || String(err) }));
+  return updateProgress();
+}
+
 export async function applyUpdate({ sha: expectedSha } = {}) {
   if (running) throw new HttpError(409, '已有更新正在进行');
   running = true;
   try {
     const cfg = updateConfig();
+    report({ stage: '正在检查新版本', percent: 3 });
     const info = await checkUpdate();
     if (!info.hasUpdate) throw new HttpError(409, info.remoteOlder ? '仓库中的版本比当前版本旧，已取消更新' : '已是最新版本');
     const target = info.latest;
     if (expectedSha && expectedSha !== target.sha) throw new HttpError(409, '远端已有更新的提交，请重新检查更新后再试');
-    const tarGz = await gh(`/repos/${cfg.repo}/tarball/${target.sha}`, { raw: true });
+    report({ stage: '正在下载新版本', percent: 5, target: { version: target.version, sha: target.sha } });
+    const tarGz = await gh(`/repos/${cfg.repo}/tarball/${target.sha}`, {
+      raw: true,
+      onBytes: (got, total) => report({
+        percent: total ? 5 + Math.round((got / total) * 50) : Math.min(50, 5 + Math.round(got / 200_000)),
+        detail: total ? `${mb(got)} / ${mb(total)}` : `已下载 ${mb(got)}`,
+      }),
+    });
+    report({ stage: '正在解压', percent: 58, detail: mb(tarGz.length) });
     const { files } = unpackTo(tarGz, STAGING);
-    await verifyStaging(STAGING);
+    report({ stage: '正在检查新版本能否正常启动', percent: 65, detail: `共 ${files} 个文件` });
+    // 试启动一般要几秒到十几秒，期间进度缓慢前进，让页面看得出没有卡住
+    const tick = setInterval(() => report({ percent: Math.min(90, progress.percent + 1) }), 800);
+    try { await verifyStaging(STAGING); } finally { clearInterval(tick); }
 
+    report({ stage: '正在备份并替换文件', percent: 92, detail: '' });
     const previousVersion = currentVersion();
     const backup = join(BACKUPS, new Date().toISOString().replace(/[:.]/g, '-'));
     swapIn(backup);
@@ -241,6 +285,7 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
     rmSync(join(dataDir(), 'update-rollback.json'), { force: true });
     writePending({ backup, sha: target.sha, previousVersion, at: version.updatedAt });
     pruneBackups();
+    report({ percent: 97 });
     return { version, files, restart: info.managed };
   } finally {
     rmSync(STAGING, { recursive: true, force: true });

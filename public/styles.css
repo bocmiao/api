@@ -470,3 +470,12 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .sk-list { margin-top: 10px; display: grid; gap: 2px; max-height: 50vh; overflow-y: auto; }
 .sk-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; color: var(--text); }
 .sk-item:hover, .sk-item.active { background: var(--brand-soft); text-decoration: none; }
+
+/* 在线更新进度 */
+.upd-progress { display: grid; gap: 8px; }
+.upd-track { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.upd-fill { height: 100%; border-radius: 99px; background: var(--brand); transition: width .5s ease; }
+.upd-progress.ok .upd-fill { background: var(--ok); }
+.upd-progress.ok b { color: var(--ok); }
+.upd-progress.bad .upd-fill { background: var(--danger); }
+.upd-progress.bad b, .upd-progress.bad .faint { color: var(--danger); }

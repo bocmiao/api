@@ -10,7 +10,7 @@ import { channelCatalog, validateChannel, sendToChannel, maskConfig } from '../n
 import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
-import { checkUpdate, applyUpdate } from '../lib/updater.js';
+import { checkUpdate, startUpdate, updateProgress } from '../lib/updater.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
@@ -338,12 +338,19 @@ r('GET', '/admin/update', async (ctx) => {
   return { data: await checkUpdate() };
 });
 
-r('POST', '/admin/update', async (ctx) => {
+// 在后台执行更新并立即返回，前端轮询 /admin/update/progress 显示进度（避免长请求被 CDN / 反向代理超时断开）
+r('POST', '/admin/update', (ctx) => {
   requireAdmin(ctx);
-  const result = await applyUpdate({ sha: ctx.body?.sha });
-  // 由守护进程启动时，响应发出后以退出码 75 退出，守护进程立即用新代码重启
-  if (result.restart) setTimeout(() => process.exit(75), 500).unref();
-  return { data: result };
+  const started = startUpdate({ sha: ctx.body?.sha }, (result) => {
+    // 由守护进程启动时以退出码 75 退出，守护进程立即用新代码重启；留几秒让前端取到「更新完成」
+    if (result.restart) setTimeout(() => process.exit(75), 3000).unref();
+  });
+  return { data: started };
+});
+
+r('GET', '/admin/update/progress', (ctx) => {
+  requireAdmin(ctx);
+  return { data: updateProgress() };
 });
 
 // ---------- 接口开关 ----------

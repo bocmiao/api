@@ -171,6 +171,20 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   assert.equal((await normal('GET', '/admin/stats')).status, 403);
   assert.equal((await normal('GET', '/admin/update')).status, 403);
   assert.equal((await normal('POST', '/admin/update', {})).status, 403);
+  assert.equal((await normal('GET', '/admin/update/progress')).status, 403);
+
+  // 在线更新在后台执行，立即返回进度；GitHub 不可用时进度变为 error 并带原因
+  const started = await admin('POST', '/admin/update', {});
+  assert.equal(started.status, 200);
+  assert.equal(started.body.data.state, 'running');
+  let prog;
+  for (let i = 0; i < 50; i++) {
+    prog = (await admin('GET', '/admin/update/progress')).body.data;
+    if (prog.state !== 'running') break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal(prog.state, 'error');
+  assert.ok(prog.error);
   assert.equal((await client()('GET', '/admin/stats')).status, 401);
 });
 

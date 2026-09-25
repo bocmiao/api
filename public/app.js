@@ -1533,30 +1533,62 @@ async function checkUpdate() {
   }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function updateBar(body, { percent = 0, stage = '', detail = '', tone = '' }) {
+  body.innerHTML = `<div class="upd-progress ${tone}">
+    <div class="row" style="justify-content:space-between;gap:12px">
+      <span class="row" style="gap:8px">${tone ? '' : '<span class="spinner"></span>'}<b>${esc(stage)}</b></span>
+      <span class="mono small">${Math.round(percent)}%</span></div>
+    <div class="upd-track"><div class="upd-fill" style="width:${Math.max(2, Math.min(100, percent))}%"></div></div>
+    <div class="small faint">${esc(detail || '')}</div></div>`;
+}
+
 async function runUpdate(sha, managed) {
   if (!(await confirmDialog('确认更新', '将下载新版本并自动重启，网站会中断几秒钟。账号和数据不受影响。', { danger: false, okText: '开始更新' }))) return;
   const body = $('#update-body');
-  body.innerHTML = '<div class="row"><span class="spinner"></span><span>正在下载新版本并检查是否完整，大约需要十几秒…</span></div>';
+  updateBar(body, { percent: 1, stage: '正在开始更新' });
+  let p;
   try {
-    const r = await api('POST', '/admin/update', { sha });
-    if (!managed) {
-      body.innerHTML = `<p>新版本${r.version.version ? ` v${esc(r.version.version)}` : ''} 已下载完成，请到服务器面板重启服务后生效。</p>`;
-      return;
-    }
-    body.innerHTML = '<div class="row"><span class="spinner"></span><span>下载完成，正在重启，页面会自动刷新…</span></div>';
-    // 等待服务重启后刷新页面
-    await new Promise((r2) => setTimeout(r2, 1500));
-    for (let i = 0; i < 60; i++) {
-      try {
-        const res = await fetch('/health', { cache: 'no-store' });
-        if (res.ok) { location.reload(); return; }
-      } catch {}
-      await new Promise((r2) => setTimeout(r2, 1000));
-    }
-    body.innerHTML = '<div class="form-error">服务长时间没有恢复，请到服务器面板查看运行日志。</div>';
+    p = await api('POST', '/admin/update', { sha });
   } catch (err) {
     body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
+    return;
   }
+  // 1. 轮询更新进度（下载、解压、试启动、替换）
+  let fails = 0;
+  while (p.state === 'running') {
+    updateBar(body, p);
+    await sleep(700);
+    try { p = await api('GET', '/admin/update/progress'); fails = 0; } catch { if (++fails > 10) break; }
+  }
+  if (p.state === 'error') {
+    updateBar(body, { ...p, percent: p.percent, tone: 'bad', detail: p.error });
+    return;
+  }
+  const target = p.result?.version?.version ?? p.target?.version ?? '';
+  if (p.state === 'done' && !p.result?.restart) {
+    updateBar(body, { percent: 100, stage: `新版本${target ? ` v${target}` : ''} 已下载完成`, detail: '当前不是通过守护进程启动的，请到服务器面板重启服务后生效', tone: 'ok' });
+    return;
+  }
+  // 2. 等待服务重启：重启期间请求失败（包括 CDN 返回的 5xx）属于正常现象，继续等
+  updateBar(body, { percent: 98, stage: '正在重启服务', detail: '网站会中断几秒钟，请不要关闭页面' });
+  await sleep(3500);
+  for (let i = 0; i < 90; i++) {
+    try {
+      const res = await fetch('/status', { cache: 'no-store' });
+      const st = res.ok ? (await res.json()).data : null;
+      if (st && (!target || st.version === target)) {
+        updateBar(body, { percent: 100, stage: `更新成功${st.version ? `，当前版本 v${st.version}` : ''}`, detail: '页面即将刷新以加载新版本', tone: 'ok' });
+        await sleep(1500);
+        location.reload();
+        return;
+      }
+    } catch { /* 服务还没起来 */ }
+    updateBar(body, { percent: 98, stage: '正在重启服务', detail: `已等待 ${i + 4} 秒…` });
+    await sleep(1000);
+  }
+  updateBar(body, { percent: 98, stage: '服务长时间没有恢复', detail: '如果新版本启动失败，守护进程会自动恢复旧版本；请刷新页面查看，或到服务器面板查看运行日志', tone: 'bad' });
 }
 
 // ---------- 运行状态 ----------
