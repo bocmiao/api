@@ -5,11 +5,13 @@ import { pruneLogs } from './lib/limits.js';
 import { pruneEmailCodes } from './lib/emailcode.js';
 import { startScheduler } from './notify/scheduler.js';
 import { clearPending, readPending } from './lib/swap.js';
+import { warmToday } from './routes/account.js';
 
 const prune = () => { pruneLogs(); pruneEmailCodes(); };
 prune();
 setInterval(prune, 6 * 3600_000).unref();
 startScheduler();
+warmToday();
 
 createServer(handle).listen(config.port, () => {
   console.log(`Miao API 已启动：http://localhost:${config.port}`);

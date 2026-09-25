@@ -450,18 +450,38 @@ async function todayWeather(ctx) {
   return { ...(await invoke('/api/weather', { city: DEFAULT_CITY })), located: 'default' };
 }
 
-// 公共部分由服务器统一聚合并缓存 5 分钟，所有访客共用、不计入访客额度；天气按访客城市单独取（同一城市同样有缓存）
-r('GET', '/home/today', async (ctx) => {
-  const [shared, weather] = await Promise.all([
-    cache.wrap('home:today', 5 * 60_000, async () => {
-      const keys = Object.keys(TODAY_SOURCES);
-      const settled = await Promise.allSettled(keys.map((k) => invoke(...TODAY_SOURCES[k])));
-      return Object.fromEntries(keys.map((k, i) => [k, settled[i].status === 'fulfilled' ? settled[i].value : null]));
-    }),
-    todayWeather(ctx).catch(() => null),
-  ]);
-  return { data: { ...shared.data, weather } };
+// 公共部分由服务器统一聚合，所有访客共用、不计入访客额度。
+// 先返回已有数据、过期了再在后台刷新（访客不用等上游）；服务启动时预热，之后每 5 分钟自动刷新一次。
+const TODAY_TTL = 5 * 60_000;
+const todayState = { data: null, at: 0, pending: null };
+
+function refreshToday() {
+  todayState.pending ??= (async () => {
+    const keys = Object.keys(TODAY_SOURCES);
+    const settled = await Promise.allSettled(keys.map((k) => invoke(...TODAY_SOURCES[k])));
+    const data = Object.fromEntries(keys.map((k, i) => [k, settled[i].status === 'fulfilled' ? settled[i].value : null]));
+    // 某一项这次失败时沿用上一次的数据，避免卡片时有时无
+    if (todayState.data) for (const k of keys) data[k] ??= todayState.data[k];
+    todayState.data = data;
+    todayState.at = Date.now();
+    return data;
+  })().finally(() => { todayState.pending = null; });
+  return todayState.pending;
+}
+
+export function warmToday() {
+  refreshToday().catch(() => {});
+  setInterval(() => refreshToday().catch(() => {}), TODAY_TTL).unref();
+}
+
+r('GET', '/home/today', async () => {
+  if (!todayState.data) return { data: await refreshToday() };
+  if (Date.now() - todayState.at > TODAY_TTL) refreshToday().catch(() => {});
+  return { data: todayState.data };
 });
+
+// 天气按访客城市单独取（同一城市、同一 IP 都有缓存），和公共部分分开请求，慢了也不拖累其他卡片
+r('GET', '/home/weather', async (ctx) => ({ data: await todayWeather(ctx).catch(() => null) }));
 
 // ---------- 运行状态 ----------
 const STARTED_AT = Date.now();

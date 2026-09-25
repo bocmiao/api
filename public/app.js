@@ -303,18 +303,34 @@ function countdown(iso) {
   return d ? `还剩 ${d} 天 ${h} 小时` : `还剩 ${h} 小时`;
 }
 
+// 上次的数据存在浏览器里：再次打开首页时先立即显示，同时在后台取最新数据替换
+const TODAY_CACHE = 'todayCache.v1';
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* 隐私模式 */ } };
+
 async function loadToday() {
+  if (!$('#today-grid')) return;
+  const city = lsGet('todayCity') || '';
+  let cached = null;
+  try { cached = JSON.parse(lsGet(TODAY_CACHE) || 'null'); } catch { /* 数据损坏 */ }
+  let shared = cached?.shared ?? null;
+  // undefined 表示天气还在加载；换了城市时不用旧天气
+  let weather = cached && cached.city === city ? cached.weather : undefined;
+  const draw = () => { if (shared && $('#today-grid')) renderToday({ ...shared, weather }, city); };
+  const save = () => lsSet(TODAY_CACHE, JSON.stringify({ shared, weather, city }));
+  draw();
+
+  const qs = city ? `?city=${encodeURIComponent(city)}` : '';
+  await Promise.all([
+    api('GET', '/home/today').then((d) => { shared = d; draw(); save(); })
+      .catch(() => { if (!shared) $('#today')?.remove(); }),
+    api('GET', `/home/weather${qs}`).then((d) => { weather = d; draw(); if (shared) save(); })
+      .catch(() => { if (weather === undefined) { weather = null; draw(); } }),
+  ]);
+}
+
+function renderToday(t, savedCity) {
   const grid = $('#today-grid');
-  if (!grid) return;
-  let t;
-  let savedCity = '';
-  try { savedCity = localStorage.getItem('todayCity') || ''; } catch { /* 隐私模式 */ }
-  try {
-    t = await api('GET', `/home/today${savedCity ? `?city=${encodeURIComponent(savedCity)}` : ''}`);
-  } catch {
-    $('#today').remove();
-    return;
-  }
   const card = (api, title, inner, cls = '') => `<a class="card today-card ${cls}" href="#/api/${api}"><div class="today-title">${title}</div>${inner}</a>`;
   const cards = [];
 
@@ -334,7 +350,9 @@ async function loadToday() {
       : h.next ? `<div class="today-big">${esc(h.next.name)}</div><div class="muted small">还有 <b>${h.next.daysUntil}</b> 天 · ${esc(h.next.start)} 起放 ${h.next.days} 天</div>`
         : '<div class="muted">暂无放假安排</div>'));
   }
-  if (t.weather?.current) {
+  if (t.weather === undefined) {
+    cards.push(card('weather', '天气', '<div class="today-big faint">加载中…</div>'));
+  } else if (t.weather?.current) {
     const w = t.weather;
     const how = { chosen: '已选城市', ip: '按 IP 定位', default: '默认城市' }[w.located] ?? '';
     cards.push(card('weather', `${esc(w.location?.name ?? '')} 天气${how ? ` · ${how}` : ''}<button class="today-city" type="button" data-city>切换城市</button>`, `
@@ -375,10 +393,7 @@ async function loadToday() {
     e.stopPropagation();
     const city = prompt('输入城市或区县名称（例如：汝阳、洛阳）。留空恢复按 IP 自动定位。', savedCity);
     if (city === null) return;
-    try {
-      if (city.trim()) localStorage.setItem('todayCity', city.trim());
-      else localStorage.removeItem('todayCity');
-    } catch { /* 隐私模式 */ }
+    lsSet('todayCity', city.trim() || null);
     loadToday();
   });
   $('#today-note').textContent = '实时数据，每 5 分钟更新 · 点卡片查看对应接口';

@@ -264,11 +264,13 @@ test('首页今日聚合与运行状态接口', async () => {
   const c = client();
   const today = await c('GET', '/home/today');
   assert.equal(today.status, 200);
-  assert.ok('epic' in today.body.data && 'weather' in today.body.data && 'history' in today.body.data);
-  // 指定城市（上游不可用时天气为 null，也不能影响其他卡片）
-  const chosen = await c('GET', `/home/today?city=${encodeURIComponent('汝阳')}`);
-  assert.equal(chosen.status, 200);
-  assert.ok('weather' in chosen.body.data);
+  assert.ok('epic' in today.body.data && 'history' in today.body.data);
+  // 第二次直接返回服务器上已聚合好的数据
+  const again = await c('GET', '/home/today');
+  assert.deepEqual(again.body.data, today.body.data);
+  // 天气单独请求；指定城市时上游不可用也返回 200（data 为 null）
+  const w = await c('GET', `/home/weather?city=${encodeURIComponent('汝阳')}`);
+  assert.equal(w.status, 200);
   const st = await c('GET', '/status');
   assert.equal(st.status, 200);
   assert.ok(st.body.data.modules.length > 50);
