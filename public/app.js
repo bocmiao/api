@@ -1292,10 +1292,13 @@ async function pageAdminSettings(focusGroup, focusKeys) {
       input = `<input class="input ${f.type === 'text' || f.type === 'url' ? 'mono' : ''}" data-key="${f.key}" data-type="${f.type}" data-orig="${esc(f.value)}" value="${esc(f.value)}"
         ${f.type === 'int' ? 'inputmode="numeric"' : ''} placeholder="${esc(f.default != null ? `默认 ${f.default}` : f.placeholder ?? '')}">`;
     }
+    const link = f.link ? ` · <a href="${esc(f.link)}" target="_blank" rel="noopener noreferrer">获取地址 ↗</a>` : '';
     return `<div class="set-field">
-      <div class="set-label"><span>${esc(f.label)}</span>${src}${f.restart ? '<span class="badge warn">重启后生效</span>' : ''}</div>
+      <div class="set-label"><span>${esc(f.label)}</span>${src}${f.restart ? '<span class="badge warn">重启后生效</span>' : ''}
+        ${f.test ? `<button class="btn sm ghost set-test" type="button" data-test="${f.test}">测试连通性</button>` : ''}</div>
       ${input}
-      <div class="hint"><span class="mono">${f.key}</span>${f.help ? ` · ${esc(f.help)}` : ''}</div>
+      <div class="hint"><span class="mono">${f.key}</span>${f.help ? ` · ${esc(f.help)}` : ''}${link}</div>
+      ${f.test ? `<div class="test-result" data-result="${f.test}" hidden></div>` : ''}
     </div>`;
   };
 
@@ -1353,6 +1356,24 @@ async function pageAdminSettings(focusGroup, focusKeys) {
     if (clr) {
       if (!(await confirmDialog('清除设置', `确定清除 ${clr.dataset.clear}？将恢复为环境变量中的值（如有）。`, { okText: '清除' }))) return;
       try { await save({ [clr.dataset.clear]: null }); } catch (err) { toast(err.message, true); }
+    }
+    const tbtn = e.target.closest('[data-test]');
+    if (tbtn) {
+      const form = tbtn.closest('form');
+      if (Object.keys(collect(form)).length) return toast('请先保存这一组设置，再测试连通性', true);
+      const out = $(`[data-result="${CSS.escape(tbtn.dataset.test)}"]`, form);
+      tbtn.disabled = true;
+      out.hidden = false;
+      out.className = 'test-result';
+      out.textContent = '正在测试…';
+      try {
+        const r = await api('POST', '/admin/settings/test-key', { service: tbtn.dataset.test });
+        out.className = `test-result ${r.ok ? 'ok' : 'bad'}`;
+        out.textContent = `${r.ok ? '✓' : '✗'} ${r.message}${r.detail ? `：${r.detail}` : ''}`;
+      } catch (err) {
+        out.className = 'test-result bad';
+        out.textContent = `✗ ${err.message}`;
+      } finally { tbtn.disabled = false; }
     }
     if (e.target.closest('#test-mail')) {
       const form = e.target.closest('form');

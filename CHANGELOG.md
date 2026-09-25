@@ -4,6 +4,10 @@
 1. 修改 `package.json` 中的 `version`；
 2. 在下面最上方加一段 `## v版本号 · 日期`，每条改动一行，以 `- ` 开头。
 
+## v0.6.1 · 2026-09-25
+- 系统设置里的第三方服务（快递100、DeepL、百度翻译、有道、和风天气、IsThereAnyDeal、CoinGecko、Globalping、大模型、GitHub）新增「测试连通性」按钮，直接显示密钥是否有效、剩余额度等
+- 每个密钥下方新增「获取地址」链接，点击直达对应平台的密钥申请页面
+
 ## v0.6.0 · 2026-09-25
 - 新增多节点检测（Globalping 全球探针）：多节点 Ping / TCP Ping、HTTP 测速、DNS 查询、路由追踪，按国家和城市汇总延迟与丢包；可在「系统设置 → 第三方密钥」填写 Globalping Token 提高额度
 - 新增 DNS 传播检测：同时查询 Google、Cloudflare、阿里、腾讯等 7 个公共 DNS，对比解析是否一致

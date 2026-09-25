@@ -16,6 +16,7 @@ import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
 import { isModuleEnabled, setModulesEnabled } from '../lib/modules.js';
 import { listSettings, saveSettings } from '../lib/settings.js';
+import { testService, serviceOfKey, linkOfKey } from '../lib/keytest.js';
 import { sendMail } from '../notify/smtp.js';
 import { invoke, apiRouter } from '../registry.js';
 import { localVersion } from '../lib/updater.js';
@@ -379,7 +380,18 @@ r('PUT', '/admin/modules', (ctx) => {
 
 r('GET', '/admin/settings', (ctx) => {
   requireAdmin(ctx);
-  return { data: listSettings() };
+  // link：申请密钥的地址；test：该项旁边显示「测试连通性」按钮，值为服务 id
+  const groups = listSettings().map((g) => ({
+    ...g,
+    fields: g.fields.map((f) => ({ ...f, link: linkOfKey.get(f.key) ?? null, test: serviceOfKey.get(f.key)?.id ?? null })),
+  }));
+  return { data: groups };
+});
+
+// body: { service }；用已保存的配置向上游发一个最小请求，返回 { ok, message, detail }
+r('POST', '/admin/settings/test-key', async (ctx) => {
+  requireAdmin(ctx);
+  return { data: await testService(String(ctx.body?.service ?? '')) };
 });
 
 // body: { KEY: 'value' | null }
