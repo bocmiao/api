@@ -264,7 +264,11 @@ test('首页今日聚合与运行状态接口', async () => {
   const c = client();
   const today = await c('GET', '/home/today');
   assert.equal(today.status, 200);
-  assert.ok('epic' in today.body.data && 'weather' in today.body.data);
+  assert.ok('epic' in today.body.data && 'weather' in today.body.data && 'history' in today.body.data);
+  // 指定城市（上游不可用时天气为 null，也不能影响其他卡片）
+  const chosen = await c('GET', `/home/today?city=${encodeURIComponent('汝阳')}`);
+  assert.equal(chosen.status, 200);
+  assert.ok('weather' in chosen.body.data);
   const st = await c('GET', '/status');
   assert.equal(st.status, 200);
   assert.ok(st.body.data.modules.length > 50);

@@ -307,8 +307,10 @@ async function loadToday() {
   const grid = $('#today-grid');
   if (!grid) return;
   let t;
+  let savedCity = '';
+  try { savedCity = localStorage.getItem('todayCity') || ''; } catch { /* 隐私模式 */ }
   try {
-    t = await api('GET', '/home/today');
+    t = await api('GET', `/home/today${savedCity ? `?city=${encodeURIComponent(savedCity)}` : ''}`);
   } catch {
     $('#today').remove();
     return;
@@ -334,7 +336,8 @@ async function loadToday() {
   }
   if (t.weather?.current) {
     const w = t.weather;
-    cards.push(card('weather', `${esc(w.location?.name ?? '')} 天气`, `
+    const how = { chosen: '已选城市', ip: '按 IP 定位', default: '默认城市' }[w.located] ?? '';
+    cards.push(card('weather', `${esc(w.location?.name ?? '')} 天气${how ? ` · ${how}` : ''}<button class="today-city" type="button" data-city>切换城市</button>`, `
       <div class="today-big">${Math.round(w.current.temp)}°C <span class="today-sub">${esc(w.current.weather ?? '')}</span></div>
       <div class="muted small">体感 ${Math.round(w.current.feelsLike)}°C · 湿度 ${w.current.humidity}%${w.daily?.[0] ? ` · ${Math.round(w.daily[0].tempMin)}~${Math.round(w.daily[0].tempMax)}°C` : ''}</div>`));
   }
@@ -344,7 +347,7 @@ async function loadToday() {
       `<span><span class="faint">${names[k] ?? k}</span> <b>${Number(v).toFixed(k === 'JPY' ? 2 : 4)}</b></span>`).join('')}</div>`));
   }
   if (t.hot?.items?.length) {
-    cards.push(card('hot-weibo', '微博热搜', `<ol class="today-hot">${t.hot.items.slice(0, 6).map((i) => `<li>${esc(i.title)}</li>`).join('')}</ol>`, 'tall'));
+    cards.push(card('hot-weibo', '微博热搜', `<ol class="today-hot">${t.hot.items.slice(0, 10).map((i) => `<li>${esc(i.title)}</li>`).join('')}</ol>`, 'tall'));
   }
   if (t.hitokoto?.hitokoto) {
     cards.push(card('hitokoto', '一言', `<div class="today-quote">「${esc(t.hitokoto.hitokoto)}」</div>
@@ -355,7 +358,29 @@ async function loadToday() {
     cards.push(`<a class="card today-card today-bing wide" href="#/api/bing" style="background-image:url('${esc(bing.url1080 ?? bing.url)}')">
       <div class="today-bing-text"><div class="today-title">必应今日壁纸</div><b>${esc(bing.title ?? '')}</b><div class="small">${esc(bing.description ?? '')}</div></div></a>`);
   }
+  // 补位卡片：历史上的今天，取不到时换成金价，保证网格没有空位
+  const events = t.history?.events?.filter((e) => e.type === 'event' && e.year) ?? [];
+  const gold = t.metals?.international?.find((m) => m.metal === 'gold' && m.price != null);
+  if (events.length) {
+    const picks = events.slice(-3).reverse();
+    cards.push(card('history', '历史上的今天', `<ul class="today-events">${picks.map((e) => `<li><span class="faint">${esc(e.year)}</span> ${esc(e.title)}</li>`).join('')}</ul>`));
+  } else if (gold) {
+    const up = (gold.changePercent ?? 0) >= 0;
+    cards.push(card('metals', '国际金价', `<div class="today-big">$${gold.price.toFixed(2)} <span class="today-sub">/ 盎司</span></div>
+      <div class="small ${up ? 'up' : 'down'}">${gold.changePercent != null ? `${up ? '+' : ''}${gold.changePercent}%` : ''}</div>`));
+  }
   grid.innerHTML = cards.join('') || '<div class="empty" style="grid-column:1/-1">数据暂时获取不到</div>';
+  $('[data-city]', grid)?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const city = prompt('输入城市或区县名称（例如：汝阳、洛阳）。留空恢复按 IP 自动定位。', savedCity);
+    if (city === null) return;
+    try {
+      if (city.trim()) localStorage.setItem('todayCity', city.trim());
+      else localStorage.removeItem('todayCity');
+    } catch { /* 隐私模式 */ }
+    loadToday();
+  });
   $('#today-note').textContent = '实时数据，每 5 分钟更新 · 点卡片查看对应接口';
 }
 

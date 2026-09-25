@@ -21,6 +21,8 @@ import { sendMail } from '../notify/smtp.js';
 import { invoke, apiRouter } from '../registry.js';
 import { localVersion } from '../lib/updater.js';
 import { cache } from '../lib/cache.js';
+import { isBlockedIP } from '../lib/netguard.js';
+import { loadIpInfo } from '../apis/life/ip.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -419,20 +421,46 @@ const TODAY_SOURCES = {
   greeting: ['/api/greeting'],
   epic: ['/api/epic/free'],
   holiday: ['/api/holiday/next'],
-  weather: ['/api/weather', { city: '北京' }],
-  hot: ['/api/hot/weibo', { limit: '6' }],
+  hot: ['/api/hot/weibo', { limit: '10' }],
   fx: ['/api/fx/rates', { base: 'USD', symbols: 'CNY,EUR,JPY,HKD,GBP' }],
   bing: ['/api/bing'],
   hitokoto: ['/api/hitokoto'],
+  history: ['/api/history/today'],
+  metals: ['/api/metals'],
 };
+const DEFAULT_CITY = '北京';
 
-r('GET', '/home/today', async () => {
-  const res = await cache.wrap('home:today', 5 * 60_000, async () => {
-    const keys = Object.keys(TODAY_SOURCES);
-    const settled = await Promise.allSettled(keys.map((k) => invoke(...TODAY_SOURCES[k])));
-    return Object.fromEntries(keys.map((k, i) => [k, settled[i].status === 'fulfilled' ? settled[i].value : null]));
-  });
-  return { data: res.data };
+// 天气按访客所在城市：优先用访客自己选的 city，否则按 IP 定位（城市级精度），都不行时用默认城市
+async function todayWeather(ctx) {
+  const chosen = String(ctx.query.get('city') ?? '').trim().slice(0, 30);
+  if (chosen) {
+    try {
+      return { ...(await invoke('/api/weather', { city: chosen })), located: 'chosen' };
+    } catch { /* 城市名查不到时退回 IP 定位 */ }
+  }
+  if (!isBlockedIP(ctx.ip)) {
+    try {
+      const loc = await loadIpInfo(ctx.ip);
+      if (loc?.countryCode === 'CN' && loc.lat != null && loc.lon != null) {
+        const w = await invoke('/api/weather', { lat: String(loc.lat), lon: String(loc.lon) });
+        return { ...w, location: { ...w.location, name: loc.city || loc.region || w.location?.name }, located: 'ip' };
+      }
+    } catch { /* ip-api 限流或失败时用默认城市 */ }
+  }
+  return { ...(await invoke('/api/weather', { city: DEFAULT_CITY })), located: 'default' };
+}
+
+// 公共部分由服务器统一聚合并缓存 5 分钟，所有访客共用、不计入访客额度；天气按访客城市单独取（同一城市同样有缓存）
+r('GET', '/home/today', async (ctx) => {
+  const [shared, weather] = await Promise.all([
+    cache.wrap('home:today', 5 * 60_000, async () => {
+      const keys = Object.keys(TODAY_SOURCES);
+      const settled = await Promise.allSettled(keys.map((k) => invoke(...TODAY_SOURCES[k])));
+      return Object.fromEntries(keys.map((k, i) => [k, settled[i].status === 'fulfilled' ? settled[i].value : null]));
+    }),
+    todayWeather(ctx).catch(() => null),
+  ]);
+  return { data: { ...shared.data, weather } };
 });
 
 // ---------- 运行状态 ----------
