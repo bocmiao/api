@@ -258,6 +258,10 @@ test('静态文件使用 ETag，未变化时返回 304', async () => {
   const html = await (await fetch(`${base}/`)).text();
   assert.match(html, /\/app\.js\?v=[\w-]{10}"/, '首页引用的脚本带内容指纹');
   assert.match(html, /\/styles\.css\?v=[\w-]{10}"/);
+  // 带正确指纹的地址可长期缓存；指纹不对（旧版本）仍然 no-cache
+  const v = html.match(/\/app\.js\?v=([\w-]{10})"/)[1];
+  assert.match((await fetch(`${base}/app.js?v=${v}`)).headers.get('cache-control'), /immutable/);
+  assert.equal((await fetch(`${base}/app.js?v=stale00000`)).headers.get('cache-control'), 'no-cache');
 });
 
 test('首页今日聚合与运行状态接口', async () => {

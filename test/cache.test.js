@@ -19,6 +19,25 @@ test('缓存过期后上游失败，返回旧数据并标记 stale', async () =>
   assert.equal(res.stale, true);
 });
 
+test('刚过期的数据先返回、后台刷新；过期太久则等待新数据', async () => {
+  const c = new TTLCache();
+  await c.wrap('k', 1000, async () => 'old');
+  c.store.get('k').expiresAt = Date.now() - 500; // 过期 0.5 秒（TTL 1 秒以内）
+  let resolve;
+  const slow = new Promise((r) => { resolve = r; });
+  const t0 = Date.now();
+  const res = await c.wrap('k', 1000, () => slow);
+  assert.equal(res.data, 'old');
+  assert.equal(res.cached, true);
+  assert.ok(Date.now() - t0 < 50, '不等待上游');
+  resolve('new');
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal((await c.wrap('k', 1000, async () => 'x')).data, 'new', '后台刷新后换成新数据');
+
+  c.store.get('k').expiresAt = Date.now() - 5000; // 过期超过一个 TTL
+  assert.equal((await c.wrap('k', 1000, async () => 'fresh')).data, 'fresh');
+});
+
 test('无旧数据时上游失败抛出错误', async () => {
   const c = new TTLCache();
   await assert.rejects(c.wrap('k', 1000, async () => { throw new Error('down'); }), /down/);

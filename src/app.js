@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { extname, join, normalize } from 'node:path';
+import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
@@ -51,6 +52,9 @@ const envelope = (r) => ({
 
 function clientIp(req) {
   if (config.trustProxy) {
+    // 腾讯云 EdgeOne 回源时带上的真实客户端 IP
+    const eo = req.headers['eo-connecting-ip'];
+    if (eo && isIP(String(eo).trim())) return String(eo).trim();
     const fwd = req.headers['x-forwarded-for'];
     if (fwd) return fwd.split(',')[0].trim();
   }
@@ -84,9 +88,9 @@ function assertSameOrigin(req) {
   }
 }
 
-// 静态文件一律 no-cache + ETag：浏览器每次都向服务器确认，未变化时返回 304，
-// 在线更新后无需强制刷新即可拿到新版页面脚本
-async function serveStatic(req, res, pathname) {
+// 静态文件默认 no-cache + ETag：浏览器每次都向服务器确认，未变化时返回 304，在线更新后无需强制刷新；
+// 页面引用的脚本和样式带内容指纹，这类地址可以长期缓存
+async function serveStatic(req, res, pathname, query) {
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR)) return false;
@@ -104,9 +108,11 @@ async function serveStatic(req, res, pathname) {
       body = Buffer.from(html);
     }
     const etag = `"${createHash('sha1').update(body).digest('base64url').slice(0, 16)}"`;
+    // 带内容指纹（?v=）且与当前文件一致的脚本和样式可长期缓存：浏览器和 CDN（如 EdgeOne）都不用再回源确认
+    const versioned = query?.get('v') && query.get('v') === createHash('sha1').update(body).digest('base64url').slice(0, 10);
     const headers = {
       'content-type': MIME[extname(file)] ?? 'application/octet-stream',
-      'cache-control': 'no-cache',
+      'cache-control': versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
       etag,
       ...(file.endsWith('.html') ? PAGE_HEADERS : {}),
     };
@@ -193,7 +199,7 @@ export async function handle(req, res) {
       return;
     }
 
-    if (req.method === 'GET' && !isApi && (await serveStatic(req, res, path))) return;
+    if (req.method === 'GET' && !isApi && (await serveStatic(req, res, path, url.searchParams))) return;
     throw new HttpError(404, isApi ? '接口不存在，访问 /api 查看全部接口' : '页面不存在');
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
