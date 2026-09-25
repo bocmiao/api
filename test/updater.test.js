@@ -115,8 +115,8 @@ function mockGitHub({ version, changelog, sha = 'ccc3333' }) {
     const u = String(url);
     if (u.endsWith('/repos/bocmiao/api')) return Response.json({ default_branch: 'Miao-API' });
     if (u.includes('/commits/Miao-API')) return Response.json(commit(sha, 'Latest'));
-    if (u.includes('/contents/package.json')) return new Response(JSON.stringify({ version }));
-    if (u.includes('/contents/CHANGELOG.md')) return changelog == null ? new Response('', { status: 404 }) : new Response(changelog);
+    if (u.includes('/contents/package.json') || u.endsWith('/package.json')) return new Response(JSON.stringify({ version }));
+    if (u.includes('/contents/CHANGELOG.md') || u.endsWith('/CHANGELOG.md')) return changelog == null ? new Response('', { status: 404 }) : new Response(changelog);
     if (u.includes('/compare/')) return Response.json({ ahead_by: 1, commits: [commit(sha, 'Latest')] });
     return new Response('', { status: 404 });
   });
@@ -150,7 +150,7 @@ test('检查更新：远端版本更高时列出之间所有版本的中文更�
   rmSync(join(process.env.DATA_DIR, 'update-rollback.json'), { force: true });
   rmSync(join(process.env.DATA_DIR, 'version.json'), { force: true });
   mockGitHub({ version: '9.1.0', changelog: CHANGELOG });
-  const u = await checkUpdate();
+  const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
   assert.equal(u.branch, 'Miao-API');
   assert.ok(u.current.version, '当前版本从本地 package.json 读取，不再是未知');
@@ -162,7 +162,7 @@ test('检查更新：远端版本更高时列出之间所有版本的中文更�
 
 test('检查更新：仓库中的版本比当前旧时不提示更新', async () => {
   mockGitHub({ version: '0.0.1', changelog: CHANGELOG });
-  const u = await checkUpdate();
+  const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
   assert.equal(u.hasUpdate, false);
   assert.equal(u.remoteOlder, true);
@@ -173,7 +173,7 @@ test('检查更新：版本号相同但代码不同视为小修复', async () =>
   const { localVersion } = await import('../src/lib/updater.js');
   writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
   mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222' });
-  const u = await checkUpdate();
+  const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
   assert.equal(u.hasUpdate, true);
   assert.equal(u.patch, true);
@@ -182,7 +182,7 @@ test('检查更新：版本号相同但代码不同视为小修复', async () =>
 
 test('GitHub 不可达时给出明确错误', async () => {
   mock.method(globalThis, 'fetch', async () => { throw new TypeError('fetch failed'); });
-  await assert.rejects(checkUpdate(), /无法连接 GitHub/);
+  await assert.rejects(checkUpdate({ maxAgeMs: 0 }), /无法连接 GitHub/);
   mock.restoreAll();
 });
 
@@ -202,4 +202,26 @@ test('加速下载：地址拼接，并逐个文件核对 GitHub 官方指纹', 
   await assert.rejects(verifyAgainstGitHub(makeTarGz({ 'a.txt': 'hello' }), 'r', 's', fetchTree), /缺少文件 src\/b\.js/);
   await assert.rejects(verifyAgainstGitHub(makeTarGz({ ...files, 'extra.js': '1' }), 'r', 's', fetchTree), /不一致（extra\.js）/);
   await assert.rejects(verifyAgainstGitHub(makeTarGz(files), 'r', 's', async () => ({ truncated: true, tree: [] })), /无法从 GitHub 获取文件清单/);
+});
+
+test('检查结果缓存 1 分钟；文件优先从 raw.githubusercontent.com 读取；次数用完时提示 Token 与恢复时间', async () => {
+  mockGitHub({ version: '9.1.0', changelog: CHANGELOG });
+  await checkUpdate({ maxAgeMs: 0 });
+  const calls = globalThis.fetch.mock.calls.map((c) => String(c.arguments[0]));
+  assert.ok(calls.some((u) => u.startsWith('https://raw.githubusercontent.com/bocmiao/api/ccc3333/package.json')));
+  assert.ok(!calls.some((u) => u.includes('/contents/')), '公开仓库不走 contents 接口');
+  const n = globalThis.fetch.mock.callCount();
+  await checkUpdate();
+  assert.equal(globalThis.fetch.mock.callCount(), n, '1 分钟内复用上次结果');
+  mock.restoreAll();
+
+  const token = process.env.GITHUB_TOKEN;
+  delete process.env.GITHUB_TOKEN;
+  try {
+    mock.method(globalThis, 'fetch', async () => new Response('', { status: 403, headers: { 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 600) } }));
+    await assert.rejects(checkUpdate({ maxAgeMs: 0 }), /每小时只有 60 次.*分钟后恢复.*GitHub Token/);
+  } finally {
+    mock.restoreAll();
+    if (token != null) process.env.GITHUB_TOKEN = token;
+  }
 });

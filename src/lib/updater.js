@@ -34,7 +34,13 @@ async function gh(path, { accept = 'application/vnd.github+json', raw = false, o
     throw new HttpError(502, '无法连接 GitHub，请检查服务器网络');
   }
   if (res.status === 404) throw new HttpError(502, '找不到仓库或分支；私有仓库需要配置 GITHUB_TOKEN');
-  if (res.status === 403 || res.status === 429) throw new HttpError(502, 'GitHub 接口请求过于频繁，请稍后再试或配置 GITHUB_TOKEN');
+  if (res.status === 403 || res.status === 429) {
+    const reset = Number(res.headers.get('x-ratelimit-reset')) * 1000;
+    const when = reset > Date.now() ? `，约 ${Math.ceil((reset - Date.now()) / 60_000)} 分钟后恢复` : '';
+    throw new HttpError(502, token
+      ? `GitHub 接口次数已用完${when}`
+      : `GitHub 接口次数已用完（未填写 Token 时每小时只有 60 次）${when}。在「系统设置 → 在线更新」填写 GitHub Token 后每小时 5000 次`);
+  }
   if (!res.ok) throw new HttpError(502, `GitHub 返回 HTTP ${res.status}`);
   if (!raw) return res.json();
   return readBody(res, onBytes);
@@ -162,7 +168,12 @@ export function parseChangelog(md) {
   return out;
 }
 
+// 读取仓库里的单个文件：公开仓库优先走 raw.githubusercontent.com（不占用 GitHub 接口的每小时次数），失败再走接口
 async function remoteFile(repo, sha, path) {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${repo}/${sha}/${path}`, { headers: { 'user-agent': 'miao-api-updater' }, signal: AbortSignal.timeout(15_000) });
+    if (res.ok) return await res.text();
+  } catch { /* 改走接口 */ }
   try {
     const buf = await gh(`/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${sha}`, { accept: 'application/vnd.github.raw', raw: true });
     return buf.toString('utf8');
@@ -171,9 +182,20 @@ async function remoteFile(repo, sha, path) {
   }
 }
 
+// 检查结果缓存 1 分钟：反复点「检查更新」和紧接着的「立即更新」不重复消耗 GitHub 接口次数
+let lastCheck = null;
+
 // 检查更新：按版本号比较，并附上中文更新日志
-export async function checkUpdate() {
+export async function checkUpdate({ maxAgeMs = 60_000 } = {}) {
   const cfg = updateConfig();
+  const key = `${cfg.repo}#${cfg.branch}#${localVersion()}`;
+  if (lastCheck && lastCheck.key === key && Date.now() - lastCheck.at < maxAgeMs) return { ...lastCheck.value, lastRollback: lastRollback() };
+  const value = await checkUpdateFresh(cfg);
+  lastCheck = { key, at: Date.now(), value };
+  return value;
+}
+
+async function checkUpdateFresh(cfg) {
   const branch = cfg.branch || (await gh(`/repos/${cfg.repo}`)).default_branch;
   const latestCommit = commitInfo(await gh(`/repos/${cfg.repo}/commits/${encodeURIComponent(branch)}`));
   const [pkgText, changelogText] = await Promise.all([
@@ -302,7 +324,7 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
   try {
     const cfg = updateConfig();
     report({ stage: '正在检查新版本', percent: 3 });
-    const info = await checkUpdate();
+    const info = await checkUpdate({ maxAgeMs: 5 * 60_000 });
     if (!info.hasUpdate) throw new HttpError(409, info.remoteOlder ? '仓库中的版本比当前版本旧，已取消更新' : '已是最新版本');
     const target = info.latest;
     if (expectedSha && expectedSha !== target.sha) throw new HttpError(409, '远端已有更新的提交，请重新检查更新后再试');
@@ -312,7 +334,7 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
       detail: `${via} · ${total ? `${mb(got)} / ${mb(total)}` : `已下载 ${mb(got)}`}`,
     });
     let tarGz = null;
-    if (cfg.mirror && !cfg.token) {
+    if (cfg.mirror) {
       // 先走加速地址，失败或校验不通过再直连 GitHub
       try {
         tarGz = await downloadViaMirror(cfg.mirror, cfg.repo, target.sha, onBytes('加速下载'));

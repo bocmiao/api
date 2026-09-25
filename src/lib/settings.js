@@ -70,8 +70,8 @@ export const SETTING_GROUPS = [
     fields: [
       { key: 'UPDATE_REPO', label: 'GitHub 仓库', type: 'text', default: 'bocmiao/api', placeholder: 'owner/repo' },
       { key: 'UPDATE_BRANCH', label: '分支', type: 'text', placeholder: '留空使用仓库默认分支' },
-      { key: 'GITHUB_TOKEN', label: 'GitHub Token', type: 'secret', help: '私有仓库必填；公开仓库填写可提高 GitHub 接口限额' },
-      { key: 'UPDATE_MIRROR', label: 'GitHub 下载加速地址', type: 'url', placeholder: 'https://ghfast.top', help: '国内服务器下载 GitHub 很慢或超时时填写，例如 https://ghfast.top 。下载的每个文件都会和 GitHub 官方记录逐一核对，被改动就拒绝更新；加速失败会自动改为直连。填写了 GitHub Token（私有仓库）时不使用' },
+      { key: 'GITHUB_TOKEN', label: 'GitHub Token', type: 'secret', help: '建议填写：不填时 GitHub 接口每小时只能调用 60 次，检查几次更新就会用完；填写后每小时 5000 次。公开仓库只需一个无任何权限的 Token；私有仓库必填' },
+      { key: 'UPDATE_MIRROR', label: 'GitHub 下载加速地址', type: 'url', placeholder: 'https://ghfast.top', help: '国内服务器下载 GitHub 很慢或超时时填写，例如 https://ghfast.top 。下载的每个文件都会和 GitHub 官方记录逐一核对，被改动就拒绝更新；加速失败会自动改为直连。私有仓库无法通过加速地址下载，会自动直连' },
     ],
   },
   {
