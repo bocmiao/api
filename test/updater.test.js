@@ -10,7 +10,7 @@ process.env.DATA_DIR = join(tmp, 'data');
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const { extractTar } = await import('../src/lib/tar.js');
-const { unpackTo, checkUpdate } = await import('../src/lib/updater.js');
+const { unpackTo, checkUpdate, verifyAgainstGitHub, mirrorUrl } = await import('../src/lib/updater.js');
 const { swapIn, writePending, readPending, rollbackPending } = await import('../src/lib/swap.js');
 
 // 构造 GitHub 风格的 tar.gz：pax 全局头带提交 SHA，所有文件位于 "owner-repo-sha/" 之下
@@ -184,4 +184,22 @@ test('GitHub 不可达时给出明确错误', async () => {
   mock.method(globalThis, 'fetch', async () => { throw new TypeError('fetch failed'); });
   await assert.rejects(checkUpdate(), /无法连接 GitHub/);
   mock.restoreAll();
+});
+
+test('加速下载：地址拼接，并逐个文件核对 GitHub 官方指纹', async () => {
+  assert.equal(mirrorUrl('https://ghfast.top/', 'bocmiao/api', 'abc'), 'https://ghfast.top/https://github.com/bocmiao/api/archive/abc.tar.gz');
+  const { createHash } = await import('node:crypto');
+  const blob = (t) => createHash('sha1').update(`blob ${Buffer.byteLength(t)}\0${t}`).digest('hex');
+  const files = { 'a.txt': 'hello', 'src/b.js': 'x' };
+  const tree = { truncated: false, tree: [
+    { path: 'a.txt', type: 'blob', mode: '100644', sha: blob('hello') },
+    { path: 'src', type: 'tree', mode: '040000', sha: 't' },
+    { path: 'src/b.js', type: 'blob', mode: '100644', sha: blob('x') },
+  ] };
+  const fetchTree = async () => tree;
+  await verifyAgainstGitHub(makeTarGz(files), 'bocmiao/api', 'abc', fetchTree);
+  await assert.rejects(verifyAgainstGitHub(makeTarGz({ ...files, 'src/b.js': 'evil' }), 'r', 's', fetchTree), /不一致（src\/b\.js）/);
+  await assert.rejects(verifyAgainstGitHub(makeTarGz({ 'a.txt': 'hello' }), 'r', 's', fetchTree), /缺少文件 src\/b\.js/);
+  await assert.rejects(verifyAgainstGitHub(makeTarGz({ ...files, 'extra.js': '1' }), 'r', 's', fetchTree), /不一致（extra\.js）/);
+  await assert.rejects(verifyAgainstGitHub(makeTarGz(files), 'r', 's', async () => ({ truncated: true, tree: [] })), /无法从 GitHub 获取文件清单/);
 });
