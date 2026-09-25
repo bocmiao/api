@@ -155,6 +155,29 @@ export function localVersion() {
   }
 }
 
+// 本地版本信息：正在运行的版本、硬盘上的代码版本、最近一次在线更新的记录
+export function versionInfo() {
+  const disk = localVersion();
+  const deployed = currentVersion();
+  const valid = deployed && (!deployed.version || deployed.version === disk);
+  return {
+    running: RUNNING_VERSION,
+    disk,
+    restartNeeded: Boolean(RUNNING_VERSION && disk && RUNNING_VERSION !== disk),
+    updatedAt: valid ? deployed.updatedAt ?? null : null,
+    sha: valid ? deployed.sha ?? null : null,
+  };
+}
+
+// 本地 CHANGELOG.md 的全部版本记录（新的在前）
+export function localChangelog() {
+  try {
+    return parseChangelog(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
 // 解析 CHANGELOG.md：## v0.3.0 · 2026-09-25 下面的 "- " 列表
 export function parseChangelog(md) {
   const out = [];

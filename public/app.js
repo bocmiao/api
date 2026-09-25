@@ -142,8 +142,9 @@ function renderTopbar(route) {
     ['#/docs', '文档', route === 'docs'],
     ...(u ? [['#/console', '控制台', route === 'console']] : []),
     ...(u?.isAdmin ? [
-      ['#/admin', '管理', route === 'admin' && !/^#\/admin\/(settings|users)/.test(location.hash)],
+      ['#/admin', '管理', route === 'admin' && !/^#\/admin\/(settings|users|changelog)/.test(location.hash)],
       ['#/admin/users', '用户', location.hash.startsWith('#/admin/users')],
+      ['#/admin/changelog', '更新记录', location.hash.startsWith('#/admin/changelog')],
       ['#/admin/settings', '设置', location.hash.startsWith('#/admin/settings')],
     ] : []),
   ];
@@ -1279,7 +1280,7 @@ async function pageAdmin() {
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计、系统更新与接口开关</p></div>${adminTabs('overview')}</div>
     <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
-      <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><span class="faint small">点击右上角「检查更新」，看看有没有新版本</span></div></div>
+      <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><div id="ver-now" class="small faint">正在读取当前版本…</div></div></div>
     <div class="tiles">
       ${[['24h 调用', t.calls], ['24h 独立 IP', t.ips], ['24h 平均耗时', `${fmtNum(t.avgMs)} ms`], ['24h 失败', t.errors],
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
@@ -1300,6 +1301,16 @@ async function pageAdmin() {
   </div>`;
   chart.mount($('#main'));
   $('#check-update').onclick = () => checkUpdate();
+  api('GET', '/admin/version').then((v) => {
+    const el = $('#ver-now');
+    if (!el) return;
+    el.className = '';
+    el.innerHTML = `<div class="row" style="gap:10px;flex-wrap:wrap"><span class="small faint">当前版本</span><b style="font-size:18px">v${esc(v.running ?? v.disk ?? '?')}</b>
+      ${v.updatedAt ? `<span class="small faint">${shortDate(v.updatedAt)} 在线更新</span>` : ''}
+      <a class="small" href="#/admin/changelog">查看更新记录</a>
+      <span class="small faint" style="margin-left:auto">点击右上角「检查更新」，看看有没有新版本</span></div>
+      ${v.restartNeeded ? `<div class="form-error" style="margin-top:10px">服务器上的代码已经是 v${esc(v.disk)}，但正在运行的仍是 v${esc(v.running)}：请到 1Panel「网站 → 运行环境」重启 Miao API。</div>` : ''}`;
+  }).catch(() => { const el = $('#ver-now'); if (el) el.textContent = '点击右上角「检查更新」，看看有没有新版本'; });
   loadModuleSwitches();
 
 }
@@ -1307,19 +1318,45 @@ async function pageAdmin() {
 const adminTabs = (active) => `<div class="seg">
   <a href="#/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
   <a href="#/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
+  <a href="#/admin/changelog" class="${active === 'changelog' ? 'active' : ''}">更新记录</a>
   <a href="#/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
 
+// ---------- 更新记录 ----------
+async function pageAdminChangelog() {
+  if (!state.user?.isAdmin) return pageNotFound();
+  $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
+  const d = await api('GET', '/admin/changelog');
+  const cur = d.running ?? d.disk;
+  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+    <div class="page-head"><div><h1>更新记录</h1><p>每个版本改了什么；有新版本时到「管理」页的系统更新里一键更新</p></div>${adminTabs('changelog')}</div>
+    <div class="card card-pad" style="margin-bottom:16px"><div class="row" style="gap:12px;flex-wrap:wrap">
+      <span class="small faint">当前版本</span><b style="font-size:20px">v${esc(cur ?? '?')}</b>
+      ${d.updatedAt ? `<span class="small faint">${shortDate(d.updatedAt)} 在线更新${d.sha ? ` · 提交 ${esc(d.sha.slice(0, 7))}` : ''}</span>` : ''}
+      <span style="margin-left:auto"></span><a class="btn sm" href="#/admin">检查新版本</a></div>
+      ${d.restartNeeded ? `<div class="form-error" style="margin-top:12px">服务器上的代码已经是 v${esc(d.disk)}，但正在运行的仍是 v${esc(d.running)}：请到 1Panel 重启 Miao API 后生效。</div>` : ''}</div>
+    <div class="card card-pad">${d.entries.length ? `<div class="upd-changes">${d.entries.map((c) => `<div class="upd-release">
+        <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}
+          ${c.version === cur ? '<span class="badge ok">当前版本</span>' : ''}
+          ${d.restartNeeded && c.version === d.disk ? '<span class="badge warn">重启后生效</span>' : ''}</div>
+        <ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div>` : '<div class="empty">没有找到更新记录（CHANGELOG.md）</div>'}</div>
+  </div>`;
+}
+
 // ---------- 用户管理 ----------
-async function pageAdminUsers(q = '', page = 1) {
+async function pageAdminUsers(q = '', page = 1, size) {
+  size ??= Number($('#users-size')?.value) || 20;
   if (!state.user?.isAdmin) return pageNotFound();
   const first = !$('#users-page');
   if (first) {
     $('#main').innerHTML = `<div class="wrap" id="users-page" style="padding:28px 20px 80px">
       <div class="page-head"><div><h1>用户</h1><p>查看注册用户、调整每日额度、停用账号</p></div>${adminTabs('users')}</div>
       <div class="card"><div class="card-head"><h2 id="users-count">用户</h2>
-        <form class="row" id="users-search"><input class="input" name="q" placeholder="按邮箱搜索" style="width:220px;height:32px" value="${esc(q)}"><button class="btn sm">搜索</button></form></div>
+        <div class="row" style="gap:8px"><label class="small faint">每页 <select class="input" id="users-size" style="width:auto;height:32px;padding:0 8px">
+          ${[10, 20, 50, 100].map((n) => `<option value="${n}" ${n === size ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <form class="row" id="users-search"><input class="input" name="q" placeholder="按邮箱搜索" style="width:220px;height:32px" value="${esc(q)}"><button class="btn sm">搜索</button></form></div></div>
         <div id="users-body"><div class="loading"><span class="spinner"></span></div></div></div></div>`;
     $('#users-search').addEventListener('submit', (e) => { e.preventDefault(); pageAdminUsers(new FormData(e.target).get('q').trim(), 1); });
+    $('#users-size').addEventListener('change', () => pageAdminUsers($('#users-body').dataset.q ?? '', 1));
     $('#users-page').addEventListener('submit', async (e) => {
       const f = e.target.closest('[data-limit]');
       if (!f) return;
@@ -1347,7 +1384,7 @@ async function pageAdminUsers(q = '', page = 1) {
   const body = $('#users-body');
   let d;
   try {
-    d = await api('GET', `/admin/users?q=${encodeURIComponent(q)}&page=${page}`);
+    d = await api('GET', `/admin/users?q=${encodeURIComponent(q)}&page=${page}&size=${size}`);
   } catch (err) {
     body.innerHTML = `<div class="form-error" style="margin:16px">${esc(err.message)}</div>`;
     return;
@@ -1732,7 +1769,7 @@ async function router() {
       case 'status': await pageStatus(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : pageAdmin()); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'changelog' ? pageAdminChangelog() : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {

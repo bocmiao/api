@@ -169,6 +169,16 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   const found = await admin('GET', '/admin/users?q=user2');
   assert.deepEqual(found.body.data.items.map((u) => u.email), ['user2@example.com']);
   assert.equal((await admin('GET', '/admin/users?q=%25')).body.data.total, 0);
+  assert.equal((await admin('GET', '/admin/users')).body.data.size, 20, '默认每页 20');
+  assert.equal((await admin('GET', '/admin/users?size=50')).body.data.size, 50);
+  assert.equal((await admin('GET', '/admin/users?size=7')).body.data.size, 20, '不支持的每页数量用默认值');
+  // 当前版本与更新记录（不访问 GitHub）
+  const ver = (await admin('GET', '/admin/version')).body.data;
+  assert.ok(ver.running && ver.disk);
+  assert.equal(ver.restartNeeded, false);
+  const log = (await admin('GET', '/admin/changelog')).body.data;
+  assert.equal(log.entries[0].version, ver.disk, '更新记录第一条就是当前版本');
+  assert.ok(log.entries.length > 5 && log.entries[0].items.length > 0);
   assert.equal((await admin('PATCH', `/admin/users/${u2.id}`, { dailyLimit: 50 })).status, 200);
   assert.equal((await admin('GET', '/admin/users')).body.data.items.find((u) => u.id === u2.id).dailyLimit, 50);
 
@@ -178,6 +188,8 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   assert.equal((await normal('GET', '/admin/update')).status, 403);
   assert.equal((await normal('POST', '/admin/update', {})).status, 403);
   assert.equal((await normal('GET', '/admin/update/progress')).status, 403);
+  assert.equal((await normal('GET', '/admin/changelog')).status, 403);
+  assert.equal((await normal('GET', '/admin/version')).status, 403);
 
   // 在线更新在后台执行，立即返回进度；GitHub 不可用时进度变为 error 并带原因
   const started = await admin('POST', '/admin/update', {});

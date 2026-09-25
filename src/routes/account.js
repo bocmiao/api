@@ -10,7 +10,7 @@ import { channelCatalog, validateChannel, sendToChannel, maskConfig } from '../n
 import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
-import { checkUpdate, startUpdate, updateProgress } from '../lib/updater.js';
+import { checkUpdate, startUpdate, updateProgress, versionInfo, localChangelog } from '../lib/updater.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
@@ -296,13 +296,13 @@ r('GET', '/admin/stats', (ctx) => {
   };
 });
 
-// 用户列表：支持按邮箱搜索、分页（每页 10）
+// 用户列表：支持按邮箱搜索、分页（每页 10 / 20 / 50 / 100，默认 20）
 r('GET', '/admin/users', (ctx) => {
   requireAdmin(ctx);
   const day = today();
   const q = String(ctx.query.get('q') ?? '').trim().slice(0, 100);
   const page = Math.max(1, Math.min(10_000, Number.parseInt(ctx.query.get('page') ?? '1', 10) || 1));
-  const size = 10;
+  const size = [10, 20, 50, 100].includes(Number(ctx.query.get('size'))) ? Number(ctx.query.get('size')) : 20;
   const where = q ? 'WHERE u.email LIKE ? ESCAPE \'\\\'' : '';
   const args = q ? [`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`] : [];
   const total = sql(`SELECT COUNT(*) AS n FROM users u ${where}`).get(...args).n;
@@ -363,6 +363,18 @@ r('POST', '/admin/update', (ctx) => {
     if (result.restart) setTimeout(() => process.exit(75), 3000).unref();
   });
   return { data: started };
+});
+
+// 当前版本（不访问 GitHub，打开后台即可显示）
+r('GET', '/admin/version', (ctx) => {
+  requireAdmin(ctx);
+  return { data: versionInfo() };
+});
+
+// 更新记录：本地 CHANGELOG.md 里的全部版本
+r('GET', '/admin/changelog', (ctx) => {
+  requireAdmin(ctx);
+  return { data: { ...versionInfo(), entries: localChangelog() } };
 });
 
 r('GET', '/admin/update/progress', (ctx) => {

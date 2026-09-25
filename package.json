@@ -1,6 +1,6 @@
 {
   "name": "miao-api",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "聚合 API 平台：统一入口与响应格式、缓存容错、账号与 API Key、分级限流、订阅推送",
   "type": "module",
   "main": "src/launcher.js",
