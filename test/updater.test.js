@@ -10,7 +10,7 @@ process.env.DATA_DIR = join(tmp, 'data');
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const { extractTar } = await import('../src/lib/tar.js');
-const { unpackTo, checkUpdate, verifyAgainstGitHub, mirrorUrl } = await import('../src/lib/updater.js');
+const { unpackTo, checkUpdate, verifyAgainstGitHub, mirrorUrl, buildStagingIncremental } = await import('../src/lib/updater.js');
 const { swapIn, writePending, readPending, rollbackPending } = await import('../src/lib/swap.js');
 
 // 构造 GitHub 风格的 tar.gz：pax 全局头带提交 SHA，所有文件位于 "owner-repo-sha/" 之下
@@ -235,4 +235,37 @@ test('手动上传了新代码后，旧的版本记录不再用来判断「小�
   assert.equal(u.current.sha, null);
   assert.equal(u.hasUpdate, false, '版本号相同且无法确认提交时视为已是最新');
   assert.ok(u.current.running, '带上正在运行的版本');
+});
+
+test('增量更新：没变的文件复用本地，只下载改动的文件并核对指纹，删除的文件不带入', async () => {
+  const { createHash } = await import('node:crypto');
+  const blob = (t) => createHash('sha1').update(`blob ${Buffer.byteLength(t)}\0${t}`).digest('hex');
+  const root = makeRoot('inc-root', { 'package.json': '{"version":"1"}', 'src/a.js': 'same', 'src/old.js': 'removed', 'big.json': 'x'.repeat(1000) });
+  mkdirSync(join(root, 'data'), { recursive: true });
+  writeFileSync(join(root, 'data', 'db.sqlite'), 'keep');
+  const next = { 'package.json': '{"version":"2"}', 'src/a.js': 'same', 'src/new.js': 'added', 'big.json': 'x'.repeat(1000) };
+  const tree = { truncated: false, tree: Object.entries(next).map(([path, t]) => ({ path, type: 'blob', mode: '100644', sha: blob(t), size: Buffer.byteLength(t) })) };
+  const fetched = [];
+  const staging = join(tmp, 'inc-staging');
+  const progress = [];
+  const r = await buildStagingIncremental({ repo: 'o/r' }, 'sha', (...a) => progress.push(a), {
+    root, staging, fetchTree: async () => tree,
+    fetchFile: async (path) => { fetched.push(path); return Buffer.from(next[path]); },
+  });
+  assert.deepEqual(fetched.sort(), ['package.json', 'src/new.js']);
+  assert.deepEqual([r.files, r.downloaded, r.reused], [4, 2, 2]);
+  assert.equal(readFileSync(join(staging, 'package.json'), 'utf8'), '{"version":"2"}');
+  assert.equal(readFileSync(join(staging, 'big.json'), 'utf8'), 'x'.repeat(1000));
+  assert.ok(!existsSync(join(staging, 'src/old.js')), '新版本删掉的文件不带入');
+  assert.ok(!existsSync(join(staging, 'data')), 'data 等保留目录不进入临时目录');
+  assert.deepEqual(progress.at(-1), [2, 2, 2]);
+
+  // 下载内容被篡改 → 拒绝
+  await assert.rejects(buildStagingIncremental({ repo: 'o/r' }, 'sha', null, {
+    root, staging, fetchTree: async () => tree, fetchFile: async () => Buffer.from('evil'),
+  }), /与 GitHub 官方不一致/);
+  // 清单被截断或改动太多 → 返回 null，改用整包
+  assert.equal(await buildStagingIncremental({ repo: 'o/r' }, 'sha', null, { root, staging, fetchTree: async () => ({ truncated: true, tree: [] }) }), null);
+  const allNew = { truncated: false, tree: Object.keys(next).map((path) => ({ path, type: 'blob', mode: '100644', sha: blob(`new-${path}`), size: 1000 })) };
+  assert.equal(await buildStagingIncremental({ repo: 'o/r' }, 'sha', null, { root, staging, fetchTree: async () => allNew, fetchFile: async () => Buffer.from('') }), null);
 });

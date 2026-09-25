@@ -2,7 +2,7 @@
 import { gunzipSync } from 'node:zlib';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync, statSync, copyFileSync } from 'node:fs';
 import { dirname, join, normalize, sep } from 'node:path';
 import { HttpError } from './http.js';
 import { extractTar } from './tar.js';
@@ -275,6 +275,97 @@ export function unpackTo(tarGz, dest) {
   return { files, sha: comment };
 }
 
+// ---------- 增量更新 ----------
+// 用 GitHub 的文件清单（每个文件的 git blob 指纹）和本地文件逐个比对：没变的直接复制，只下载有改动的文件，
+// 下载到的每个文件都核对指纹，所以走加速地址也不会被篡改。拼出的临时目录和整包解压的结果完全一致。
+const MAX_INCREMENTAL_RATIO = 0.6;
+const INCREMENTAL_CONCURRENCY = 8;
+
+function localBlobSha(file) {
+  try {
+    if (!statSync(file).isFile()) return null;
+    return blobSha(readFileSync(file));
+  } catch {
+    return null;
+  }
+}
+
+const rawUrl = (repo, sha, path) => `https://raw.githubusercontent.com/${repo}/${sha}/${path.split('/').map(encodeURIComponent).join('/')}`;
+
+async function fetchRawFile(cfg, sha, path) {
+  const direct = rawUrl(cfg.repo, sha, path);
+  const urls = cfg.mirror ? [`${cfg.mirror.replace(/\/+$/, '')}/${direct}`, direct] : [direct];
+  let lastErr;
+  for (const url of urls) {
+    try {
+      const auth = cfg.token && url === direct ? { authorization: `Bearer ${cfg.token}` } : {};
+      const res = await fetch(url, { headers: { 'user-agent': 'miao-api-updater', ...auth }, signal: AbortSignal.timeout(60_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new HttpError(502, `下载 ${path} 失败：${lastErr?.message ?? '未知错误'}`);
+}
+
+// 返回 { files, downloaded, reused }；不适合增量时返回 null
+export async function buildStagingIncremental(cfg, sha, onProgress, { root = ROOT, staging = STAGING, fetchTree = (p) => gh(p), fetchFile = (path) => fetchRawFile(cfg, sha, path) } = {}) {
+  const tree = await fetchTree(`/repos/${cfg.repo}/git/trees/${sha}?recursive=1`);
+  if (!Array.isArray(tree?.tree) || tree.truncated) return null;
+  const blobs = tree.tree.filter((t) => t.type === 'blob' && t.mode !== '120000' && !KEEP.has(t.path.split('/')[0]));
+  const totalBytes = blobs.reduce((n, b) => n + (b.size ?? 0), 0);
+  const changed = blobs.filter((b) => localBlobSha(join(root, b.path)) !== b.sha);
+  const changedBytes = changed.reduce((n, b) => n + (b.size ?? 0), 0);
+  if (changed.length > 300 || (totalBytes && changedBytes / totalBytes > MAX_INCREMENTAL_RATIO)) return null;
+
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  const changedSet = new Set(changed);
+  for (const b of blobs) {
+    if (changedSet.has(b)) continue;
+    const dest = join(staging, b.path);
+    mkdirSync(dirname(dest), { recursive: true });
+    copyFileSync(join(root, b.path), dest);
+  }
+  const reused = blobs.length - changed.length;
+  let done = 0;
+  onProgress?.(0, changed.length, reused);
+  const queue = [...changed];
+  const worker = async () => {
+    for (let b = queue.shift(); b; b = queue.shift()) {
+      const data = await fetchFile(b.path);
+      if (blobSha(data) !== b.sha) throw new HttpError(502, `下载的 ${b.path} 与 GitHub 官方不一致，已拒绝`);
+      const dest = join(staging, b.path);
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, data);
+      onProgress?.(++done, changed.length, reused);
+    }
+  };
+  await Promise.all(Array.from({ length: INCREMENTAL_CONCURRENCY }, worker));
+  return { files: blobs.length, downloaded: changed.length, reused };
+}
+
+// 整包下载（首次、改动很多或增量失败时）：先走加速地址并核对，失败再直连 GitHub
+async function downloadFull(cfg, target, onBytes) {
+  let tarGz = null;
+  if (cfg.mirror) {
+    // 先走加速地址，失败或校验不通过再直连 GitHub
+    try {
+      tarGz = await downloadViaMirror(cfg.mirror, cfg.repo, target.sha, onBytes('加速下载'));
+      report({ stage: '正在核对文件是否与 GitHub 官方一致', percent: 56, detail: '' });
+      await verifyAgainstGitHub(tarGz, cfg.repo, target.sha);
+    } catch (err) {
+      report({ stage: '加速下载失败，改为直连 GitHub', percent: 5, detail: err.message });
+      tarGz = null;
+    }
+  }
+  tarGz ??= await gh(`/repos/${cfg.repo}/tarball/${target.sha}`, { raw: true, onBytes: onBytes('直连 GitHub') });
+  report({ stage: '正在解压', percent: 58, detail: mb(tarGz.length) });
+  const { files } = unpackTo(tarGz, STAGING);
+  return { files };
+}
+
 // 在独立进程中加载新代码，确认没有语法错误或缺失模块
 function verifyStaging(dir) {
   for (const f of ['package.json', 'src/server.js', 'src/app.js', 'src/launcher.js', 'public/index.html']) {
@@ -338,22 +429,23 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
       percent: total ? 5 + Math.round((got / total) * 50) : Math.min(50, 5 + Math.round(got / 200_000)),
       detail: `${via} · ${total ? `${mb(got)} / ${mb(total)}` : `已下载 ${mb(got)}`}`,
     });
-    let tarGz = null;
-    if (cfg.mirror) {
-      // 先走加速地址，失败或校验不通过再直连 GitHub
-      try {
-        tarGz = await downloadViaMirror(cfg.mirror, cfg.repo, target.sha, onBytes('加速下载'));
-        report({ stage: '正在核对文件是否与 GitHub 官方一致', percent: 56, detail: '' });
-        await verifyAgainstGitHub(tarGz, cfg.repo, target.sha);
-      } catch (err) {
-        report({ stage: '加速下载失败，改为直连 GitHub', percent: 5, detail: err.message });
-        tarGz = null;
-      }
+    // 优先增量更新：只下载有改动的文件；清单取不到、改动太多或下载出错时退回整包下载
+    let files = null;
+    let mode = '增量更新';
+    try {
+      const inc = await buildStagingIncremental(cfg, target.sha, (done, total, reused) => report({
+        stage: '正在下载有改动的文件', percent: 5 + Math.round((done / Math.max(total, 1)) * 50),
+        detail: `增量更新 · 已下载 ${done} / ${total} 个改动文件（${reused} 个文件没有变化，直接复用）`,
+      }));
+      if (inc) files = inc.files;
+    } catch (err) {
+      report({ stage: '增量更新失败，改为下载完整更新包', percent: 5, detail: err.message });
     }
-    tarGz ??= await gh(`/repos/${cfg.repo}/tarball/${target.sha}`, { raw: true, onBytes: onBytes('直连 GitHub') });
-    report({ stage: '正在解压', percent: 58, detail: mb(tarGz.length) });
-    const { files } = unpackTo(tarGz, STAGING);
-    report({ stage: '正在检查新版本能否正常启动', percent: 65, detail: `共 ${files} 个文件` });
+    if (files == null) {
+      mode = '完整更新';
+      files = (await downloadFull(cfg, target, onBytes)).files;
+    }
+    report({ stage: '正在检查新版本能否正常启动', percent: 65, detail: `${mode} · 共 ${files} 个文件` });
     // 试启动一般要几秒到十几秒，期间进度缓慢前进，让页面看得出没有卡住
     const tick = setInterval(() => report({ percent: Math.min(90, progress.percent + 1) }), 800);
     try { await verifyStaging(STAGING); } finally { clearInterval(tick); }
