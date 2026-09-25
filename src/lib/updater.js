@@ -144,6 +144,9 @@ export function compareVersions(a, b) {
   return 0;
 }
 
+// 进程启动时加载的版本：硬盘上的代码被替换后，只有重启服务才会生效
+export const RUNNING_VERSION = localVersion();
+
 export function localVersion() {
   try {
     return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version ?? null;
@@ -206,7 +209,9 @@ async function checkUpdateFresh(cfg) {
   try { remoteVersion = JSON.parse(pkgText).version ?? null; } catch {}
 
   const deployed = currentVersion();
-  const current = { version: localVersion(), sha: deployed?.sha ?? null, updatedAt: deployed?.updatedAt ?? null };
+  // 版本记录是在线更新时写的；之后手动上传了别的版本时记录已过期，提交号当作未知
+  const recordValid = deployed && (!deployed.version || deployed.version === localVersion());
+  const current = { version: localVersion(), running: RUNNING_VERSION, sha: recordValid ? deployed.sha ?? null : null, updatedAt: recordValid ? deployed.updatedAt ?? null : null };
   const cmp = remoteVersion && current.version ? compareVersions(remoteVersion, current.version) : 0;
   const sameCode = current.sha === latestCommit.sha;
   // 版本号更高 → 新版本；版本号相同但代码不同 → 小修复；版本号更低 → 分支落后，不提示更新

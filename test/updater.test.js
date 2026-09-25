@@ -225,3 +225,14 @@ test('检查结果缓存 1 分钟；文件优先从 raw.githubusercontent.com �
     if (token != null) process.env.GITHUB_TOKEN = token;
   }
 });
+
+test('手动上传了新代码后，旧的版本记录不再用来判断「小修复」', async () => {
+  const { localVersion } = await import('../src/lib/updater.js');
+  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ version: '0.0.1', sha: 'aaa1111', updatedAt: '2026-01-01T00:00:00Z' }));
+  mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222' });
+  const u = await checkUpdate({ maxAgeMs: 0 });
+  mock.restoreAll();
+  assert.equal(u.current.sha, null);
+  assert.equal(u.hasUpdate, false, '版本号相同且无法确认提交时视为已是最新');
+  assert.ok(u.current.running, '带上正在运行的版本');
+});

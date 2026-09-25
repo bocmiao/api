@@ -19,7 +19,7 @@ import { listSettings, saveSettings } from '../lib/settings.js';
 import { testService, serviceOfKey, linkOfKey } from '../lib/keytest.js';
 import { sendMail } from '../notify/smtp.js';
 import { invoke, apiRouter } from '../registry.js';
-import { localVersion } from '../lib/updater.js';
+import { localVersion, RUNNING_VERSION } from '../lib/updater.js';
 import { cache } from '../lib/cache.js';
 import { isBlockedIP } from '../lib/netguard.js';
 import { loadIpInfo } from '../apis/life/ip.js';
@@ -526,7 +526,8 @@ r('GET', '/status', () => {
   });
   return {
     data: {
-      version: localVersion(),
+      version: RUNNING_VERSION ?? localVersion(),
+      diskVersion: localVersion(),
       uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
       categories: apiCategories,
       modules,

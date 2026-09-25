@@ -1508,6 +1508,7 @@ async function checkUpdate() {
       : u.hasUpdate ? '<p class="small muted">这次更新包含问题修复和细节改进。</p>' : '';
 
     body.innerHTML = `
+      ${cur.running && cur.version && cur.running !== cur.version ? `<div class="form-error">服务器上的代码已经是 v${esc(cur.version)}，但正在运行的仍是 v${esc(cur.running)}：代码替换后还没有重启服务。请到 1Panel「网站 → 运行环境」重启 Miao API，重启前在线更新可能失败。</div>` : ''}
       ${u.lastRollback ? `<div class="form-error">上次更新后新版本没能正常启动，已于 ${shortDate(u.lastRollback.at)} 自动恢复到更新前的版本。</div>` : ''}
       <div class="ver-row">
         ${verBox('当前版本', cur.version ? `v${esc(cur.version)}` : '—', cur.updatedAt ? `${shortDate(cur.updatedAt)} 更新` : '手动部署')}
