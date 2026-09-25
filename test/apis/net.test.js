@@ -1163,7 +1163,7 @@ describe('网站图标', () => {
     assert.equal(res.headers['content-type'], 'image/svg+xml');
     assert.equal(res.headers['content-security-policy'], "default-src 'none'; style-src 'unsafe-inline'");
     assert.equal(res.headers['x-content-type-options'], 'nosniff');
-    assert.equal(res.headers['cache-control'], 'public, max-age=86400');
+    assert.equal(res.headers['cache-control'], 'private, max-age=86400');
     assert.equal(res.headers['x-favicon-url'], `${base()}/icons/icon.svg`);
     assert.ok(Buffer.isBuffer(res.body));
   });

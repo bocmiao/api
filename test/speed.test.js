@@ -53,3 +53,10 @@ test('开启信任反向代理时优先使用 EdgeOne 的 EO-Connecting-IP', asy
     if (prev == null) delete process.env.TRUST_PROXY; else process.env.TRUST_PROXY = prev;
   }
 });
+
+test('接口、错误和短链跳转默认带 no-store，防止被 CDN 缓存', async () => {
+  for (const p of ['/api/tools/uuid', '/api/nope', '/s/zzzzzz', '/health']) {
+    const r = await fetch(`${base}${p}`, { redirect: 'manual' });
+    assert.equal(r.headers.get('cache-control'), 'no-store', p);
+  }
+});

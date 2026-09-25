@@ -14,7 +14,7 @@ export function hexColor(value, name) {
 
 const svgResponse = (body, maxAge = 86400) => ({
   status: 200,
-  headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': `public, max-age=${maxAge}` },
+  headers: { 'content-type': 'image/svg+xml; charset=utf-8', 'cache-control': `private, max-age=${maxAge}` },
   body,
 });
 
@@ -159,7 +159,7 @@ export default {
         { name: 'color', default: '6b7280', desc: '文字颜色，3 或 6 位十六进制', example: '1e40af' },
         { name: 'fontSize', required: false, desc: '字号（像素，6~400）；不传时按图片尺寸和文字长度自动计算', example: '40' },
       ],
-      returns: 'SVG 图片（Content-Type: image/svg+xml; charset=utf-8，Cache-Control: public, max-age=86400，相同参数输出相同）。'
+      returns: 'SVG 图片（Content-Type: image/svg+xml; charset=utf-8，Cache-Control: private, max-age=86400，相同参数输出相同）。'
         + '尺寸为 width×height 像素，纯色背景，文字水平垂直居中、加粗；文字经过 XML 转义。文字由浏览器用系统字体渲染（无衬线字体，含中文字体回退）。'
         + '参数不合法时返回 JSON 格式的 400 错误',
       async handler({ query }) {
@@ -184,7 +184,7 @@ export default {
         { name: 'labelColor', default: 'grey', desc: '左侧底色，取值同 color', example: '555' },
         { name: 'style', default: 'flat', desc: 'flat 圆角带渐变 / flat-square 直角纯色', example: 'flat-square' },
       ],
-      returns: 'SVG 图片（Content-Type: image/svg+xml; charset=utf-8，Cache-Control: public, max-age=3600），高 20 像素，宽度按文字自动计算。'
+      returns: 'SVG 图片（Content-Type: image/svg+xml; charset=utf-8，Cache-Control: private, max-age=3600），高 20 像素，宽度按文字自动计算。'
         + '左侧为 label（灰底），右侧为 message（color 底色），白色 Verdana 11px 文字，flat 风格带文字阴影和渐变高光；'
         + '文字经过 XML 转义，并用 textLength 限定宽度，换字体也不会溢出。带 <title> 与 aria-label，屏幕阅读器可读。参数不合法时返回 JSON 格式的 400 错误',
       async handler({ query }) {
@@ -211,7 +211,7 @@ export default {
         { name: 'bg', required: false, desc: '自定义背景色（十六进制），覆盖样式默认值', example: 'fff7ed' },
         { name: 'color', required: false, desc: '自定义文字颜色（十六进制），覆盖样式默认值', example: '7c2d12' },
       ],
-      returns: `SVG 图片（Content-Type: image/svg+xml; charset=utf-8，Cache-Control: public, max-age=86400）。宽度为 width，高度 = 上下边距 + 行数 × 1.6 倍字号；`
+      returns: `SVG 图片（Content-Type: image/svg+xml; charset=utf-8，Cache-Control: private, max-age=86400）。宽度为 width，高度 = 上下边距 + 行数 × 1.6 倍字号；`
         + `按估算字宽自动折行（全角字符 1 个字宽、半角约 0.55 个），换行后最多 ${MAX_LINES} 行，超过返回 400。`
         + '每行一个 <text>，文字经过 XML 转义并保留空格；文字由查看者的浏览器用系统字体渲染（服务器不需要安装字体），不同系统的实际字宽略有差异。参数不合法时返回 JSON 格式的 400 错误',
       async handler({ query }) {

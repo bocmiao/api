@@ -130,7 +130,7 @@ export default {
         + 'style=identicon：GitHub 风格 5×5 左右对称格子，主色由 seed 哈希决定，默认浅灰（#F0F0F0）背景，四周留半格空白；'
         + 'style=initials：显示 seed 的第一个字（中文、emoji 按一个字处理，英文转大写；为空时显示“?”），背景为 seed 哈希色，文字按背景深浅自动用白色或深灰；'
         + 'style=pixel：8×8 左右对称的像素小怪物，带一对眼睛，部分带嘴巴，颜色由 seed 决定，默认背景为同色系浅色。'
-        + '同一 seed + 参数永远得到同一张图，此时响应头带 Cache-Control: public, max-age=86400；不传 seed 时随机生成，Cache-Control: no-store，'
+        + '同一 seed + 参数永远得到同一张图，此时响应头带 Cache-Control: private, max-age=86400；不传 seed 时随机生成，Cache-Control: no-store，'
         + '并在响应头 X-Avatar-Seed 中返回本次使用的随机 seed，可用它再次生成同一张图。'
         + 'seed 不会原样写入 SVG：文字经过 XML 转义，颜色只接受 6 位 hex。参数不合法时返回 HTTP 400 和 JSON 错误 { code, message, data: null }。',
       params: [
@@ -151,7 +151,7 @@ export default {
           'x-content-type-options': 'nosniff',
           // 直接在浏览器打开 SVG 时也禁止脚本和外部资源
           'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
-          'cache-control': given == null ? 'no-store' : 'public, max-age=86400',
+          'cache-control': given == null ? 'no-store' : 'private, max-age=86400',
         };
         // 只回传服务端生成的随机 seed（纯 hex），不把用户输入写进响应头
         if (given == null) headers['x-avatar-seed'] = seed;

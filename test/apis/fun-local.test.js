@@ -491,7 +491,7 @@ test('随机头像：返回 SVG、同一 seed 固定、不同 seed 不同', asyn
     const a = await call('/api/avatar', `seed=alice&style=${style}&size=96`);
     assert.equal(a.status, 200);
     assert.equal(a.headers['content-type'], 'image/svg+xml; charset=utf-8');
-    assert.equal(a.headers['cache-control'], 'public, max-age=86400');
+    assert.equal(a.headers['cache-control'], 'private, max-age=86400');
     assert.equal(a.headers['x-avatar-seed'], undefined);
     assert.match(a.body, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="96" height="96" viewBox="[\d ]+"/);
     assert.ok(a.body.endsWith('</svg>'));

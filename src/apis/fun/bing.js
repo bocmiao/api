@@ -113,7 +113,7 @@ export default {
       ],
       returns:
         '302 跳转到 Bing 壁纸图片地址：默认为 1920×1080 横版 JPG，uhd=1 时为 UHD 超清原图（通常 3840×2160）。' +
-        '响应头 Cache-Control: public, max-age=1800（30 分钟）；上游没有图片时返回 502 JSON 错误',
+        '响应头 Cache-Control: private, max-age=1800（30 分钟）；上游没有图片时返回 502 JSON 错误',
       async handler({ query }) {
         const { idx, mkt } = readOpts(query);
         const uhd = param(query, 'uhd', { default: '0', oneOf: ['0', '1'] }) === '1';
@@ -121,7 +121,7 @@ export default {
         const img = data[0];
         const location = (uhd ? img?.urlUHD : img?.url) ?? img?.url;
         if (!location) throw new HttpError(502, 'Bing 未返回图片');
-        return { status: 302, headers: { location, 'cache-control': 'public, max-age=1800' }, body: '' };
+        return { status: 302, headers: { location, 'cache-control': 'private, max-age=1800' }, body: '' };
       },
     },
   ],

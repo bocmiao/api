@@ -32,11 +32,13 @@ const PAGE_HEADERS = {
   'content-security-policy': "default-src 'self'; img-src * data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
 };
 
+// 默认不允许浏览器和 CDN 缓存（接口数据、登录状态、短链跳转都不能被缓存）；静态文件等需要缓存的自己传 cache-control
 function send(res, status, body, headers = {}) {
   const isJson = body !== null && typeof body === 'object' && !Buffer.isBuffer(body);
   res.writeHead(status, {
     ...(isJson ? { 'content-type': 'application/json; charset=utf-8' } : {}),
     'x-content-type-options': 'nosniff',
+    'cache-control': 'no-store',
     ...headers,
   });
   res.end(isJson ? JSON.stringify(body) : body);

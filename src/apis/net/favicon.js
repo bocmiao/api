@@ -161,7 +161,7 @@ export function iconResponse(icon) {
     status: 200,
     headers: {
       'content-type': icon.type,
-      'cache-control': `public, max-age=${DAY_MS / 1000}`,
+      'cache-control': `private, max-age=${DAY_MS / 1000}`,
       // 图标从本站域名直接返回：禁止 SVG 中的脚本与外部资源，并禁止浏览器嗅探成其他类型
       'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
       'x-content-type-options': 'nosniff',
@@ -189,7 +189,7 @@ export default {
       ],
       returns: '图标图片本身（Content-Type 为上游返回的 image/*，如 image/png、image/x-icon、image/vnd.microsoft.icon、image/svg+xml），不超过 200KB。'
         + '查找顺序：页面 <link rel="icon"> / apple-touch-icon 中按 size 挑选（优先不小于 size 的最小尺寸，其次矢量 SVG，再次较小的），都不可用时回退到网站根目录的 /favicon.ico。'
-        + '响应带 Cache-Control: public, max-age=86400（缓存 1 天）、Content-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'（禁止 SVG 中的脚本）、X-Content-Type-Options: nosniff，'
+        + '响应带 Cache-Control: private, max-age=86400（缓存 1 天）、Content-Security-Policy: default-src \'none\'; style-src \'unsafe-inline\'（禁止 SVG 中的脚本）、X-Content-Type-Options: nosniff，'
         + '以及 X-Favicon-Url（图标的原始地址）。找不到图标时返回 HTTP 404 的 JSON 错误；网址指向内网时返回 400。',
       async handler({ query }) {
         const raw = param(query, 'url', { required: true, max: 2048 });
