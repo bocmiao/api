@@ -167,6 +167,15 @@ await fetch('https://api.example.com/api/shorturl', {
 | 60 秒读懂世界 ⚠️ | `/api/news/60s` | 获取每日 60 秒新闻简报 |
 | 摸鱼日历 | `/api/moyu` | 摸鱼日历：周末、发薪日与节假日倒计时 |
 | BMI 计算 | `/api/bmi` | 计算身体质量指数（BMI） |
+| 个税计算 | `/api/tax/income` | 按月累计预扣或年度汇算，支持五险一金、专项附加扣除、年终奖单独计税 |
+| 身份证校验 | `/api/idcard/check` | 校验位、出生日期、省份、性别与周岁（只校验，不生成） |
+| 经纬度距离 | `/api/geo/distance` | 球面距离与方位角 |
+| 单位换算 | `/api/unit` | 11 类单位，含斤、两、亩、里、时辰等市制 |
+|  | `/api/unit/list` | 列出全部单位与别名 |
+| 年龄生肖 | `/api/age` | 周岁、虚岁、生肖、星座、农历生日与倒计时 |
+| 工作日计算 | `/api/workdays` | 区间工作日数（含调休），或推算 N 个工作日后的日期 |
+| 健康指标 | `/api/health/calc` | 基础代谢、每日热量、理想体重、体脂率、心率区间 |
+| 数独 | `/api/sudoku` | 按难度生成唯一解数独，或传入题目求解 |
 
 ### 金融
 
@@ -204,6 +213,9 @@ await fetch('https://api.example.com/api/shorturl', {
 |  | `/api/quotes/types` | 列出语录分类及条数 |
 | 温馨提示 | `/api/greeting` | 当前时段的问候语和提示语（北京时间） |
 | 随机头像 | `/api/avatar` | 生成 SVG 头像（直接返回图片） |
+| 汉字字典 | `/api/hanzi` | 拼音（多音）、部首、笔画、繁体、释义，约 1.4 万字 |
+| 古诗词检索 | `/api/poem/search` | 唐诗三百首、宋词三百首按作者 / 朝代 / 关键词检索 |
+|  | `/api/poem/random` | 随机一首 |
 
 ### AI
 
@@ -241,6 +253,24 @@ await fetch('https://api.example.com/api/shorturl', {
 | 颜色工具 | `/api/color/random` | 生成随机颜色 |
 |  | `/api/color/convert` | 颜色格式转换与对比度计算 |
 | IP 签名档 | `/api/ipcard` | IP 签名档图片（SVG） |
+| 子网计算 | `/api/tools/cidr` | IPv4 / IPv6 子网、掩码、地址范围 |
+| IP 与整数 | `/api/tools/ip-int` | IP 与十进制 / 十六进制 / 二进制互转 |
+| 进制转换 | `/api/tools/radix` | 2~36 进制，支持大数 |
+| Unicode 转换 | `/api/tools/unicode` | \uXXXX、&#x;、U+ 等格式互转 |
+| 经典密码 | `/api/tools/cipher` | 凯撒、ROT13、摩斯电码、维吉尼亚、栅栏等 |
+| JWT | `/api/tools/jwt` | 解码并验证 HS256/384/512 签名（GET / POST） |
+| 两步验证码 | `/api/tools/totp` | 生成 TOTP 密钥与 6 位验证码（GET / POST） |
+| 密码强度 | `POST /api/tools/password-strength` | 评估密码强度（只接受 POST） |
+| 请求回显 | `/api/tools/echo` | 回显请求方法、头、参数（去掉敏感信息） |
+| 测试数据 | `/api/tools/mock` | 生成明显虚构的姓名、手机号、邮箱、地址等 |
+| 文本统计 | `/api/tools/text-stat` | 字数、词数、标点、段落、阅读时长 |
+| 人民币大写 | `/api/tools/rmb` | 金额转中文大写 |
+| JSON 工具 | `POST /api/tools/json` | 格式化、压缩、校验（给出错误行列） |
+| Cron 解析 | `/api/tools/cron` | 中文描述与未来执行时间 |
+| 正则测试 | `/api/tools/regex` | 匹配、替换、分割，带超时防卡死 |
+| 占位图 | `/api/placeholder` | 生成 SVG 占位图 |
+| 徽章 | `/api/badge` | 生成 shields 风格 SVG 徽章 |
+| 文字转图片 | `/api/text-image` | 文字生成 SVG 图片 |
 
 ### 网络
 
@@ -256,6 +286,15 @@ await fetch('https://api.example.com/api/shorturl', {
 | 网站图标 | `/api/favicon` | 获取网站图标（直接返回图片） |
 | 死链检测 | `/api/links/check` | 检测网页中的死链 |
 | 域名后缀列表 | `/api/tld` | 查询顶级域名后缀列表 |
+| 安全头检测 | `/api/site/headers` | HSTS、CSP 等安全响应头评分，附跳转链与压缩方式 |
+| 邮件安全检测 | `/api/email/security` | SPF、DMARC、DKIM、MX 配置检查与建议 |
+| 邮箱有效性 | `/api/email/check` | 语法、MX、一次性邮箱、拼写纠错 |
+| RSS 转 JSON | `/api/rss` | RSS / Atom 订阅源解析，普通网页自动发现订阅源 |
+| 网页正文 | `/api/web/text` | 提取网页正文纯文本 |
+| 网页转 Markdown | `/api/web/markdown` | 网页转 Markdown |
+| 整站文字抓取 | `POST /api/crawl` | 沿站内链接抓取多个页面的文字，遵守 robots.txt（后台任务） |
+|  | `/api/crawl/result` | 查询抓取进度与结果（不计调用次数） |
+| 苹果应用搜索 | `/api/appstore/search` | App Store 应用搜索与详情 |
 
 ## 推送主题
 
