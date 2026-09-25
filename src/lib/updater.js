@@ -195,11 +195,17 @@ export function parseChangelog(md) {
 }
 
 // 读取仓库里的单个文件：公开仓库优先走 raw.githubusercontent.com（不占用 GitHub 接口的每小时次数），失败再走接口
+// 国内服务器常连不上 raw.githubusercontent.com：失败一次后 30 分钟内直接走接口，避免每次检查更新都卡在超时上
+let rawDownUntil = 0;
 async function remoteFile(repo, sha, path) {
-  try {
-    const res = await fetch(`https://raw.githubusercontent.com/${repo}/${sha}/${path}`, { headers: { 'user-agent': 'miao-api-updater' }, signal: AbortSignal.timeout(15_000) });
-    if (res.ok) return await res.text();
-  } catch { /* 改走接口 */ }
+  if (Date.now() > rawDownUntil) {
+    try {
+      const res = await fetch(`https://raw.githubusercontent.com/${repo}/${sha}/${path}`, { headers: { 'user-agent': 'miao-api-updater' }, signal: AbortSignal.timeout(5_000) });
+      if (res.ok) return await res.text();
+    } catch {
+      rawDownUntil = Date.now() + 30 * 60_000;
+    }
+  }
   try {
     const buf = await gh(`/repos/${repo}/contents/${encodeURIComponent(path)}?ref=${sha}`, { accept: 'application/vnd.github.raw', raw: true });
     return buf.toString('utf8');
@@ -313,27 +319,51 @@ function localBlobSha(file) {
   }
 }
 
-const rawUrl = (repo, sha, path) => `https://raw.githubusercontent.com/${repo}/${sha}/${path.split('/').map(encodeURIComponent).join('/')}`;
+const encPath = (path) => path.split('/').map(encodeURIComponent).join('/');
+const rawUrl = (repo, sha, path) => `https://raw.githubusercontent.com/${repo}/${sha}/${encPath(path)}`;
 
-async function fetchRawFile(cfg, sha, path) {
-  const direct = rawUrl(cfg.repo, sha, path);
-  const urls = cfg.mirror ? [`${cfg.mirror.replace(/\/+$/, '')}/${direct}`, direct] : [direct];
-  let lastErr;
-  for (const url of urls) {
-    try {
-      const auth = cfg.token && url === direct ? { authorization: `Bearer ${cfg.token}` } : {};
-      const res = await fetch(url, { headers: { 'user-agent': 'miao-api-updater', ...auth }, signal: AbortSignal.timeout(60_000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return Buffer.from(await res.arrayBuffer());
-    } catch (err) {
-      lastErr = err;
-    }
+// 单个文件的下载来源，按顺序尝试。国内服务器经常连不上 raw.githubusercontent.com，所以还有 jsDelivr 和 GitHub 接口兜底；
+// 下载到的内容都会核对 git 指纹，来源本身不需要可信。某个来源连不上后，本次更新里的其余文件不再尝试它。
+export function fileSources(cfg, sha) {
+  const direct = (path) => rawUrl(cfg.repo, sha, path);
+  const list = [];
+  if (cfg.mirror) list.push({ name: '加速地址', url: (path) => `${cfg.mirror.replace(/\/+$/, '')}/${direct(path)}` });
+  if (!cfg.token) {
+    list.push({ name: 'jsDelivr', url: (path) => `https://fastly.jsdelivr.net/gh/${cfg.repo}@${sha}/${encPath(path)}` });
   }
-  throw new HttpError(502, `下载 ${path} 失败：${lastErr?.message ?? '未知错误'}`);
+  list.push({ name: 'raw.githubusercontent.com', url: direct, auth: true });
+  list.push({ name: 'GitHub 接口', url: (path) => `${API}/repos/${cfg.repo}/contents/${encPath(path)}?ref=${sha}`, auth: true, accept: 'application/vnd.github.raw' });
+  return list;
+}
+
+export function makeFileFetcher(cfg, sha, { sources = fileSources(cfg, sha), timeoutMs = 20_000, onSource } = {}) {
+  const dead = new Set();
+  return async (path) => {
+    const errors = [];
+    for (const src of sources) {
+      if (dead.has(src.name)) continue;
+      try {
+        const headers = { 'user-agent': 'miao-api-updater', ...(src.accept ? { accept: src.accept } : {}), ...(src.auth && cfg.token ? { authorization: `Bearer ${cfg.token}` } : {}) };
+        const res = await fetch(src.url(path), { headers, signal: AbortSignal.timeout(timeoutMs) });
+        if (!res.ok) {
+          // 404 可能只是这个来源还没同步到；403/429 多半是被限流，本次不再使用
+          if (res.status === 403 || res.status === 429) dead.add(src.name);
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = Buffer.from(await res.arrayBuffer());
+        onSource?.(src.name);
+        return data;
+      } catch (err) {
+        if (!/^HTTP /.test(err.message)) dead.add(src.name); // 连不上、超时：本次不再尝试
+        errors.push(`${src.name}：${err.name === 'TimeoutError' ? '超时' : err.cause?.code || err.message}`);
+      }
+    }
+    throw new HttpError(502, `下载 ${path} 失败（${errors.join('；') || '没有可用的下载来源'}）`);
+  };
 }
 
 // 返回 { files, downloaded, reused }；不适合增量时返回 null
-export async function buildStagingIncremental(cfg, sha, onProgress, { root = ROOT, staging = STAGING, fetchTree = (p) => gh(p), fetchFile = (path) => fetchRawFile(cfg, sha, path) } = {}) {
+export async function buildStagingIncremental(cfg, sha, onProgress, { root = ROOT, staging = STAGING, fetchTree = (p) => gh(p), fetchFile = makeFileFetcher(cfg, sha) } = {}) {
   const tree = await fetchTree(`/repos/${cfg.repo}/git/trees/${sha}?recursive=1`);
   if (!Array.isArray(tree?.tree) || tree.truncated) return null;
   const blobs = tree.tree.filter((t) => t.type === 'blob' && t.mode !== '120000' && !KEEP.has(t.path.split('/')[0]));
@@ -455,13 +485,17 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
     // 优先增量更新：只下载有改动的文件；清单取不到、改动太多或下载出错时退回整包下载
     let files = null;
     let mode = '增量更新';
+    let via = '';
     try {
+      const fetchFile = makeFileFetcher(cfg, target.sha, { onSource: (name) => { via = name; } });
       const inc = await buildStagingIncremental(cfg, target.sha, (done, total, reused) => report({
         stage: '正在下载有改动的文件', percent: 5 + Math.round((done / Math.max(total, 1)) * 50),
-        detail: `增量更新 · 已下载 ${done} / ${total} 个改动文件（${reused} 个文件没有变化，直接复用）`,
-      }));
+        detail: `增量更新 · 已下载 ${done} / ${total} 个改动文件（${reused} 个文件没有变化，直接复用）${via ? ` · 来源：${via}` : ''}`,
+      }), { fetchFile });
       if (inc) files = inc.files;
+      else report({ stage: '改动较多，改为下载完整更新包', percent: 5, detail: '' });
     } catch (err) {
+      console.error('[在线更新] 增量更新失败，改为下载完整更新包：', err.message);
       report({ stage: '增量更新失败，改为下载完整更新包', percent: 5, detail: err.message });
     }
     if (files == null) {

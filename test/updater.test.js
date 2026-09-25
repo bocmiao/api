@@ -10,7 +10,7 @@ process.env.DATA_DIR = join(tmp, 'data');
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
 const { extractTar } = await import('../src/lib/tar.js');
-const { unpackTo, checkUpdate, verifyAgainstGitHub, mirrorUrl, buildStagingIncremental } = await import('../src/lib/updater.js');
+const { unpackTo, checkUpdate, verifyAgainstGitHub, mirrorUrl, buildStagingIncremental, makeFileFetcher, fileSources } = await import('../src/lib/updater.js');
 const { swapIn, writePending, readPending, rollbackPending } = await import('../src/lib/swap.js');
 
 // 构造 GitHub 风格的 tar.gz：pax 全局头带提交 SHA，所有文件位于 "owner-repo-sha/" 之下
@@ -268,4 +268,36 @@ test('增量更新：没变的文件复用本地，只下载改动的文件并�
   assert.equal(await buildStagingIncremental({ repo: 'o/r' }, 'sha', null, { root, staging, fetchTree: async () => ({ truncated: true, tree: [] }) }), null);
   const allNew = { truncated: false, tree: Object.keys(next).map((path) => ({ path, type: 'blob', mode: '100644', sha: blob(`new-${path}`), size: 1000 })) };
   assert.equal(await buildStagingIncremental({ repo: 'o/r' }, 'sha', null, { root, staging, fetchTree: async () => allNew, fetchFile: async () => Buffer.from('') }), null);
+});
+
+test('增量下载来源：国内连不上的来源只试一次，之后的文件直接用能用的来源', async () => {
+  const cfg = { repo: 'o/r', token: '', mirror: 'https://ghfast.top/' };
+  assert.deepEqual(fileSources(cfg, 's').map((x) => x.name), ['加速地址', 'jsDelivr', 'raw.githubusercontent.com', 'GitHub 接口']);
+  assert.equal(fileSources(cfg, 's')[0].url('src/a b.js'), 'https://ghfast.top/https://raw.githubusercontent.com/o/r/s/src/a%20b.js');
+  assert.ok(!fileSources({ ...cfg, token: 't' }, 's').some((x) => x.name === 'jsDelivr'), '私有仓库不走 jsDelivr');
+
+  const hits = [];
+  mock.method(globalThis, 'fetch', async (url) => {
+    const u = String(url);
+    hits.push(u);
+    if (u.startsWith('https://dead.example')) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+    if (u.startsWith('https://miss.example')) return new Response('', { status: 404 });
+    return new Response(`data:${u.split('/').pop()}`);
+  });
+  const sources = [
+    { name: 'dead', url: (p) => `https://dead.example/${p}` },
+    { name: 'miss', url: (p) => `https://miss.example/${p}` },
+    { name: 'ok', url: (p) => `https://ok.example/${p}` },
+  ];
+  const used = [];
+  const get = makeFileFetcher({ repo: 'o/r' }, 's', { sources, onSource: (n) => used.push(n) });
+  assert.equal((await get('a.js')).toString(), 'data:a.js');
+  assert.equal((await get('b.js')).toString(), 'data:b.js');
+  assert.deepEqual(used, ['ok', 'ok']);
+  assert.equal(hits.filter((u) => u.startsWith('https://dead.example')).length, 1, '连不上的来源只尝试一次');
+  assert.equal(hits.filter((u) => u.startsWith('https://miss.example')).length, 2, '404 不算连不上，下个文件仍会尝试');
+
+  const none = makeFileFetcher({ repo: 'o/r' }, 's', { sources: sources.slice(0, 2) });
+  await assert.rejects(none('c.js'), /下载 c\.js 失败（dead：ECONNREFUSED；miss：HTTP 404）/);
+  mock.restoreAll();
 });
