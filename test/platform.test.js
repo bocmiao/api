@@ -190,6 +190,8 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   assert.equal((await normal('GET', '/admin/update/progress')).status, 403);
   assert.equal((await normal('GET', '/admin/changelog')).status, 403);
   assert.equal((await normal('GET', '/admin/version')).status, 403);
+  assert.equal((await normal('POST', '/admin/diagnose', { path: '/api/epic/free' })).status, 403);
+  assert.equal((await admin('POST', '/admin/diagnose', { path: 'not-a-path' })).status, 400);
 
   // 在线更新在后台执行，立即返回进度；GitHub 不可用时进度变为 error 并带原因
   const started = await admin('POST', '/admin/update', {});

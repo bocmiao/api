@@ -1011,12 +1011,14 @@ function barChart(rows, series) {
 }
 
 // pageSize：分页显示（数据已全部取回，在浏览器里翻页）
-function endpointsTable(rows, { pageSize = Infinity } = {}) {
+// diagnose：每行加「AI 分析」按钮（仅管理后台）
+function endpointsTable(rows, { pageSize = Infinity, diagnose = false } = {}) {
   if (!rows.length) return '<div class="empty">暂无调用记录</div>';
   const pages = Math.ceil(rows.length / pageSize);
   const row = (e, i) => `<tr data-pg="${Math.floor(i / pageSize) + 1}"${i >= pageSize ? ' hidden' : ''}><td class="mono">${esc(e.path)}</td><td class="num">${fmtNum(e.calls)}</td><td class="num">${fmtNum(e.avgMs)} ms</td>
-      <td class="num">${e.calls ? ((e.errors / e.calls) * 100).toFixed(1) : 0}%</td></tr>`;
-  return `<div class="table-wrap" data-pages="${pages}" data-cur="1"><table class="table"><thead><tr><th>接口</th><th class="num">调用</th><th class="num">平均耗时</th><th class="num">失败率</th></tr></thead><tbody>
+      <td class="num">${e.calls ? ((e.errors / e.calls) * 100).toFixed(1) : 0}%</td>
+      ${diagnose ? `<td class="num">${e.path.startsWith('/api/') ? `<button class="btn sm ${e.errors ? '' : 'ghost'}" type="button" data-diagnose="${esc(e.path)}">AI 分析</button>` : ''}</td>` : ''}</tr>`;
+  return `<div class="table-wrap" data-pages="${pages}" data-cur="1"><table class="table"><thead><tr><th>接口</th><th class="num">调用</th><th class="num">平均耗时</th><th class="num">失败率</th>${diagnose ? '<th></th>' : ''}</tr></thead><tbody>
     ${rows.map(row).join('')}
   </tbody></table>${pages > 1 ? `<div class="row pager" style="justify-content:center;gap:8px;padding:10px 0 4px">
     <button class="btn sm" type="button" data-pg-go="-1" disabled>上一页</button>
@@ -1289,10 +1291,11 @@ async function pageAdmin() {
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>近 14 天调用量</h2></div><div style="height:10px"></div>${chart.html}</div>
     <div class="grid-2" style="margin-bottom:16px">
       <div class="card"><h2 class="card-title">接口调用排行（近 7 天）<span class="small faint" style="font-weight:400;margin-left:6px">共 ${s.endpoints.length} 个接口有调用</span></h2>
-        <div style="padding:8px">${endpointsTable(s.endpoints, { pageSize: 10 })}</div></div>
+        <div style="padding:8px">${endpointsTable(s.endpoints, { pageSize: 10, diagnose: true })}</div></div>
       <div class="card"><h2 class="card-title">24h 服务端错误</h2><div style="padding:8px">
-        ${s.errors.length ? `<table class="table"><thead><tr><th>接口</th><th>状态</th><th class="num">次数</th></tr></thead><tbody>
-          ${s.errors.map((e) => `<tr><td class="mono">${esc(e.path)}</td><td><span class="badge danger">${e.status}</span></td><td class="num">${fmtNum(e.n)}</td></tr>`).join('')}
+        ${s.errors.length ? `<table class="table"><thead><tr><th>接口</th><th>状态</th><th class="num">次数</th><th></th></tr></thead><tbody>
+          ${s.errors.map((e) => `<tr><td class="mono">${esc(e.path)}</td><td><span class="badge danger">${e.status}</span></td><td class="num">${fmtNum(e.n)}</td>
+            <td class="num">${e.path.startsWith('/api/') ? `<button class="btn sm" type="button" data-diagnose="${esc(e.path)}">AI 分析</button>` : ''}</td></tr>`).join('')}
         </tbody></table>` : '<div class="empty">一切正常</div>'}</div></div>
     </div>
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>接口开关</h2>
@@ -1781,3 +1784,54 @@ async function router() {
 window.addEventListener('hashchange', router);
 loadMe().then(router);
 
+
+// ---------- AI 分析接口失败原因（管理后台） ----------
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-diagnose]');
+  if (b) openDiagnose(b.dataset.diagnose);
+});
+
+function openDiagnose(path) {
+  modal(`<div class="diag"><h2>AI 分析 <span class="mono small faint">${esc(path)}</span></h2>
+    <div id="diag-body"><div class="row" style="gap:10px;padding:18px 0"><span class="spinner"></span>
+      <span class="muted small">正在汇总最近 7 天的调用记录，并实际调用一次该接口，再交给 AI 分析，大约需要 10~30 秒…</span></div></div>
+    <div class="actions"><button class="btn" data-close>关闭</button></div></div>`, async (root, close) => {
+    $('[data-close]', root).onclick = close;
+    const body = $('#diag-body', root);
+    let r;
+    try {
+      r = await api('POST', '/admin/diagnose', { path });
+    } catch (err) {
+      body.innerHTML = `<div class="form-error">${esc(err.message)}</div>
+        ${/AI/.test(err.message) ? '<p class="small"><a href="#/admin/settings/ai">去「设置 → AI」配置</a></p>' : ''}`;
+      $('a', body)?.addEventListener('click', close);
+      return;
+    }
+    const d = r.diagnosis;
+    const ev = r.evidence;
+    const tone = { 正常: 'ok', 部分失败: 'warn', 故障: 'danger' }[d.status] ?? '';
+    const list = (items) => (items.length ? `<ul class="diag-list">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="small faint">无</p>');
+    const live = ev.liveTest;
+    const liveText = live.skipped ? `未测试（${esc(live.skipped)}）`
+      : live.ok ? `<span style="color:var(--ok)">成功</span>，耗时 ${fmtNum(live.ms)} ms`
+        : `<span style="color:var(--danger)">失败 ${live.status}</span>：${esc(live.error)}（${fmtNum(live.ms)} ms）`;
+    body.innerHTML = `
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin:6px 0 12px"><span class="badge ${tone}">${esc(d.status)}</span>
+        <span class="badge">${esc(d.category)}</span><span class="small faint">判断把握：${esc(d.confidence)}</span></div>
+      <p style="margin:0 0 14px;line-height:1.7"><b>${esc(d.summary)}</b></p>
+      <div class="small faint">可能原因</div>${list(d.causes)}
+      <div class="small faint">处理建议</div>${list(d.suggestions)}
+      <details class="upd-tech" style="margin-top:12px"><summary class="small faint">分析依据</summary>
+        <div class="small" style="margin-top:8px;line-height:1.8">
+          近 7 天调用 ${fmtNum(ev.last7d.calls)} 次，失败 ${fmtNum(ev.last7d.failed ?? 0)} 次，平均 ${fmtNum(ev.last7d.avgMs ?? 0)} ms<br>
+          刚才实际调用：${liveText}<br>
+          ${ev.module.env.length ? `所需密钥：${ev.module.env.map((x) => `${esc(x.name)} ${x.configured ? '已配置' : x.optional ? '未配置（可选）' : '<b style="color:var(--danger)">未配置</b>'}`).join('，')}<br>` : ''}
+          数据来源：${esc(ev.module.source ?? '—')}${ev.module.unofficial ? '（非官方）' : ''}
+        </div>
+        ${ev.errors.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>状态</th><th>失败原因</th><th class="num">次数</th></tr></thead><tbody>
+          ${ev.errors.map((x) => `<tr><td><span class="badge danger">${x.status}</span></td><td class="small">${esc(x.error ?? '（旧记录没有保存原因）')}</td><td class="num">${fmtNum(x.n)}</td></tr>`).join('')}
+        </tbody></table></div>` : ''}
+        <div class="small faint" style="margin-top:6px">模型 ${esc(r.model ?? '')} · ${shortDate(r.at)}</div>
+      </details>`;
+  });
+}

@@ -109,6 +109,10 @@ db.exec(`
   );
 `);
 
+// 老数据库补列：调用日志记录失败原因（供管理员排查、AI 分析）
+const hasColumn = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+if (!hasColumn('request_log', 'error')) db.exec('ALTER TABLE request_log ADD COLUMN error TEXT');
+
 // 小工具：db.prepare 的缓存版
 const stmts = new Map();
 export function sql(text) {

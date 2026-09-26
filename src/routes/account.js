@@ -11,6 +11,7 @@ import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
 import { checkUpdate, startUpdate, updateProgress, versionInfo, localChangelog } from '../lib/updater.js';
+import { diagnose } from '../lib/diagnose.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
@@ -363,6 +364,14 @@ r('POST', '/admin/update', (ctx) => {
     if (result.restart) setTimeout(() => process.exit(75), 3000).unref();
   });
   return { data: started };
+});
+
+// AI 分析接口失败原因：body { path: '/api/xxx' }
+r('POST', '/admin/diagnose', async (ctx) => {
+  requireAdmin(ctx);
+  const path = String(ctx.body?.path ?? '').trim();
+  if (!/^\/api\/[\w\-./:]{1,150}$/.test(path)) throw new HttpError(400, '请指定要分析的接口路径，例如 /api/epic/free');
+  return { data: await diagnose(path) };
 });
 
 // 当前版本（不访问 GitHub，打开后台即可显示）

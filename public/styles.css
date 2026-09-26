@@ -479,3 +479,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .upd-progress.ok b { color: var(--ok); }
 .upd-progress.bad .upd-fill { background: var(--danger); }
 .upd-progress.bad b, .upd-progress.bad .faint { color: var(--danger); }
+
+/* AI 分析 */
+.modal:has(.diag) { max-width: 640px; }
+.diag-list { margin: 4px 0 12px; padding-left: 20px; display: grid; gap: 4px; line-height: 1.6; }

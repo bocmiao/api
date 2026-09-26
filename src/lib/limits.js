@@ -70,9 +70,10 @@ export function quota({ user, ip }) {
   return { limit, used, remaining: Math.max(0, limit - used), resetIn: secondsUntilReset() };
 }
 
-export function logRequest({ user, keyId, ip, path, status, ms }) {
-  sql('INSERT INTO request_log (ts, user_id, key_id, ip, path, status, ms) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(Date.now(), user?.id ?? null, keyId ?? null, ip, path, status, ms);
+// error：失败时的原因（只记我们自己的错误说明，不含请求参数），最多 300 字
+export function logRequest({ user, keyId, ip, path, status, ms, error = null }) {
+  sql('INSERT INTO request_log (ts, user_id, key_id, ip, path, status, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(Date.now(), user?.id ?? null, keyId ?? null, ip, path, status, ms, error ? String(error).slice(0, 300) : null);
 }
 
 export function pruneLogs() {

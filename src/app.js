@@ -208,7 +208,10 @@ export async function handle(req, res) {
     // 代码错误打印完整堆栈；上游故障、服务不支持等预期内的 5xx 只记一行
     if (status >= 500) console.error(`[${req.method} ${path}]`, err instanceof HttpError ? `${status} ${err.message}` : err);
     // 被限流的请求不计入日志，避免刷量拖慢数据库
-    if (log.logged && status !== 429) logRequest({ ...log, ip, path, status, ms: Date.now() - started });
+    if (log.logged && status !== 429) {
+      const error = err instanceof HttpError ? err.message : `${err?.name ?? 'Error'}: ${err?.message ?? err}`;
+      logRequest({ ...log, ip, path, status, ms: Date.now() - started, error });
+    }
     if (res.headersSent) return res.end();
     send(res, status, { code: status, message: status === 500 ? '服务器内部错误' : err.message, data: null }, {
       ...(isApi ? CORS : {}), ...(err.headers ?? {}),
