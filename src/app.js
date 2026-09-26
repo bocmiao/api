@@ -5,7 +5,7 @@ import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
-import { accountRouter } from './routes/account.js';
+import { accountRouter, checkConfirm } from './routes/account.js';
 import { HttpError } from './lib/http.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled } from './lib/modules.js';
@@ -173,7 +173,11 @@ export async function handle(req, res) {
       const raw = acct.route.rawBody;
       assertSameOrigin(req, { raw: Boolean(raw) });
       // 上传前先确认是管理员，避免陌生人往服务器传大文件
-      if (raw && !publicUser(userFromSession(cookies.sid))?.isAdmin) throw new HttpError(403, '需要管理员权限');
+      if (raw) {
+        const admin = publicUser(userFromSession(cookies.sid));
+        if (!admin?.isAdmin) throw new HttpError(403, '需要管理员权限');
+        if (!checkConfirm(req.headers['x-admin-confirm'], admin.id)) throw new HttpError(403, '请先输入管理员密码确认');
+      }
       const cookieOut = [];
       const ctx = {
         req, ip, params: acct.params, query: url.searchParams, body: raw ? await readRawBody(req, raw) : await readBody(req),

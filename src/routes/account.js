@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { sql, db } from '../db.js';
 import { config } from '../config.js';
 import { HttpError } from '../lib/http.js';
@@ -33,7 +34,9 @@ function requireUser(ctx) {
   return ctx.user;
 }
 function requireAdmin(ctx) {
-  if (!publicUser(requireUser(ctx)).isAdmin) throw new HttpError(403, '需要管理员权限');
+  const user = requireUser(ctx);
+  if (!publicUser(user).isAdmin) throw new HttpError(403, '需要管理员权限');
+  return user;
 }
 
 // 登录失败限速：同一 IP 15 分钟内最多失败 10 次
@@ -386,9 +389,39 @@ r('GET', '/admin/changelog', (ctx) => {
   return { data: { ...versionInfo(), entries: localChangelog() } };
 });
 
+// ---------- 敏感操作二次确认 ----------
+// 上传更新包等高危操作前再输一次密码，换取 5 分钟内有效、只能用一次的确认码（登录状态被盗也无法直接操作）
+const confirmTokens = new Map();
+const CONFIRM_TTL = 5 * 60_000;
+
+r('POST', '/admin/confirm', async (ctx) => {
+  const admin = requireAdmin(ctx);
+  checkLoginRate(ctx.ip);
+  const row = sql('SELECT password_hash FROM users WHERE id = ?').get(admin.id);
+  if (!row || !(await verifyPassword(String(ctx.body?.password ?? ''), row.password_hash))) {
+    recordLoginFail(ctx.ip);
+    throw new HttpError(401, '密码不正确');
+  }
+  loginFails.delete(ctx.ip);
+  const now = Date.now();
+  for (const [k, v] of confirmTokens) if (v.exp < now) confirmTokens.delete(k);
+  const token = randomBytes(24).toString('base64url');
+  confirmTokens.set(token, { userId: admin.id, exp: now + CONFIRM_TTL });
+  return { data: { token, expiresIn: CONFIRM_TTL / 1000 } };
+});
+
+// consume=false 只检查（开始接收上传文件前），consume=true 检查并作废（真正执行时）
+export function checkConfirm(token, userId, { consume = false } = {}) {
+  const t = confirmTokens.get(String(token ?? ''));
+  const ok = Boolean(t && t.userId === userId && t.exp > Date.now());
+  if (ok && consume) confirmTokens.delete(String(token));
+  return ok;
+}
+
 // 手动上传更新包（GitHub 的 Download ZIP 或 .tar.gz），最大 60 MB；在后台安装，进度同样查 /admin/update/progress
 r('POST', '/admin/update/upload', (ctx) => {
-  requireAdmin(ctx);
+  const admin = requireAdmin(ctx);
+  if (!checkConfirm(ctx.req.headers['x-admin-confirm'], admin.id, { consume: true })) throw new HttpError(403, '请先输入管理员密码确认');
   if (!ctx.body?.length) throw new HttpError(400, '没有收到文件');
   const started = startUploadUpdate(ctx.body, (result) => {
     if (result.restart) setTimeout(() => process.exit(75), 3000).unref();

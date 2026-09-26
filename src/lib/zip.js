@@ -1,5 +1,5 @@
 // 最小 zip 解析（只读中央目录，支持「不压缩」和「deflate」两种方式），用于解开 GitHub 的「Download ZIP」源码包。
-// 返回与 tar.js 相同的结构：{ entries: [{ path, type: 'file'|'dir', data }] }
+// 返回与 tar.js 相同的结构：{ entries: [{ path, type: 'file'|'dir', data }], comment }
 import { inflateRawSync } from 'node:zlib';
 
 const EOCD_SIG = 0x06054b50;
@@ -18,6 +18,8 @@ export function extractZip(buf, { maxTotal = 200 * 1024 * 1024 } = {}) {
   }
   if (eocd < 0) throw new Error('不是有效的 zip 文件');
   const count = buf.readUInt16LE(eocd + 10);
+  // GitHub / git archive 生成的 zip 把提交 SHA 写在压缩包注释里
+  const comment = buf.subarray(eocd + 22, eocd + 22 + buf.readUInt16LE(eocd + 20)).toString('utf8').trim();
   const cenOffset = buf.readUInt32LE(eocd + 16);
   if (count === 0xffff || cenOffset === 0xffffffff) throw new Error('不支持 zip64 格式');
 
@@ -52,5 +54,5 @@ export function extractZip(buf, { maxTotal = 200 * 1024 * 1024 } = {}) {
     if (data.length !== size) throw new Error(`zip 文件损坏：${name}`);
     entries.push({ path: name, type: 'file', data });
   }
-  return { entries };
+  return { entries, comment };
 }

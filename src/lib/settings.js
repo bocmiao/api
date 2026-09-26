@@ -71,6 +71,7 @@ export const SETTING_GROUPS = [
       { key: 'UPDATE_REPO', label: 'GitHub 仓库', type: 'text', default: 'bocmiao/api', placeholder: 'owner/repo' },
       { key: 'UPDATE_BRANCH', label: '分支', type: 'text', placeholder: '留空使用仓库默认分支' },
       { key: 'GITHUB_TOKEN', label: 'GitHub Token', type: 'secret', help: '建议填写：不填时 GitHub 接口每小时只能调用 60 次，检查几次更新就会用完；填写后每小时 5000 次。公开仓库只需一个无任何权限的 Token；私有仓库必填' },
+      { key: 'UPDATE_UPLOAD_VERIFY', label: '上传更新包时核对官方代码', type: 'bool', default: '1', help: '开启后，上传的更新包必须是 GitHub 上本仓库分支的原始代码（每个文件都会比对官方指纹），被改动过的代码一律拒绝。建议保持开启' },
       { key: 'UPDATE_MIRROR', label: 'GitHub 下载加速地址', type: 'url', placeholder: 'https://ghfast.top', help: '国内服务器下载 GitHub 很慢或超时时填写，例如 https://ghfast.top 。下载的每个文件都会和 GitHub 官方记录逐一核对，被改动就拒绝更新；加速失败会自动改为直连。私有仓库无法通过加速地址下载，会自动直连' },
     ],
   },

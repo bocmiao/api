@@ -1789,15 +1789,41 @@ function uploadUpdateHelp() {
       <li>点下面的「选择文件」，选中刚下载的 zip</li>
       <li>上传后服务器会检查新版本能否正常启动，再自动备份、替换并重启；失败会自动恢复</li>
     </ol>
-    <p class="small faint">账号、API Key、调用记录和系统设置都不受影响。也支持 .tar.gz 格式。</p>
-    <div class="actions"><button class="btn" data-no>取消</button><button class="btn primary" data-pick>选择文件</button></div>`, (root, close) => {
+    <p class="small faint">账号、API Key、调用记录和系统设置都不受影响。也支持 .tar.gz 格式。为安全起见，服务器会逐个文件核对是否为 GitHub 官方代码，改动过的代码会被拒绝。</p>
+    <label class="small" style="display:block;margin:14px 0 6px">为了安全，请再输入一次管理员密码</label>
+    <input class="input" type="password" id="confirm-pw" autocomplete="current-password" placeholder="管理员密码">
+    <div class="form-error" id="confirm-err" hidden style="margin-top:8px"></div>
+    <div class="actions"><button class="btn" data-no>取消</button><button class="btn primary" data-pick>确认并选择文件</button></div>`, (root, close) => {
     $('[data-no]', root).onclick = close;
-    $('[data-pick]', root).onclick = () => { close(); $('#upload-file')?.click(); };
+    const go = async () => {
+      const pw = $('#confirm-pw', root).value;
+      const errEl = $('#confirm-err', root);
+      if (!pw) { errEl.hidden = false; errEl.textContent = '请输入密码'; return; }
+      $('[data-pick]', root).disabled = true;
+      try {
+        const r = await api('POST', '/admin/confirm', { password: pw });
+        uploadConfirm = { token: r.token, exp: Date.now() + r.expiresIn * 1000 - 5000 };
+        close();
+        $('#upload-file')?.click();
+      } catch (err) {
+        errEl.hidden = false;
+        errEl.textContent = err.message;
+        $('[data-pick]', root).disabled = false;
+      }
+    };
+    $('[data-pick]', root).onclick = go;
+    $('#confirm-pw', root).onkeydown = (e) => { if (e.key === 'Enter') go(); };
   });
 }
 
+// 输入密码后换到的一次性确认码（5 分钟内有效）
+let uploadConfirm = null;
+
 async function uploadUpdate(file) {
   const mbText = (n) => `${(n / 1048576).toFixed(1)} MB`;
+  if (!uploadConfirm || uploadConfirm.exp < Date.now()) { uploadConfirm = null; return uploadUpdateHelp(); }
+  const confirmToken = uploadConfirm.token;
+  uploadConfirm = null; // 一次性
   if (!/\.(zip|tar\.gz|tgz)$/i.test(file.name)) return toast('请选择 .zip 或 .tar.gz 格式的代码包', true);
   if (file.size > 60 * 1048576) return toast(`文件太大（${mbText(file.size)}），最大 60 MB`, true);
   if (!(await confirmDialog('确认上传更新', `将用「${file.name}」（${mbText(file.size)}）更新网站并自动重启，网站会中断几秒钟。账号和数据不受影响。`, { danger: false, okText: '上传并更新' }))) return;
@@ -1809,6 +1835,7 @@ async function uploadUpdate(file) {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/admin/update/upload');
       xhr.setRequestHeader('content-type', 'application/octet-stream');
+      xhr.setRequestHeader('x-admin-confirm', confirmToken);
       // 上传占进度条的前一半
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) updateBar(body, { percent: Math.round((e.loaded / e.total) * 50), stage: '正在上传更新包', detail: `${mbText(e.loaded)} / ${mbText(e.total)}` }); };
       xhr.onload = () => {

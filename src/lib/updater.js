@@ -89,23 +89,47 @@ const blobSha = (data) => createHash('sha1').update(`blob ${data.length}\0`).upd
 
 export async function verifyAgainstGitHub(tarGz, repo, sha, fetchTree = (path) => gh(path)) {
   const tree = await fetchTree(`/repos/${repo}/git/trees/${sha}?recursive=1`);
-  if (!Array.isArray(tree?.tree) || tree.truncated) throw new HttpError(502, '无法从 GitHub 获取文件清单，不能校验加速下载的更新包');
-  const expected = new Map(tree.tree.filter((t) => t.type === 'blob' && t.mode !== '120000').map((t) => [t.path, t.sha]));
   let tar;
   try {
     tar = gunzipSync(tarGz, { maxOutputLength: MAX_UNPACKED });
   } catch {
     throw new HttpError(502, '更新包解压失败');
   }
+  verifyEntriesAgainstTree(extractTar(tar).entries, tree, '加速下载');
+}
+
+// 包里的每个文件（去掉顶层目录后）都必须和 GitHub 该提交的文件指纹一致，不能多也不能少
+export function verifyEntriesAgainstTree(entries, tree, label) {
+  if (!Array.isArray(tree?.tree) || tree.truncated) throw new HttpError(502, `无法从 GitHub 获取文件清单，不能核对${label}的更新包`);
+  const expected = new Map(tree.tree.filter((t) => t.type === 'blob' && t.mode !== '120000').map((t) => [t.path, t.sha]));
   const seen = new Set();
-  for (const e of extractTar(tar).entries) {
+  for (const e of entries) {
     if (e.type !== 'file') continue;
     const rel = e.path.split('/').slice(1).join('/');
     if (!rel) continue;
-    if (expected.get(rel) !== blobSha(e.data)) throw new HttpError(502, `加速下载的文件与 GitHub 官方不一致（${rel}），已拒绝更新`);
+    if (expected.get(rel) !== blobSha(e.data)) throw new HttpError(400, `${label}的文件与 GitHub 官方不一致（${rel}），已拒绝更新`);
     seen.add(rel);
   }
-  for (const path of expected.keys()) if (!seen.has(path)) throw new HttpError(502, `加速下载的更新包缺少文件 ${path}，已拒绝更新`);
+  for (const path of expected.keys()) if (!seen.has(path)) throw new HttpError(400, `${label}的更新包缺少文件 ${path}，已拒绝更新`);
+}
+
+// 上传的更新包必须是配置仓库、配置分支上的某个提交（等于或早于分支最新提交），且每个文件都和 GitHub 一致
+export async function verifyUploadOfficial(entries, sha, { gh: api = gh } = {}) {
+  if (!/^[0-9a-f]{40}$/.test(sha ?? '')) {
+    throw new HttpError(400, '这个更新包里没有 GitHub 提交记录，无法核对是否为官方代码。请直接用 GitHub 的「Download ZIP」下载，不要解压后重新打包');
+  }
+  const cfg = updateConfig();
+  let branch = cfg.branch;
+  try {
+    branch ||= (await api(`/repos/${cfg.repo}`)).default_branch;
+    const cmp = await api(`/repos/${cfg.repo}/compare/${sha}...${encodeURIComponent(branch)}`);
+    if (!['identical', 'behind'].includes(cmp?.status)) throw new HttpError(400, `这个更新包不是 ${cfg.repo} 仓库 ${branch} 分支上的代码，已拒绝`);
+    verifyEntriesAgainstTree(entries, await api(`/repos/${cfg.repo}/git/trees/${sha}?recursive=1`), '上传');
+  } catch (err) {
+    if (err.status === 400) throw err;
+    if (/找不到仓库/.test(err.message)) throw new HttpError(400, `这个更新包不是 ${cfg.repo} 仓库的代码，已拒绝`);
+    throw new HttpError(502, `无法连接 GitHub 核对更新包（${err.message}）。如确认代码来源可靠，可在「系统设置 → 在线更新」暂时关闭「上传时核对官方代码」`);
+  }
 }
 
 const versionFile = () => join(dataDir(), 'version.json');
@@ -312,26 +336,28 @@ function writeEntries(entries, dest) {
 
 // 解开手动上传的更新包：GitHub 的「Download ZIP」（.zip）或源码包（.tar.gz）
 export function unpackUpload(buf, dest) {
+  let entries;
+  let sha = null;
   if (isZip(buf)) {
-    let entries;
     try {
-      ({ entries } = extractZip(buf, { maxTotal: MAX_UNPACKED }));
+      ({ entries, comment: sha } = extractZip(buf, { maxTotal: MAX_UNPACKED }));
     } catch (err) {
       throw new HttpError(400, `更新包解压失败：${err.message}`);
     }
     // 只有一个顶层目录（GitHub 包的结构）才去掉第一层；否则说明是把代码直接压缩的，整体下移一层再处理
     const tops = new Set(entries.map((e) => e.path.split('/')[0]));
     const wrapped = tops.size === 1 && entries.some((e) => e.path.includes('/'));
-    return writeEntries(wrapped ? entries : entries.map((e) => ({ ...e, path: `pkg/${e.path}` })), dest);
-  }
-  if (buf[0] === 0x1f && buf[1] === 0x8b) {
+    if (!wrapped) entries = entries.map((e) => ({ ...e, path: `pkg/${e.path}` }));
+  } else if (buf[0] === 0x1f && buf[1] === 0x8b) {
     try {
-      return unpackTo(buf, dest).files;
+      ({ entries, comment: sha } = extractTar(gunzipSync(buf, { maxOutputLength: MAX_UNPACKED })));
     } catch (err) {
-      throw new HttpError(400, err.message);
+      throw new HttpError(400, `更新包解压失败：${err.message}`);
     }
+  } else {
+    throw new HttpError(400, '只支持 .zip 或 .tar.gz 格式的更新包（在 GitHub 仓库页点「Code → Download ZIP」下载）');
   }
-  throw new HttpError(400, '只支持 .zip 或 .tar.gz 格式的更新包（在 GitHub 仓库页点「Code → Download ZIP」下载）');
+  return { files: writeEntries(entries, dest), sha: sha || null, entries };
 }
 
 // ---------- 增量更新 ----------
@@ -526,7 +552,11 @@ export async function applyUploadedUpdate(buf) {
   running = true;
   try {
     report({ stage: '正在解压更新包', percent: 55, detail: mb(buf.length) });
-    const files = unpackUpload(buf, STAGING);
+    const { files, sha, entries } = unpackUpload(buf, STAGING);
+    if (process.env.UPDATE_UPLOAD_VERIFY !== '0') {
+      report({ stage: '正在核对是否为 GitHub 官方代码', percent: 58, detail: sha ? `提交 ${sha.slice(0, 7)}` : '' });
+      await verifyUploadOfficial(entries, sha);
+    }
     let pkg;
     try {
       pkg = JSON.parse(readFileSync(join(STAGING, 'package.json'), 'utf8'));
@@ -537,7 +567,7 @@ export async function applyUploadedUpdate(buf) {
       throw new HttpError(400, `更新包是「${pkg.name}」项目的代码，不是 Miao API`);
     }
     report({ target: { version: pkg.version ?? null, sha: null } });
-    const version = { version: pkg.version ?? null, sha: null, source: 'upload', message: '手动上传的更新包' };
+    const version = { version: pkg.version ?? null, sha: process.env.UPDATE_UPLOAD_VERIFY !== '0' ? sha : null, source: 'upload', message: '手动上传的更新包' };
     return await installStaging(version, files, `上传的更新包 · 共 ${files} 个文件`, process.env.MIAO_LAUNCHER === '1');
   } finally {
     rmSync(STAGING, { recursive: true, force: true });
