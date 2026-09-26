@@ -46,3 +46,21 @@ test('要先建任务才能查的接口直接跳过', () => {
   const t = planTargets({ includeCostly: true }).find((x) => x.path === '/api/crawl/result');
   assert.match(t.skip, /先创建抓取任务/);
 });
+
+test('暂停服务的接口：巡检跳过，调用直接返回 503 并说明原因，不去请求上游', async () => {
+  const t = planTargets().find((x) => x.path === '/api/boxoffice');
+  assert.equal(t.skip, '接口已暂停服务');
+  const { invoke, catalog } = await import('../src/registry.js');
+  const prev = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = async () => { called = true; throw new Error('不应请求上游'); };
+  try {
+    await assert.rejects(invoke('/api/boxoffice'), (e) => e.status === 503 && /暂不可用.*猫眼/.test(e.message));
+  } finally {
+    globalThis.fetch = prev;
+  }
+  assert.equal(called, false);
+  assert.match(catalog().modules.find((m) => m.name === 'boxoffice').suspended, /猫眼/);
+  const { warmable } = await import('../src/lib/prewarm.js');
+  assert.equal(warmable('/api/boxoffice'), false);
+});

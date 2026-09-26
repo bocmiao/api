@@ -36,7 +36,8 @@ export function planTargets({ includeCostly = false } = {}) {
       const t = { module: m.name, title: m.title, method: route.method, path: route.path, summary: route.summary ?? '' };
       const required = (route.params ?? []).filter((p) => p.required);
       const missing = required.find((p) => p.example == null || p.example === '');
-      if (/\/:/.test(route.path)) t.skip = '地址里带参数，无法自动测试';
+      if (m.suspended) t.skip = '接口已暂停服务';
+      else if (/\/:/.test(route.path)) t.skip = '地址里带参数，无法自动测试';
       else if (COSTLY[m.name] && !includeCostly) t.skip = `默认跳过：${COSTLY[m.name]}`;
       else if (route.inspectSkip) t.skip = route.inspectSkip;
       else if (!available(m)) t.skip = '需要填写的密钥还没有配置';

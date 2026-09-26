@@ -49,7 +49,12 @@ export async function loadBoxOffice() {
   return parseBoxOffice(await fetchJSON(UPSTREAM, { headers: { referer: 'https://piaofang.maoyan.com/' } }));
 }
 
+// 猫眼已改为「每次请求都要浏览器端生成的动态签名（mtgsig）+ 数字用随机字体加密」，
+// 旧的免签名接口 box.maoyan.com 也已下线（域名无法解析）。没有可正当使用的公开数据源，接口暂停服务，保留代码以便日后恢复
+export const SUSPENDED = '猫眼已停止提供公开的票房数据（旧接口下线，新接口需要浏览器端动态签名且数字经字体加密），暂时找不到可用的数据源';
+
 export default {
+  suspended: SUSPENDED,
   name: 'boxoffice',
   category: 'fun',
   title: '实时票房',

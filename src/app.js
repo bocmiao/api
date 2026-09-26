@@ -220,6 +220,8 @@ export async function handle(req, res) {
       log.logged = !route.public;
       // 被管理员关闭的模块对所有人（包括管理员）返回 403，已生成的短链接也随之失效
       if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, '该接口已被管理员关闭');
+      // 数据源已失效、暂停服务的接口：直接说明原因，不再请求上游，也不计入额度
+      if (hit.route.module.suspended) { log.logged = false; throw new HttpError(503, `该接口暂不可用：${hit.route.module.suspended}`); }
 
       const rateHeaders = route.public ? {} : consume({ user, ip });
       const body = await readBody(req);

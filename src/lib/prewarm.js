@@ -16,7 +16,7 @@ export function warmable(path) {
   const hit = apiRouter.match('GET', path);
   if (!hit?.route || hit.methodNotAllowed || Object.keys(hit.params ?? {}).length) return false;
   const { route, module } = hit.route;
-  if (route.raw || !module.source || /^本(地|站)/.test(module.source) || SKIP_MODULES.has(module.name)) return false;
+  if (route.raw || module.suspended || !module.source || /^本(地|站)/.test(module.source) || SKIP_MODULES.has(module.name)) return false;
   if ((route.params ?? []).some((p) => p.required && p.in !== 'body')) return false;
   return isModuleEnabled(module.name);
 }

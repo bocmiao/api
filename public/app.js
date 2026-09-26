@@ -234,9 +234,10 @@ async function loadCatalog() {
 const catOf = (id) => state.catalog?.categories.find((c) => c.id === id) ?? { title: id, icon: 'layers' };
 
 // ---------- 首页 ----------
-function moduleBadges(m) {
+function moduleBadges(m, { card = false } = {}) {
   return [
     m.enabled === false ? '<span class="badge danger" title="已被管理员关闭，仅管理员可见和调用">已关闭</span>' : '',
+    m.suspended && !card ? `<span class="badge danger" title="${esc(m.suspended)}">暂不可用</span>` : '', // 卡片的状态行已经显示
     m.unofficial ? '<span class="badge warn" title="数据来自非官方接口或网页，可能随上游改版失效">非官方</span>' : '',
     !m.available ? '<span class="badge danger" title="服务端未配置所需的密钥">需配置</span>' : '',
     m.env.some((e) => e.optional) && m.available ? '<span class="badge" title="可选配置密钥以增强功能">可选 Key</span>' : '',
@@ -245,7 +246,7 @@ function moduleBadges(m) {
 
 // 接口卡片上的运行状态和调用量：1 万以上用「万」「亿」
 const fmtCompact = (n) => (n >= 1e8 ? `${+(n / 1e8).toFixed(1)}亿` : n >= 1e4 ? `${+(n / 1e4).toFixed(1)}万` : fmtNum(n));
-const HEALTH = { ok: ['正常', 'ok'], degraded: ['不稳定', 'warn'], down: ['异常', 'danger'], idle: ['正常', 'idle'] };
+const HEALTH = { ok: ['正常', 'ok'], degraded: ['不稳定', 'warn'], down: ['异常', 'danger'], idle: ['正常', 'idle'], suspended: ['暂不可用', 'danger'] };
 let cardStats = null;
 function statsLine(name) {
   const st = cardStats?.data?.[name];
@@ -338,7 +339,7 @@ async function pageHome() {
         <div class="head"><div class="cat-icon">${icon(catOf(m.category).icon)}</div><h3>${esc(m.title)}</h3></div>
         <p>${esc(m.description || m.routes[0]?.summary)}</p>
         ${statsLine(m.name)}
-        <div class="foot"><span class="path">${esc(m.routes[0]?.path)}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span>${moduleBadges(m)}</div>
+        <div class="foot"><span class="path">${esc(m.routes[0]?.path)}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span>${moduleBadges(m, { card: true })}</div>
       </a>`).join('') : '<div class="empty" style="grid-column:1/-1">没有找到匹配的接口</div>';
   };
   $('#cats').onclick = (e) => {
@@ -612,6 +613,7 @@ async function pageApi(name) {
       </div>
     </div>
     ${!m.available && state.user?.isAdmin ? `<div class="notice" style="margin-bottom:16px">该接口需要配置第三方密钥后才能使用。<a class="btn sm primary" href="/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a></div>` : ''}
+    ${m.suspended ? `<div class="form-error" style="margin-bottom:16px"><b>该接口暂不可用</b>：${esc(m.suspended)}。调用会直接返回 503，恢复后会在更新记录里说明。</div>` : ''}
     ${m.enabled === false ? '<div class="form-error" style="margin-bottom:16px">该接口已被管理员关闭：所有人（包括管理员）调用都会返回 403。可在「管理 → 接口开关」中重新开启。</div>' : ''}
     <div class="detail">
       <div class="route-list" id="routes">${m.routes.map((r, i) => `
@@ -1934,7 +1936,7 @@ async function uploadUpdate(file) {
 async function pageStatus() {
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
   const st = await cachedGet('/status');
-  const LABEL = { ok: ['正常', 'ok'], degraded: ['部分失败', 'warn'], down: ['故障', 'danger'], idle: ['24 小时内无调用', ''] };
+  const LABEL = { ok: ['正常', 'ok'], degraded: ['部分失败', 'warn'], down: ['故障', 'danger'], idle: ['24 小时内无调用', ''], suspended: ['暂不可用（数据源已停止提供）', ''] };
   const count = (k) => st.modules.filter((m) => m.status === k).length;
   const up = st.uptimeSec;
   const upText = up > 86400 ? `${Math.floor(up / 86400)} 天 ${Math.floor((up % 86400) / 3600)} 小时` : up > 3600 ? `${Math.floor(up / 3600)} 小时 ${Math.floor((up % 3600) / 60)} 分钟` : `${Math.floor(up / 60)} 分钟`;
@@ -1952,7 +1954,7 @@ async function pageStatus() {
       return `<div class="card card-pad" style="margin-bottom:14px"><h2 style="font-size:15px;margin-bottom:10px">${icon(c.icon)} ${esc(c.title)}</h2>
         <div class="status-grid">${list.map((m) => `<a class="status-item" href="/docs/${encodeURIComponent(m.name)}" title="${esc(LABEL[m.status][0])}">
           <span class="status-dot ${LABEL[m.status][1]}"></span><span class="grow">${esc(m.title)}</span>
-          <span class="small faint">${m.calls ? `${fmtNum(m.calls)} 次 · ${m.avgMs} ms${m.errorRate ? ` · 失败 ${m.errorRate}%` : ''}` : '—'}</span></a>`).join('')}</div></div>`;
+          <span class="small faint">${m.status === 'suspended' ? '暂不可用' : m.calls ? `${fmtNum(m.calls)} 次 · ${m.avgMs} ms${m.errorRate ? ` · 失败 ${m.errorRate}%` : ''}` : '—'}</span></a>`).join('')}</div></div>`;
     }).join('')}
   </div>`;
 }

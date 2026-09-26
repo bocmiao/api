@@ -323,7 +323,7 @@ test('首页今日聚合与运行状态接口', async () => {
   const st = await c('GET', '/status');
   assert.equal(st.status, 200);
   assert.ok(st.body.data.modules.length > 50);
-  assert.ok(st.body.data.modules.every((m) => ['ok', 'degraded', 'down', 'idle'].includes(m.status)));
+  assert.ok(st.body.data.modules.every((m) => ['ok', 'degraded', 'down', 'idle', 'suspended'].includes(m.status)));
   const epic = st.body.data.modules.find((m) => m.name === 'epic');
   assert.ok(epic.calls > 0, '有调用记录的模块计入统计');
   // 首页卡片：累计、今日调用与运行状态（公开）

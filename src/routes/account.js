@@ -640,7 +640,7 @@ function moduleHealth() {
       errorRate: Math.round(errorRate * 1000) / 10,
       avgMs: st?.calls ? Math.round(st.msTotal / st.calls) : null,
       lastErrorAt: st?.lastErrorAt ? new Date(st.lastErrorAt).toISOString() : null,
-      status: !st?.calls ? 'idle' : errorRate >= 0.5 ? 'down' : errorRate >= 0.1 ? 'degraded' : 'ok',
+      status: m.suspended ? 'suspended' : !st?.calls ? 'idle' : errorRate >= 0.5 ? 'down' : errorRate >= 0.1 ? 'degraded' : 'ok',
     };
   });
 }

@@ -32,6 +32,7 @@ export function catalog({ includeDisabled = false } = {}) {
         env,
         enabled: isModuleEnabled(m.name),
         available: m.isAvailable ? Boolean(m.isAvailable()) : env.every((e) => e.optional || e.configured),
+        suspended: m.suspended ?? null,
         routes: m.routes.map(({ method, path, summary, params = [], raw = false, fields = [], returns = null }) => ({ method, path, summary, params, raw, fields, returns })),
       };
     }),
@@ -43,6 +44,7 @@ export async function invoke(path, query = {}) {
   const hit = apiRouter.match('GET', path);
   if (!hit?.route) throw new HttpError(404, `接口不存在：${path}`);
   if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, `接口已被管理员关闭：${path}`);
+  if (hit.route.module.suspended) throw new HttpError(503, `该接口暂不可用：${hit.route.module.suspended}`);
   const res = await hit.route.handler({ query: new URLSearchParams(query), params: hit.params, ip: '127.0.0.1', user: null, req: { headers: {} } });
   return res?.data;
 }
