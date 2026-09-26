@@ -296,6 +296,8 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .page-head h1 { font-size: 24px; }
 .page-head p { margin: 4px 0 0; color: var(--text-2); font-size: 14px; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.tiles-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 720px) { .tiles-4 { grid-template-columns: repeat(2, 1fr); } }
 .tile { padding: 18px 20px; }
 .tile .label { font-size: 13px; color: var(--text-2); }
 .tile .value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; letter-spacing: -0.01em; }

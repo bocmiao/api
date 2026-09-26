@@ -1350,7 +1350,7 @@ async function pageAdmin() {
       <div class="row" style="gap:10px;flex-wrap:wrap"><label class="small" id="insp-costly-label" title=""><input type="checkbox" id="insp-costly"> 包括会消耗额度或产生数据的接口</label>
       <button class="btn sm danger" id="insp-stop" hidden>停止</button><button class="btn sm primary" id="insp-start">开始巡检</button></div></div>
       <div class="card-pad" id="insp-body"><span class="small faint">用每个接口的示例参数依次实际调用一次，检查是否畅通；不计入调用额度，也不算进调用统计。默认跳过多节点检测、AI、整站抓取、批量检测、短链接，勾选后一起巡检。</span></div></div>
-    <div class="tiles">
+    <div class="tiles tiles-4">
       ${[['24h 调用', t.calls], ['24h 独立 IP', t.ips], ['24h 平均耗时', `${fmtNum(t.avgMs)} ms`], ['24h 失败', t.errors],
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
         .map(([l, v]) => `<div class="card tile"><div class="label">${l}</div><div class="value">${typeof v === 'number' ? fmtNum(v) : esc(v ?? 0)}</div></div>`).join('')}
