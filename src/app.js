@@ -111,7 +111,7 @@ async function readRawBody(req, limit) {
 
 // 静态文件默认 no-cache + ETag：浏览器每次都向服务器确认，未变化时返回 304，在线更新后无需强制刷新；
 // 页面引用的脚本和样式带内容指纹，这类地址可以长期缓存
-async function serveStatic(req, res, pathname, query) {
+async function serveStatic(req, res, pathname, query, { page = false, status = 200 } = {}) {
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR)) return false;
@@ -133,20 +133,33 @@ async function serveStatic(req, res, pathname, query) {
     const versioned = query?.get('v') && query.get('v') === createHash('sha1').update(body).digest('base64url').slice(0, 10);
     const headers = {
       'content-type': MIME[extname(file)] ?? 'application/octet-stream',
-      'cache-control': versioned ? 'public, max-age=31536000, immutable' : 'no-cache',
+      // 页面地址（如 /status、/admin/users）同时也是网页程序取数据的 JSON 地址：禁止 CDN 缓存，并按请求类型区分浏览器缓存
+      'cache-control': versioned ? 'public, max-age=31536000, immutable' : page ? 'private, no-cache' : 'no-cache',
+      ...(page ? { vary: 'Sec-Fetch-Mode, Accept' } : {}),
       etag,
       ...(file.endsWith('.html') ? PAGE_HEADERS : {}),
     };
-    if (req.headers['if-none-match'] === etag) {
+    if (status === 200 && req.headers['if-none-match'] === etag) {
       res.writeHead(304, headers);
       res.end();
     } else {
-      send(res, 200, body, headers);
+      send(res, status, body, headers);
     }
     return true;
   } catch {
     return false;
   }
+}
+
+// 网页的页面地址（/docs/epic、/console/keys、/admin/users……）：浏览器直接打开时返回页面，
+// 网页程序内部用 fetch 取数据时照常返回 JSON。/api/ 开头的接口和 /s/ 短链接不受影响
+const PAGE_ROOTS = new Set(['', 'docs', 'status', 'login', 'register', 'reset', 'console', 'admin']);
+export function pageNavigation(req, path) {
+  if (req.method !== 'GET' || path === '/api' || /^\/(api|s)\//.test(path) || /\.[a-z0-9]+$/i.test(path)) return null;
+  const mode = req.headers['sec-fetch-mode'];
+  const html = mode ? mode === 'navigate' : /text\/html/.test(req.headers.accept ?? '');
+  if (!html) return null;
+  return PAGE_ROOTS.has(path.split('/')[1]) ? 200 : 404;
 }
 
 export async function handle(req, res) {
@@ -160,6 +173,8 @@ export async function handle(req, res) {
 
   try {
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
+    const pageStatus = pageNavigation(req, path);
+    if (pageStatus && (await serveStatic(req, res, '/', url.searchParams, { page: true, status: pageStatus }))) return;
     if (req.method === 'GET' && path === '/health') return send(res, 200, envelope({ data: { status: 'up' } }));
     if (req.method === 'GET' && path === '/api') {
       const viewer = userFromSession(cookies.sid);

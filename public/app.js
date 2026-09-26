@@ -178,21 +178,21 @@ function renderTopbar(route) {
   const u = state.user;
   const q = state.quota;
   const nav = [
-    ['#/', '接口', route === 'home' || route === 'api'],
-    ['#/docs', '文档', route === 'docs'],
-    ...(u ? [['#/console', '控制台', route === 'console']] : []),
+    ['/', '接口', route === 'home' || route === 'api'],
+    ['/docs', '文档', route === 'docs'],
+    ...(u ? [['/console', '控制台', route === 'console']] : []),
     // 管理后台的「概览 / 用户 / 更新记录 / 系统设置」在页面右上角切换，导航栏只放一个入口
-    ...(u?.isAdmin ? [['#/admin', '管理', route === 'admin']] : []),
+    ...(u?.isAdmin ? [['/admin', '管理', route === 'admin']] : []),
   ];
   $('#topbar').innerHTML = `<div class="wrap">
-    <a class="logo" href="#/"><span class="logo-mark">${icon('logo')}</span>Miao API</a>
+    <a class="logo" href="/"><span class="logo-mark">${icon('logo')}</span>Miao API</a>
     <nav class="nav" id="nav">${nav.map(([h, t, a]) => `<a href="${h}" class="${a ? 'active' : ''}">${t}</a>`).join('')}</nav>
     <div class="topbar-right">
       ${q ? `<span class="quota-pill" title="今日调用额度，北京时间 0 点重置">今日剩余 ${fmtNum(q.remaining)} / ${fmtNum(q.limit)}</span>` : ''}
       <button class="btn ghost icon" id="theme" title="切换主题" aria-label="切换主题">${icon(isDark() ? 'sunSmall' : 'moon')}</button>
       ${u
         ? `<button class="btn ghost icon" id="logout" title="退出登录" aria-label="退出登录">${icon('logout')}</button>`
-        : `<a class="btn ghost" href="#/login">登录</a><a class="btn primary" href="#/register">免费注册</a>`}
+        : `<a class="btn ghost" href="/login">登录</a><a class="btn primary" href="/register">免费注册</a>`}
       <button class="btn ghost icon menu-btn" id="menu" aria-label="菜单">${icon('menu')}</button>
     </div></div>`;
   $('#theme').onclick = () => {
@@ -205,7 +205,7 @@ function renderTopbar(route) {
   $('#logout')?.addEventListener('click', async () => {
     await api('POST', '/auth/logout', {}).catch(() => {});
     await loadMe();
-    location.hash = '#/';
+    navigate('/');
   });
 }
 
@@ -285,7 +285,7 @@ async function pageHome() {
         <p class="lead">游戏限免、全网热榜、天气节假日、汇率行情、趣味娱乐、开发工具、网络检测……统一格式、自带缓存与容错，内容更新还能推送到微信、钉钉、飞书、Telegram。</p>
         <div class="row">
           <a class="btn primary lg" href="#catalog" id="browse">浏览接口</a>
-          ${state.user ? '<a class="btn lg" href="#/console/keys">获取 API Key</a>' : '<a class="btn lg" href="#/register">免费注册</a>'}
+          ${state.user ? '<a class="btn lg" href="/console/keys">获取 API Key</a>' : '<a class="btn lg" href="/register">免费注册</a>'}
         </div>
         <div class="hero-stats">
           <div title="部分接口包含多个调用地址，例如 Steam 限免与特惠"><b>${routeCount}</b><span>个调用地址</span></div>
@@ -334,7 +334,7 @@ async function pageHome() {
     const list = cat.modules.filter((m) => (current === 'all' || m.category === current) &&
       (!q || [m.title, m.description, m.name, ...m.routes.map((r) => r.path + r.summary)].join(' ').toLowerCase().includes(q)));
     $('#grid').innerHTML = list.length ? list.map((m) => `
-      <a class="card api-card" href="#/api/${encodeURIComponent(m.name)}">
+      <a class="card api-card" href="/docs/${encodeURIComponent(m.name)}">
         <div class="head"><div class="cat-icon">${icon(catOf(m.category).icon)}</div><h3>${esc(m.title)}</h3></div>
         <p>${esc(m.description || m.routes[0]?.summary)}</p>
         ${statsLine(m.name)}
@@ -397,7 +397,7 @@ async function loadToday() {
 
 function renderToday(t, savedCity) {
   const grid = $('#today-grid');
-  const card = (api, title, inner, cls = '') => `<a class="card today-card ${cls}" href="#/api/${api}"><div class="today-title">${title}</div>${inner}</a>`;
+  const card = (api, title, inner, cls = '') => `<a class="card today-card ${cls}" href="/docs/${api}"><div class="today-title">${title}</div>${inner}</a>`;
   const cards = [];
 
   if (t.greeting) {
@@ -439,7 +439,7 @@ function renderToday(t, savedCity) {
   }
   const bing = Array.isArray(t.bing) ? t.bing[0] : null;
   if (bing?.url) {
-    cards.push(`<a class="card today-card today-bing wide" href="#/api/bing" style="background-image:url('${esc(bing.url1080 ?? bing.url)}')">
+    cards.push(`<a class="card today-card today-bing wide" href="/docs/bing" style="background-image:url('${esc(bing.url1080 ?? bing.url)}')">
       <div class="today-bing-text"><div class="today-title">必应今日壁纸</div><b>${esc(bing.title ?? '')}</b><div class="small">${esc(bing.description ?? '')}</div></div></a>`);
   }
   // 补位卡片：历史上的今天，取不到时换成金价，保证网格没有空位
@@ -598,7 +598,7 @@ async function pageApi(name) {
   let active = 0;
 
   $('#main').innerHTML = `<div class="wrap">
-    <div class="crumbs"><a href="#/">接口</a> / ${esc(c.title)} / ${esc(m.title)}</div>
+    <div class="crumbs"><a href="/">接口</a> / ${esc(c.title)} / ${esc(m.title)}</div>
     <div class="detail-head">
       <div class="cat-icon">${icon(c.icon)}</div>
       <div>
@@ -608,10 +608,10 @@ async function pageApi(name) {
           ${m.source ? `<span class="faint">数据来源：${esc(m.source)}</span>` : ''}${moduleBadges(m)}
         </div>
         ${m.env.length ? `<div class="small faint" style="margin-top:6px">配置项：${m.env.map((e) => `<code>${esc(e.name)}</code>${e.optional ? '（可选）' : ''} ${e.configured ? '✓' : '未配置'}`).join('，')}
-          ${state.user?.isAdmin ? ` · <a href="#/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a>` : ''}</div>` : ''}
+          ${state.user?.isAdmin ? ` · <a href="/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a>` : ''}</div>` : ''}
       </div>
     </div>
-    ${!m.available && state.user?.isAdmin ? `<div class="notice" style="margin-bottom:16px">该接口需要配置第三方密钥后才能使用。<a class="btn sm primary" href="#/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a></div>` : ''}
+    ${!m.available && state.user?.isAdmin ? `<div class="notice" style="margin-bottom:16px">该接口需要配置第三方密钥后才能使用。<a class="btn sm primary" href="/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a></div>` : ''}
     ${m.enabled === false ? '<div class="form-error" style="margin-bottom:16px">该接口已被管理员关闭：所有人（包括管理员）调用都会返回 403。可在「管理 → 接口开关」中重新开启。</div>' : ''}
     <div class="detail">
       <div class="route-list" id="routes">${m.routes.map((r, i) => `
@@ -638,7 +638,7 @@ async function pageApi(name) {
         <h3 class="sub-title">返回字段</h3>
         ${r.raw
           ? `<p class="muted small">${esc(r.returns ?? '返回图片或跳转，而不是 JSON')}</p>`
-          : `<p class="faint small" style="margin:0 0 8px">以下为 <code>data</code> 中的字段。外层统一为 <code>{ code, message, cached, stale, updatedAt, data }</code>，<a href="#/docs">查看说明</a>。</p>${fieldsTable(r.fields)}`}
+          : `<p class="faint small" style="margin:0 0 8px">以下为 <code>data</code> 中的字段。外层统一为 <code>{ code, message, cached, stale, updatedAt, data }</code>，<a href="/docs">查看说明</a>。</p>${fieldsTable(r.fields)}`}
       </div>
 
       <div class="playground">
@@ -717,7 +717,7 @@ async function pageApi(name) {
         resp.querySelector('.response-bar').insertAdjacentHTML('afterend', `<div class="preview inline-preview"><img alt="图片预览" src="${esc(inlineImage)}"></div>`);
       }
       if (res.status === 429 && !state.user) {
-        resp.insertAdjacentHTML('beforeend', '<div class="card-pad"><a class="btn primary" href="#/register">免费注册获取更多额度</a></div>');
+        resp.insertAdjacentHTML('beforeend', '<div class="card-pad"><a class="btn primary" href="/register">免费注册获取更多额度</a></div>');
       }
       await loadMe();
       renderTopbar('api');
@@ -740,7 +740,7 @@ async function pageDocs() {
     <h2>快速开始</h2>
     <p>无需注册即可直接调用：</p>
     <pre>curl ${o}/api/epic/free</pre>
-    <p>注册后在 <a href="#/console/keys">控制台</a> 创建 API Key，通过请求头传入即可获得更高额度：</p>
+    <p>注册后在 <a href="/console/keys">控制台</a> 创建 API Key，通过请求头传入即可获得更高额度：</p>
     <pre>curl ${o}/api/epic/free -H "X-API-Key: ak_xxxxxxxx"</pre>
 
     <h2>请求方式：GET 和 POST</h2>
@@ -828,7 +828,7 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
     </ul>
     <p>例：在主题的「数据接口」里填 Epic 周免地址：</p>
     <pre>${o}/api/epic/free</pre>
-    <p>返回的 <code>data.current</code> 是正在免费的游戏，<code>data.upcoming</code> 是即将免费的游戏，每个游戏的字段见 <a href="#/api/epic">接口详情</a>。在自己的网页里调用：</p>
+    <p>返回的 <code>data.current</code> 是正在免费的游戏，<code>data.upcoming</code> 是即将免费的游戏，每个游戏的字段见 <a href="/docs/epic">接口详情</a>。在自己的网页里调用：</p>
     <pre>fetch("${o}/api/epic/free")
   .then((r) =&gt; r.json())
   .then(({ data }) =&gt; {
@@ -882,7 +882,7 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
     </tbody></table></div>
 
     <h2>订阅推送</h2>
-    <p>在 <a href="#/console/notify">控制台 → 推送通知</a> 中添加推送渠道（Server酱、Bark、Telegram、钉钉、飞书、企业微信、自定义 Webhook、邮件），然后勾选想订阅的主题。内容更新时会自动推送。</p>
+    <p>在 <a href="/console/notify">控制台 → 推送通知</a> 中添加推送渠道（Server酱、Bark、Telegram、钉钉、飞书、企业微信、自定义 Webhook、邮件），然后勾选想订阅的主题。内容更新时会自动推送。</p>
     <p>自定义 Webhook 会收到如下 POST 请求：</p>
     <pre>{ "topic": "epic-free", "title": "...", "text": "Markdown 正文", "url": "...", "sentAt": "..." }</pre>
 
@@ -898,7 +898,7 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
 function pageAuth(mode) {
   const reg = mode === 'register';
   const reset = mode === 'reset';
-  if (state.user && !reset) { location.hash = '#/console'; return; }
+  if (state.user && !reset) { navigate('/console'); return; }
   const L = state.catalog?.limits;
   const ev = Boolean(state.catalog?.auth?.emailVerify);
   const needCode = ev && (reg || reset);
@@ -907,7 +907,7 @@ function pageAuth(mode) {
 
   if (reset && !ev) {
     $('#main').innerHTML = `<div class="auth"><div class="card"><h1>重置密码</h1>
-      <p class="sub">本站未开启邮箱验证，请联系管理员重置密码。</p><a class="btn" href="#/login">返回登录</a></div></div>`;
+      <p class="sub">本站未开启邮箱验证，请联系管理员重置密码。</p><a class="btn" href="/login">返回登录</a></div></div>`;
     return;
   }
 
@@ -933,9 +933,9 @@ function pageAuth(mode) {
       <button class="btn primary lg" type="submit" style="width:100%">${reg ? '注册' : reset ? '重置并登录' : '登录'}</button>
     </form>
     <p class="small muted" style="text-align:center;margin:18px 0 0">${
-      reg ? '已有账号？<a href="#/login">登录</a>'
-      : reset ? '想起来了？<a href="#/login">返回登录</a>'
-      : `还没有账号？<a href="#/register">免费注册</a>${ev ? ' · <a href="#/reset">忘记密码</a>' : ''}`}</p>
+      reg ? '已有账号？<a href="/login">登录</a>'
+      : reset ? '想起来了？<a href="/login">返回登录</a>'
+      : `还没有账号？<a href="/register">免费注册</a>${ev ? ' · <a href="/reset">忘记密码</a>' : ''}`}</p>
   </div></div>`;
 
   const form = $('#auth');
@@ -992,7 +992,7 @@ function pageAuth(mode) {
     else await api('POST', reg ? '/auth/register' : '/auth/login', { email: v.email, password: v.password, ...(needCode ? { code: v.code } : {}) });
     await loadMe();
     toast(reg ? '注册成功' : reset ? '密码已重置' : '登录成功');
-    location.hash = reg ? '#/console/keys' : '#/console';
+    navigate(reg ? '/console/keys' : '/console');
   });
 }
 
@@ -1110,12 +1110,12 @@ const CONSOLE_TABS = [
 ];
 
 async function pageConsole(tab = 'overview') {
-  if (!state.user) { location.hash = '#/login'; return; }
+  if (!state.user) { navigate('/login'); return; }
   loadMe().then(() => renderTopbar('console'));
   if (!CONSOLE_TABS.some(([id]) => id === tab)) tab = 'overview';
   $('#main').innerHTML = `<div class="wrap"><div class="console">
     <aside class="side"><div class="who">${esc(state.user.email)}</div>
-      ${CONSOLE_TABS.map(([id, t, i]) => `<a href="#/console/${id}" class="${id === tab ? 'active' : ''}">${icon(i)}${t}</a>`).join('')}
+      ${CONSOLE_TABS.map(([id, t, i]) => `<a href="/console/${id}" class="${id === tab ? 'active' : ''}">${icon(i)}${t}</a>`).join('')}
     </aside>
     <section id="panel"><div class="loading"><span class="spinner"></span></div></section>
   </div></div>`;
@@ -1134,7 +1134,7 @@ async function consoleOverview(panel) {
   const total14 = u.daily.reduce((s, d) => s + d.count, 0);
   const chart = barChart(u.daily, [{ key: 'count', label: '调用次数' }]);
   panel.innerHTML = `
-    <div class="page-head"><div><h1>概览</h1><p>额度于北京时间 0 点重置</p></div><a class="btn" href="#/console/keys">${icon('key')}管理 API Key</a></div>
+    <div class="page-head"><div><h1>概览</h1><p>额度于北京时间 0 点重置</p></div><a class="btn" href="/console/keys">${icon('key')}管理 API Key</a></div>
     <div class="tiles">
       <div class="card tile"><div class="label">今日已用</div><div class="value">${fmtNum(q.used)} <small>/ ${fmtNum(q.limit)}</small></div>
         <div class="meter"><i class="${pct > 80 ? 'hot' : ''}" style="width:${pct}%"></i></div></div>
@@ -1327,7 +1327,7 @@ async function consoleSettings(panel) {
     if (!(await confirmDialog('注销账号', '此操作不可撤销，确定继续？', { okText: '永久注销' }))) return;
     await api('DELETE', '/account', v);
     await loadMe();
-    location.hash = '#/';
+    navigate('/');
     toast('账号已注销');
   });
 }
@@ -1380,7 +1380,7 @@ async function pageAdmin() {
     el.className = '';
     el.innerHTML = `<div class="row" style="gap:10px;flex-wrap:wrap"><span class="small faint">当前版本</span><b style="font-size:18px">v${esc(v.running ?? v.disk ?? '?')}</b>
       ${v.updatedAt ? `<span class="small faint">${shortDate(v.updatedAt)} 在线更新</span>` : ''}
-      <a class="small" href="#/admin/changelog">查看更新记录</a>
+      <a class="small" href="/admin/changelog">查看更新记录</a>
       <span class="small faint" style="margin-left:auto">点击右上角「检查更新」，看看有没有新版本</span></div>
       ${v.restartNeeded ? `<div class="form-error" style="margin-top:10px">服务器上的代码已经是 v${esc(v.disk)}，但正在运行的仍是 v${esc(v.running)}：请到 1Panel「网站 → 运行环境」重启 Miao API。</div>` : ''}`;
   }).catch(() => { const el = $('#ver-now'); if (el) el.textContent = '点击右上角「检查更新」，看看有没有新版本'; });
@@ -1389,10 +1389,10 @@ async function pageAdmin() {
 }
 
 const adminTabs = (active) => `<div class="seg">
-  <a href="#/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
-  <a href="#/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
-  <a href="#/admin/changelog" class="${active === 'changelog' ? 'active' : ''}">更新记录</a>
-  <a href="#/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
+  <a href="/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
+  <a href="/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
+  <a href="/admin/changelog" class="${active === 'changelog' ? 'active' : ''}">更新记录</a>
+  <a href="/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
 
 // ---------- 更新记录 ----------
 async function pageAdminChangelog() {
@@ -1405,7 +1405,7 @@ async function pageAdminChangelog() {
     <div class="card card-pad" style="margin-bottom:16px"><div class="row" style="gap:12px;flex-wrap:wrap">
       <span class="small faint">当前版本</span><b style="font-size:20px">v${esc(cur ?? '?')}</b>
       ${d.updatedAt ? `<span class="small faint">${shortDate(d.updatedAt)} 在线更新${d.sha ? ` · 提交 ${esc(d.sha.slice(0, 7))}` : ''}</span>` : ''}
-      <span style="margin-left:auto"></span><a class="btn sm" href="#/admin">检查新版本</a></div>
+      <span style="margin-left:auto"></span><a class="btn sm" href="/admin">检查新版本</a></div>
       ${d.restartNeeded ? `<div class="form-error" style="margin-top:12px">服务器上的代码已经是 v${esc(d.disk)}，但正在运行的仍是 v${esc(d.running)}：请到 1Panel 重启 Miao API 后生效。</div>` : ''}</div>
     <div class="card card-pad">${d.entries.length ? `<div class="upd-changes">${d.entries.map((c) => `<div class="upd-release">
         <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}
@@ -1659,7 +1659,7 @@ async function loadModuleSwitches() {
 // 接口开关里的密钥标签：点击直达设置里对应的密钥
 function keyBadge(k) {
   if (!k) return '';
-  const href = `#/admin/settings/${k.group}/${k.names.join(',')}`;
+  const href = `/admin/settings/${k.group}/${k.names.join(',')}`;
   const tip = `${k.anyOf ? '任选其一填写：' : k.mode === 'required' ? '需要填写：' : '可选填写：'}${k.names.join('、')}`;
   const [cls, text] = k.mode === 'required'
     ? (k.configured ? ['ok', '已填 Key'] : ['danger', k.anyOf ? '需填 Key（任选其一）' : '需填 Key'])
@@ -1950,7 +1950,7 @@ async function pageStatus() {
       const list = st.modules.filter((m) => m.category === c.id);
       if (!list.length) return '';
       return `<div class="card card-pad" style="margin-bottom:14px"><h2 style="font-size:15px;margin-bottom:10px">${icon(c.icon)} ${esc(c.title)}</h2>
-        <div class="status-grid">${list.map((m) => `<a class="status-item" href="#/api/${encodeURIComponent(m.name)}" title="${esc(LABEL[m.status][0])}">
+        <div class="status-grid">${list.map((m) => `<a class="status-item" href="/docs/${encodeURIComponent(m.name)}" title="${esc(LABEL[m.status][0])}">
           <span class="status-dot ${LABEL[m.status][1]}"></span><span class="grow">${esc(m.title)}</span>
           <span class="small faint">${m.calls ? `${fmtNum(m.calls)} 次 · ${m.avgMs} ms${m.errorRate ? ` · 失败 ${m.errorRate}%` : ''}` : '—'}</span></a>`).join('')}</div></div>`;
     }).join('')}
@@ -1970,14 +1970,14 @@ async function openSearch() {
       const q = $('#sk', root).value.trim().toLowerCase();
       items = cat.modules.filter((m) => !q || [m.title, m.name, m.description, ...m.routes.map((r) => r.path + r.summary)].join(' ').toLowerCase().includes(q)).slice(0, 12);
       sel = Math.min(sel, Math.max(items.length - 1, 0));
-      list.innerHTML = items.map((m, i) => `<a class="sk-item ${i === sel ? 'active' : ''}" href="#/api/${encodeURIComponent(m.name)}" data-i="${i}">
+      list.innerHTML = items.map((m, i) => `<a class="sk-item ${i === sel ? 'active' : ''}" href="/docs/${encodeURIComponent(m.name)}" data-i="${i}">
         <span>${icon(catOf(m.category).icon)}</span><span class="grow"><b>${esc(m.title)}</b><span class="small faint mono"> ${esc(m.routes[0]?.path ?? '')}</span></span></a>`).join('') || '<div class="empty">没有匹配的接口</div>';
     };
     $('#sk', root).addEventListener('input', () => { sel = 0; draw(); });
     $('#sk', root).addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, items.length - 1); draw(); e.preventDefault(); }
       if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); }
-      if (e.key === 'Enter' && items[sel]) { location.hash = `#/api/${encodeURIComponent(items[sel].name)}`; close(); }
+      if (e.key === 'Enter' && items[sel]) { navigate(`/docs/${encodeURIComponent(items[sel].name)}`); close(); }
     });
     list.addEventListener('click', () => close());
     draw();
@@ -1989,15 +1989,41 @@ document.addEventListener('keydown', (e) => {
 });
 
 function pageNotFound() {
-  $('#main').innerHTML = '<div class="wrap"><div class="empty" style="padding:120px 0"><h1 style="font-size:48px;margin-bottom:8px">404</h1><p>页面不存在，<a href="#/">返回首页</a></p></div></div>';
+  $('#main').innerHTML = '<div class="wrap"><div class="empty" style="padding:120px 0"><h1 style="font-size:48px;margin-bottom:8px">404</h1><p>页面不存在，<a href="/">返回首页</a></p></div></div>';
 }
 
 // ---------- 路由 ----------
+// 页面地址用普通路径（/docs/epic、/console/keys），不带 #/。站内链接点击后用 pushState 切换，不整页刷新
 let prefetched = false;
+function navigate(path, { replace = false } = {}) {
+  if (path !== location.pathname + location.search) history[replace ? 'replaceState' : 'pushState'](null, '', path);
+  router();
+}
+// 旧的 #/xxx 地址（收藏夹、别人分享的链接）换成新地址
+function migrateHashUrl() {
+  const m = location.hash.match(/^#\/(.*)$/);
+  if (!m) return false;
+  const path = `/${m[1]}`.replace(/^\/api\//, '/docs/');
+  history.replaceState(null, '', path);
+}
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest('a[href]');
+  if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+  const url = new URL(a.href, location.href);
+  if (url.origin !== location.origin || url.pathname === '/api' || /^\/(api|s)\//.test(url.pathname) || /\.[a-z0-9]+$/i.test(url.pathname)) return;
+  if (url.pathname === location.pathname && url.hash) return; // 页内锚点
+  e.preventDefault();
+  navigate(url.pathname + url.search);
+});
+window.addEventListener('popstate', () => router());
+window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/')) { migrateHashUrl(); router(); } });
+
 async function router({ keepScroll = false } = {}) {
-  const hash = location.hash.replace(/^#\/?/, '');
-  if (hash === 'catalog') return;
-  const [page, arg, sub, extra] = hash.split('/');
+  const segs = location.pathname.replace(/^\/+|\/+$/g, '').split('/').map((x) => decodeURIComponent(x));
+  // /docs 是开发文档，/docs/<接口名> 是接口详情
+  if (segs[0] === 'docs' && segs[1]) segs.splice(0, 1, 'api');
+  const [page, arg, sub, extra] = segs;
   const routeName = { '': 'home', api: 'api', docs: 'docs', status: 'status', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
   navToken++;
   renderTopbar(routeName);
@@ -2012,7 +2038,7 @@ async function router({ keepScroll = false } = {}) {
     await loadCatalog();
     switch (page) {
       case '': await pageHome(); break;
-      case 'api': await pageApi(decodeURIComponent(arg ?? '')); break;
+      case 'api': await pageApi(arg ?? ''); break;
       case 'docs': await pageDocs(); break;
       case 'status': await pageStatus(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
@@ -2027,7 +2053,7 @@ async function router({ keepScroll = false } = {}) {
   document.title = { home: 'Miao API', api: 'Miao API · 接口', docs: 'Miao API · 文档', auth: 'Miao API · 登录', console: 'Miao API · 控制台', admin: 'Miao API · 管理' }[routeName] ?? 'Miao API';
 }
 
-window.addEventListener('hashchange', () => router());
+migrateHashUrl();
 loadMe().then(() => router());
 
 
@@ -2049,7 +2075,7 @@ function openDiagnose(path) {
       r = await api('POST', '/admin/diagnose', { path });
     } catch (err) {
       body.innerHTML = `<div class="form-error">${esc(err.message)}</div>
-        ${/AI/.test(err.message) ? '<p class="small"><a href="#/admin/settings/ai">去「设置 → AI」配置</a></p>' : ''}`;
+        ${/AI/.test(err.message) ? '<p class="small"><a href="/admin/settings/ai">去「设置 → AI」配置</a></p>' : ''}`;
       $('a', body)?.addEventListener('click', close);
       return;
     }
