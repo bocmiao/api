@@ -1,0 +1,34 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+const { planTargets, callTarget, COSTLY } = await import('../src/lib/inspect.js');
+
+test('巡检计划：默认跳过会消耗额度或产生数据的接口，勾选后一起巡检', () => {
+  const def = planTargets();
+  const costly = def.filter((t) => COSTLY[t.module] && !t.path.includes('/:'));
+  assert.ok(costly.length > 0 && costly.every((t) => /默认跳过/.test(t.skip)));
+  const all = planTargets({ includeCostly: true });
+  assert.ok(all.filter((t) => COSTLY[t.module]).every((t) => !/默认跳过/.test(t.skip ?? '')));
+  assert.ok(def.find((t) => t.path === '/api/express').skip.includes('密钥'), '没配置密钥的接口跳过并说明');
+  assert.ok(def.find((t) => t.path === '/api/tools/uuid').attempts, '本地接口会被调用');
+});
+
+test('调用：先用必填参数，参数错误时带上全部示例参数重试；仍然参数错误标为「参数不适用」', async () => {
+  const plan = planTargets();
+  const get = (p) => plan.find((t) => t.path === p);
+  assert.equal((await callTarget(get('/api/tools/uuid'))).status, 'ok');
+  assert.equal((await callTarget(get('/api/tools/radix'))).status, 'ok', '重试时带上 from 参数后成功');
+  const w = await callTarget(get('/api/workdays'));
+  assert.equal(w.status, 'param');
+  assert.match(w.error, /接口本身多半正常/);
+  const missing = await callTarget({ method: 'GET', path: '/api/nope' });
+  assert.equal(missing.status, 'fail');
+});
+
+test('超时和程序错误分别标出', async () => {
+  const { apiRouter } = await import('../src/registry.js');
+  apiRouter.add('GET', '/api/__boom', () => { throw new TypeError('x is undefined'); }, { route: { method: 'GET' }, module: { name: 'test' } });
+  const r = await callTarget({ method: 'GET', path: '/api/__boom', attempts: [{ query: {}, body: {} }] });
+  assert.equal(r.status, 'fail');
+  assert.match(r.error, /程序错误：x is undefined/);
+});

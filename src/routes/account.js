@@ -13,6 +13,7 @@ import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
 import { checkUpdate, startUpdate, startUploadUpdate, updateProgress, versionInfo, localChangelog } from '../lib/updater.js';
 import { diagnose } from '../lib/diagnose.js';
+import { startInspect, stopInspect, inspectStatus, COSTLY } from '../lib/inspect.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
@@ -367,6 +368,20 @@ r('POST', '/admin/update', (ctx) => {
     if (result.restart) setTimeout(() => process.exit(75), 3000).unref();
   });
   return { data: started };
+});
+
+// 一键巡检：body { includeCostly: 是否包括会消耗额度或产生数据的接口 }；进度和结果用 GET 查询
+r('POST', '/admin/inspect', (ctx) => {
+  const admin = requireAdmin(ctx);
+  return { data: startInspect({ includeCostly: Boolean(ctx.body?.includeCostly), user: { id: admin.id, email: admin.email } }) };
+});
+r('GET', '/admin/inspect', (ctx) => {
+  requireAdmin(ctx);
+  return { data: { ...inspectStatus(), costly: COSTLY } };
+});
+r('POST', '/admin/inspect/stop', (ctx) => {
+  requireAdmin(ctx);
+  return { data: stopInspect() };
 });
 
 // AI 分析接口失败原因：body { path: '/api/xxx' }

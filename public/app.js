@@ -1346,6 +1346,10 @@ async function pageAdmin() {
       <div class="row" style="gap:8px"><button class="btn sm ghost" id="upload-update" title="服务器下载 GitHub 太慢时使用：在电脑上下载代码包后在这里上传">上传更新包</button>
       <input type="file" id="upload-file" accept=".zip,.tar.gz,.tgz,application/zip,application/gzip" hidden>
       <button class="btn sm" id="check-update">检查更新</button></div></div><div class="card-pad" id="update-body"><div id="ver-now" class="small faint">正在读取当前版本…</div></div></div>
+    <div class="card" id="inspect-card" style="margin-bottom:16px"><div class="card-head"><h2>一键巡检</h2>
+      <div class="row" style="gap:10px;flex-wrap:wrap"><label class="small" id="insp-costly-label" title=""><input type="checkbox" id="insp-costly"> 包括会消耗额度或产生数据的接口</label>
+      <button class="btn sm danger" id="insp-stop" hidden>停止</button><button class="btn sm primary" id="insp-start">开始巡检</button></div></div>
+      <div class="card-pad" id="insp-body"><span class="small faint">用每个接口的示例参数依次实际调用一次，检查是否畅通；不计入调用额度，也不算进调用统计。默认跳过多节点检测、AI、整站抓取、批量检测、短链接，勾选后一起巡检。</span></div></div>
     <div class="tiles">
       ${[['24h 调用', t.calls], ['24h 独立 IP', t.ips], ['24h 平均耗时', `${fmtNum(t.avgMs)} ms`], ['24h 失败', t.errors],
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
@@ -1368,6 +1372,7 @@ async function pageAdmin() {
   chart.mount($('#main'));
   $('#check-update').onclick = () => checkUpdate();
   $('#upload-update').onclick = () => uploadUpdateHelp();
+  initInspect();
   $('#upload-file').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) uploadUpdate(f); };
   api('GET', '/admin/version').then((v) => {
     const el = $('#ver-now');
@@ -1776,6 +1781,76 @@ async function followUpdate(p, body) {
     await sleep(1000);
   }
   updateBar(body, { percent: 98, stage: '服务长时间没有恢复', detail: '如果新版本启动失败，守护进程会自动恢复旧版本；请刷新页面查看，或到服务器面板查看运行日志', tone: 'bad' });
+}
+
+// ---------- 一键巡检 ----------
+const INSPECT_LABEL = { ok: ['正常', 'ok'], fail: ['失败', 'danger'], timeout: ['超时', 'danger'], param: ['参数不适用', 'warn'], skipped: ['跳过', ''], pending: ['等待', ''], running: ['检测中', 'brand'] };
+let inspectFilter = 'problem';
+
+async function initInspect() {
+  $('#insp-start').onclick = async () => {
+    try {
+      const d = await api('POST', '/admin/inspect', { includeCostly: $('#insp-costly').checked });
+      drawInspect(d);
+      pollInspect();
+    } catch (err) { toast(err.message, true); }
+  };
+  $('#insp-stop').onclick = async () => { try { drawInspect(await api('POST', '/admin/inspect/stop', {})); } catch (err) { toast(err.message, true); } };
+  $('#insp-body').addEventListener('change', (e) => {
+    if (e.target.id !== 'insp-filter') return;
+    inspectFilter = e.target.value;
+    api('GET', '/admin/inspect').then(drawInspect).catch(() => {});
+  });
+  try {
+    const d = await api('GET', '/admin/inspect');
+    $('#insp-costly-label')?.setAttribute('title', Object.entries(d.costly ?? {}).map(([k, v]) => `${k}：${v}`).join('\n'));
+    if (d.state !== 'idle') drawInspect(d);
+    if (d.state === 'running') pollInspect();
+  } catch { /* 忽略 */ }
+}
+
+async function pollInspect() {
+  while ($('#insp-body')) {
+    await sleep(1000);
+    let d;
+    try { d = await api('GET', '/admin/inspect'); } catch { continue; }
+    drawInspect(d);
+    if (d.state !== 'running') break;
+  }
+}
+
+function drawInspect(d) {
+  const body = $('#insp-body');
+  if (!body) return;
+  const running = d.state === 'running';
+  $('#insp-start').disabled = running;
+  $('#insp-start').textContent = running ? '巡检中…' : d.state === 'idle' ? '开始巡检' : '重新巡检';
+  $('#insp-stop').hidden = !running;
+  const count = (st) => d.results.filter((r) => r.status === st).length;
+  const pct = d.total ? Math.round((d.done / d.total) * 100) : 0;
+  const problems = d.results.filter((r) => ['fail', 'timeout', 'param'].includes(r.status));
+  const rows = inspectFilter === 'all' ? d.results : inspectFilter === 'skipped' ? d.results.filter((r) => r.status === 'skipped') : problems;
+  const chip = (st, n) => `<span class="badge ${INSPECT_LABEL[st][1]}">${INSPECT_LABEL[st][0]} ${n}</span>`;
+  body.innerHTML = `
+    <div class="upd-progress ${running ? '' : problems.some((r) => r.status !== 'param') ? 'bad' : 'ok'}">
+      <div class="row" style="justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span class="row" style="gap:8px">${running ? '<span class="spinner"></span>' : ''}<b>${running ? `正在巡检 ${d.done} / ${d.total}` : d.state === 'stopped' ? '巡检已停止' : `巡检完成，用时 ${Math.max(1, Math.round((new Date(d.finishedAt) - new Date(d.startedAt)) / 1000))} 秒`}</b></span>
+        <span class="row" style="gap:6px;flex-wrap:wrap">${chip('ok', count('ok'))}${chip('fail', count('fail'))}${chip('timeout', count('timeout'))}${chip('param', count('param'))}${chip('skipped', count('skipped'))}</span></div>
+      <div class="upd-track"><div class="upd-fill" style="width:${Math.max(2, pct)}%"></div></div>
+      <div class="small faint">${d.includeCostly ? '包括了会消耗额度或产生数据的接口' : '已跳过会消耗额度或产生数据的接口'} · 开始于 ${shortDate(d.startedAt)}</div>
+    </div>
+    <div class="row" style="justify-content:space-between;margin:14px 0 6px"><span class="small faint">「参数不适用」表示用文档示例参数调用时参数不合适，接口本身多半正常</span>
+      <select class="input" id="insp-filter" style="width:auto;height:30px;padding:0 8px">
+        <option value="problem" ${inspectFilter === 'problem' ? 'selected' : ''}>只看有问题的（${problems.length}）</option>
+        <option value="skipped" ${inspectFilter === 'skipped' ? 'selected' : ''}>看跳过的（${count('skipped')}）</option>
+        <option value="all" ${inspectFilter === 'all' ? 'selected' : ''}>全部（${d.results.length}）</option></select></div>
+    ${rows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>状态</th><th>接口</th><th class="num">耗时</th><th>说明</th><th></th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td><span class="badge ${INSPECT_LABEL[r.status]?.[1] ?? ''}">${INSPECT_LABEL[r.status]?.[0] ?? r.status}</span></td>
+        <td><div>${esc(r.title)}</div><div class="mono small faint">${r.method === 'GET' ? '' : `${r.method} `}${esc(r.path)}</div></td>
+        <td class="num small">${r.ms != null ? `${fmtNum(r.ms)} ms` : '—'}</td>
+        <td class="small">${esc(r.error ?? '')}</td>
+        <td class="num">${['fail', 'timeout'].includes(r.status) ? `<button class="btn sm" type="button" data-diagnose="${esc(r.path)}">AI 分析</button>` : ''}</td></tr>`).join('')}
+    </tbody></table></div>` : `<div class="empty">${running ? '暂时没有发现问题…' : inspectFilter === 'problem' ? '所有接口都正常 🎉' : '没有记录'}</div>`}`;
 }
 
 // ---------- 上传更新包 ----------
