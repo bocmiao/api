@@ -243,6 +243,19 @@ function moduleBadges(m) {
   ].join('');
 }
 
+// 接口卡片上的运行状态和调用量：1 万以上用「万」「亿」
+const fmtCompact = (n) => (n >= 1e8 ? `${+(n / 1e8).toFixed(1)}亿` : n >= 1e4 ? `${+(n / 1e4).toFixed(1)}万` : fmtNum(n));
+const HEALTH = { ok: ['正常', 'ok'], degraded: ['不稳定', 'warn'], down: ['异常', 'danger'], idle: ['正常', 'idle'] };
+let cardStats = null;
+function statsLine(name) {
+  const st = cardStats?.data?.[name];
+  if (!st) return '';
+  const [label, cls] = HEALTH[st.status] ?? HEALTH.idle;
+  return `<div class="card-stats" title="运行状态按最近 24 小时的调用统计；累计为上线以来的调用次数">
+    <span class="status-dot ${cls}"></span><span>${label}</span>
+    <span class="faint">累计 <b>${fmtCompact(st.total)}</b></span><span class="faint">今日 <b>${fmtCompact(st.today)}</b></span></div>`;
+}
+
 async function pageHome() {
   const cat = await loadCatalog();
   const routeCount = cat.modules.reduce((n, m) => n + m.routes.length, 0);
@@ -324,6 +337,7 @@ async function pageHome() {
       <a class="card api-card" href="#/api/${encodeURIComponent(m.name)}">
         <div class="head"><div class="cat-icon">${icon(catOf(m.category).icon)}</div><h3>${esc(m.title)}</h3></div>
         <p>${esc(m.description || m.routes[0]?.summary)}</p>
+        ${statsLine(m.name)}
         <div class="foot"><span class="path">${esc(m.routes[0]?.path)}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span>${moduleBadges(m)}</div>
       </a>`).join('') : '<div class="empty" style="grid-column:1/-1">没有找到匹配的接口</div>';
   };
@@ -337,6 +351,13 @@ async function pageHome() {
   $('#q').oninput = draw;
   loadToday();
   draw();
+  // 调用量缓存 1 分钟；取到后重画一次卡片
+  if (!cardStats || Date.now() - cardStats.at > 60_000) {
+    api('GET', '/stats/modules').then((data) => {
+      cardStats = { at: Date.now(), data };
+      if ($('#grid')) draw();
+    }).catch(() => {});
+  }
 }
 
 // ---------- 首页「今日」 ----------

@@ -74,6 +74,9 @@ export function quota({ user, ip }) {
 export function logRequest({ user, keyId, ip, path, status, ms, error = null }) {
   sql('INSERT INTO request_log (ts, user_id, key_id, ip, path, status, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run(Date.now(), user?.id ?? null, keyId ?? null, ip, path, status, ms, error ? String(error).slice(0, 300) : null);
+  if (path.startsWith('/api/') && status !== 404) {
+    sql('INSERT INTO api_calls (path, total) VALUES (?, 1) ON CONFLICT(path) DO UPDATE SET total = total + 1').run(path);
+  }
 }
 
 export function pruneLogs() {

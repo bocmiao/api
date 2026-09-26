@@ -549,7 +549,8 @@ r('GET', '/home/weather', async (ctx) => ({ data: await todayWeather(ctx).catch(
 // ---------- 运行状态 ----------
 const STARTED_AT = Date.now();
 
-r('GET', '/status', () => {
+// 各接口最近 24 小时的健康状况（运行状态页、首页接口卡片共用）
+function moduleHealth() {
   const since = Date.now() - 86400_000;
   const rows = sql(`SELECT path, COUNT(*) AS calls,
                            SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) AS errors,
@@ -568,7 +569,7 @@ r('GET', '/status', () => {
     if (row.lastErrorAt && (!m.lastErrorAt || row.lastErrorAt > m.lastErrorAt)) m.lastErrorAt = row.lastErrorAt;
     byModule.set(name, m);
   }
-  const modules = apiModules.filter((m) => isModuleEnabled(m.name)).map((m) => {
+  return apiModules.filter((m) => isModuleEnabled(m.name)).map((m) => {
     const st = byModule.get(m.name);
     const errorRate = st?.calls ? st.errors / st.calls : 0;
     return {
@@ -580,6 +581,29 @@ r('GET', '/status', () => {
       status: !st?.calls ? 'idle' : errorRate >= 0.5 ? 'down' : errorRate >= 0.1 ? 'degraded' : 'ok',
     };
   });
+}
+
+// 首页接口卡片：运行状态、累计调用、今日调用（公开，缓存 1 分钟）
+let cardStats = null;
+r('GET', '/stats/modules', () => {
+  if (cardStats && Date.now() - cardStats.at < 60_000) return { data: cardStats.data };
+  const totals = new Map(sql('SELECT path, total FROM api_calls').all().map((x) => [x.path, x.total]));
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0); // 服务器时区为北京时间
+  const today = new Map(sql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(dayStart.getTime()).map((x) => [x.path, x.n]));
+  const health = new Map(moduleHealth().map((h) => [h.name, h.status]));
+  const data = {};
+  for (const m of apiModules) {
+    if (!isModuleEnabled(m.name)) continue;
+    const sum = (map) => m.routes.reduce((n, x) => n + (map.get(x.path) ?? 0), 0);
+    data[m.name] = { total: sum(totals), today: sum(today), status: health.get(m.name) ?? 'idle' };
+  }
+  cardStats = { at: Date.now(), data };
+  return { data };
+});
+
+r('GET', '/status', () => {
+  const modules = moduleHealth();
   return {
     data: {
       version: RUNNING_VERSION ?? localVersion(),

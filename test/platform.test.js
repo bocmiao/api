@@ -323,4 +323,9 @@ test('首页今日聚合与运行状态接口', async () => {
   assert.ok(st.body.data.modules.every((m) => ['ok', 'degraded', 'down', 'idle'].includes(m.status)));
   const epic = st.body.data.modules.find((m) => m.name === 'epic');
   assert.ok(epic.calls > 0, '有调用记录的模块计入统计');
+  // 首页卡片：累计、今日调用与运行状态（公开）
+  const cards = (await client()('GET', '/stats/modules')).body.data;
+  assert.ok(cards.epic.total >= epic.calls && cards.epic.today > 0);
+  assert.ok(['ok', 'degraded', 'down', 'idle'].includes(cards.epic.status));
+  assert.ok(Object.values(cards).some((c) => c.status === 'idle' && c.total === 0), '没有调用的接口为 idle');
 });

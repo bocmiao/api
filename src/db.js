@@ -113,6 +113,13 @@ db.exec(`
 const hasColumn = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
 if (!hasColumn('request_log', 'error')) db.exec('ALTER TABLE request_log ADD COLUMN error TEXT');
 
+// 每个接口地址的累计调用次数（不随调用日志清理而减少）；首次建表时用现有日志初始化
+const hasTable = (name) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+if (!hasTable('api_calls')) {
+  db.exec('CREATE TABLE api_calls (path TEXT PRIMARY KEY, total INTEGER NOT NULL DEFAULT 0)');
+  db.exec("INSERT INTO api_calls (path, total) SELECT path, COUNT(*) FROM request_log WHERE path LIKE '/api/%' GROUP BY path");
+}
+
 // 小工具：db.prepare 的缓存版
 const stmts = new Map();
 export function sql(text) {
