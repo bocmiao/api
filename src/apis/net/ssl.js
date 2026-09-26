@@ -259,7 +259,7 @@ export default {
       path: '/api/ssl',
       summary: '查询网站 SSL/TLS 证书信息',
       params: [
-        { name: 'host', required: true, desc: '域名或公网 IP（也可直接粘贴网址，只取其中的域名）；不允许内网和保留地址', example: 'github.com' },
+        { name: 'host', required: true, desc: '域名或公网 IP（也可直接粘贴网址，只取其中的域名）；不允许内网和保留地址', example: 'www.baidu.com' },
         { name: 'port', required: false, default: 443, desc: '端口，1~65535', example: 443 },
       ],
       fields: [

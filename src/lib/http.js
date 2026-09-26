@@ -23,7 +23,7 @@ export function networkReason(err) {
 }
 
 // 境外数据源没走代理时，提示可以配置代理
-function overseasHint(url) {
+export function overseasHint(url) {
   if (proxyConfig() && shouldProxy(url)) return '（已通过代理访问，请检查代理是否可用）';
   const known = shouldProxy(url, { hosts: DEFAULT_PROXY_HOSTS.split(',') });
   return known ? '。该数据源在境外，服务器在大陆时通常无法直连，可在「系统设置 → 网络」配置代理' : '';

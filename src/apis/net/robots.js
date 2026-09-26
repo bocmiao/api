@@ -250,9 +250,9 @@ export default {
       path: '/api/robots',
       summary: '解析 robots.txt，判断爬虫能否抓取某路径',
       params: [
-        { name: 'url', required: true, desc: '网站地址（http / https），会读取其根目录的 /robots.txt', example: 'https://github.com' },
-        { name: 'path', required: false, desc: '要判断的路径（如 /search?q=1，也可以是完整网址）；传了 path 或 agent 才会返回 check', example: '/search' },
-        { name: 'agent', required: false, default: '*', desc: '爬虫名称（User-agent 的产品名，如 Googlebot、Baiduspider）；不传时按 * 组判断', example: 'Googlebot' },
+        { name: 'url', required: true, desc: '网站地址（http / https），会读取其根目录的 /robots.txt', example: 'https://www.baidu.com' },
+        { name: 'path', required: false, desc: '要判断的路径（如 /search?q=1，也可以是完整网址）；传了 path 或 agent 才会返回 check', example: '/baidu' },
+        { name: 'agent', required: false, default: '*', desc: '爬虫名称（User-agent 的产品名，如 Googlebot、Baiduspider）；不传时按 * 组判断', example: 'Baiduspider' },
       ],
       fields: [
         { name: 'url', type: 'string', desc: '读取的 robots.txt 地址（站点根目录，如 https://github.com/robots.txt）' },

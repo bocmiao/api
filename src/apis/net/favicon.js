@@ -184,7 +184,7 @@ export default {
       raw: true,
       summary: '获取网站图标（直接返回图片）',
       params: [
-        { name: 'url', required: true, desc: '网站地址（http / https），只允许公网地址', example: 'https://github.com' },
+        { name: 'url', required: true, desc: '网站地址（http / https），只允许公网地址', example: 'https://www.baidu.com' },
         { name: 'size', required: false, default: 32, desc: '期望的图标尺寸（像素，16~512），用于在多个图标中挑选最接近的', example: 64 },
       ],
       returns: '图标图片本身（Content-Type 为上游返回的 image/*，如 image/png、image/x-icon、image/vnd.microsoft.icon、image/svg+xml），不超过 200KB。'

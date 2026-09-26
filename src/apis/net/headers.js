@@ -176,7 +176,7 @@ export default {
       path: '/api/site/headers',
       summary: '检测 HTTP 安全响应头并评分',
       params: [
-        { name: 'url', required: true, desc: '网址（http / https），只允许公网地址；跟随最多 5 次跳转，每一跳都会检查，检测的是最终页面的响应头', example: 'https://github.com' },
+        { name: 'url', required: true, desc: '网址（http / https），只允许公网地址；跟随最多 5 次跳转，每一跳都会检查，检测的是最终页面的响应头', example: 'https://www.baidu.com' },
       ],
       fields: [
         { name: 'url', type: 'string', desc: '检测的起始网址（规范化后）' },

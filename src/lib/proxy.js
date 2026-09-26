@@ -6,7 +6,7 @@ import https from 'node:https';
 import tls from 'node:tls';
 import zlib from 'node:zlib';
 
-export const DEFAULT_PROXY_HOSTS = 'steampowered.com,steamcommunity.com,isthereanydeal.com,v2ex.com,coingecko.com,bgm.tv';
+export const DEFAULT_PROXY_HOSTS = 'steampowered.com,steamcommunity.com,isthereanydeal.com,v2ex.com,coingecko.com,bgm.tv,github.com,globalping.io';
 const MAX_REDIRECTS = 5;
 const MAX_BODY = 20 * 1024 * 1024;
 

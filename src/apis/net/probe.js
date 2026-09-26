@@ -1,7 +1,8 @@
 // 多节点检测：通过 Globalping（jsDelivr 运营的免费全球探针网络）从各地探针发起 Ping / TCPing、HTTP 测速、DNS 解析、Traceroute。
 // 请求由 Globalping 的探针发出，不经过本服务器，因此只校验目标格式并拒绝内网 / 保留地址与 localhost 等本地名称。
 // 流程：POST /v1/measurements 创建测量 → 每 500ms 轮询 GET /v1/measurements/{id}，直到 finished 或约 25 秒超时（超时返回已有结果并标 partial）。
-import { HttpError, param } from '../../lib/http.js';
+import { HttpError, param, networkReason, overseasHint } from '../../lib/http.js';
+import { outboundFetch } from '../../lib/proxy.js';
 import { cache } from '../../lib/cache.js';
 import { createGate, requireHost, isBlockedIP, BLOCKED_MSG, round2 } from './common.js';
 
@@ -98,10 +99,12 @@ async function upstreamError(res) {
 async function call(path, init) {
   let res;
   try {
-    res = await fetch(`${API_BASE}${path}`, { ...init, signal: AbortSignal.timeout(POLL.requestTimeoutMs) });
+    res = await outboundFetch(`${API_BASE}${path}`, { ...init, signal: AbortSignal.timeout(POLL.requestTimeoutMs) });
   } catch (err) {
-    if (err?.name === 'TimeoutError') throw new HttpError(504, 'Globalping 响应超时');
-    throw new HttpError(502, '无法连接 Globalping');
+    const hint = overseasHint(API_BASE);
+    if (err?.name === 'TimeoutError') throw new HttpError(504, `Globalping 响应超时${hint}`);
+    const reason = networkReason(err);
+    throw new HttpError(502, `无法连接 Globalping${reason ? `（${reason}）` : ''}${hint}`);
   }
   if (!res.ok) throw await upstreamError(res);
   try {

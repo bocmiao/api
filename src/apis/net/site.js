@@ -123,7 +123,7 @@ export default {
       path: '/api/site/check',
       summary: '检测网站可达性、响应时间与跳转',
       params: [
-        { name: 'url', required: true, desc: '网址（http / https），只允许公网地址；每一跳跳转都会检查', example: 'https://github.com' },
+        { name: 'url', required: true, desc: '网址（http / https），只允许公网地址；每一跳跳转都会检查', example: 'https://www.baidu.com' },
       ],
       fields: [
         { name: 'url', type: 'string', desc: '检测的起始网址（规范化后，已去掉 # 及之后的部分）' },

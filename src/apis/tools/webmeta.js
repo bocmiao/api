@@ -216,7 +216,7 @@ export default {
       method: 'GET',
       path: '/api/webmeta',
       summary: '获取网页标题、描述、og:image、favicon 等信息',
-      params: [{ name: 'url', required: true, desc: '网页地址（http / https）', example: 'https://github.com' }],
+      params: [{ name: 'url', required: true, desc: '网页地址（http / https）', example: 'https://www.baidu.com' }],
       fields: [
         { name: 'url', type: 'string', desc: '实际抓取的网页地址：跟随重定向（最多 3 次）后的最终地址，已去掉 # 及之后的部分' },
         { name: 'title', type: 'string|null', desc: '网页标题：依次取 og:title、<title>、twitter:title 中第一个非空的，已解码 HTML 实体并把连续空白合并为一个空格；都没有时为 null' },
