@@ -5,6 +5,7 @@ import { HttpError } from './http.js';
 import { baiduSign, youdaoSign, deeplEndpoint } from '../apis/tools/translate.js';
 import { buildQueryBody } from '../apis/life/express.js';
 import { DEFAULT_BASE_URL, DEFAULT_MODEL } from '../apis/ai/llm.js';
+import { outboundFetch, proxyConfig, proxyFetch } from './proxy.js';
 
 const TIMEOUT_MS = 10_000;
 const env = (k) => (process.env[k] || '').trim();
@@ -15,7 +16,7 @@ const fail = (message, detail = null) => ({ ok: false, message, detail });
 async function call(url, { method = 'GET', headers = {}, body } = {}) {
   let res;
   try {
-    res = await fetch(url, { method, headers: { accept: 'application/json', ...headers }, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    res = await outboundFetch(url, { method, headers: { accept: 'application/json', ...headers }, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (err) {
     throw new Error(err.name === 'TimeoutError' ? '连接超时（10 秒）' : `无法连接：${err.cause?.code || err.message}`);
   }
@@ -33,6 +34,23 @@ const form = (obj) => ({
 
 // 每个服务：keys 是它用到的设置项（按钮放在第一项旁边），required 为没有填写时是否直接判定未配置
 export const SERVICES = [
+  {
+    id: 'proxy', title: '境外数据源代理', keys: ['OUTBOUND_PROXY'], required: ['OUTBOUND_PROXY'],
+    async test() {
+      const cfg = proxyConfig();
+      if (!cfg) return fail('代理地址格式不对，须以 http:// 开头，例如 http://127.0.0.1:7890');
+      const started = Date.now();
+      let res;
+      try {
+        res = await proxyFetch('https://api.steampowered.com/ISteamWebAPIUtil/GetServerInfo/v1/', { signal: AbortSignal.timeout(TIMEOUT_MS) }, cfg);
+      } catch (err) {
+        if (err.name === 'TimeoutError') return fail('通过代理访问 Steam 超时（10 秒），请检查代理能否访问境外网站');
+        return fail(err.proxy ? err.message : `通过代理访问 Steam 失败：${err.cause?.code || err.code || err.message}`);
+      }
+      if (!res.ok) return fail(`通过代理访问 Steam 返回 HTTP ${res.status}`);
+      return ok('代理可用', `通过代理访问 Steam 耗时 ${Date.now() - started} ms`);
+    },
+  },
   {
     id: 'kuaidi100', title: '快递100', keys: ['KUAIDI100_KEY', 'KUAIDI100_CUSTOMER'], required: ['KUAIDI100_KEY', 'KUAIDI100_CUSTOMER'],
     link: 'https://api.kuaidi100.com/manager/v2/myinfo/enterprise',
@@ -194,6 +212,7 @@ export const linkOfKey = new Map(SERVICES.flatMap((s) => s.keys.map((k) => [k, s
 linkOfKey.set('QWEATHER_HOST', 'https://console.qweather.com/setting');
 linkOfKey.delete('LLM_BASE_URL');
 linkOfKey.delete('LLM_MODEL');
+linkOfKey.delete('OUTBOUND_PROXY');
 
 export async function testService(id) {
   const svc = BY_ID.get(id);

@@ -53,6 +53,46 @@ export function parseHistory(raw) {
   };
 }
 
+// 估值服务（fundgz）没有数据或返回格式变了时，退回历史净值接口取最新一天的净值，名称从基金搜索接口补上
+async function latestNav(code) {
+  const raw = await fetchJSON(`https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=1`, {
+    headers: { referer: 'https://fundf10.eastmoney.com/' },
+  });
+  return parseHistory(raw).items[0] ?? null;
+}
+
+async function fundName(code) {
+  try {
+    const raw = await fetchJSON(`https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${code}`, { timeoutMs: 5000 });
+    return (raw?.Datas ?? []).find((d) => d.CODE === code)?.NAME ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadEstimate(code) {
+  let estimateErr;
+  try {
+    const text = await fetchText(`https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`, {
+      headers: { referer: 'https://fund.eastmoney.com/' },
+    });
+    return { ...parseEstimate(text), estimated: true };
+  } catch (err) {
+    estimateErr = err;
+  }
+  let last;
+  try {
+    last = await latestNav(code);
+  } catch {
+    throw estimateErr;
+  }
+  if (!last) throw estimateErr.status === 404 ? estimateErr : new HttpError(404, '未找到该基金');
+  return {
+    code, name: await fundName(code), navDate: last.date, nav: last.nav,
+    estimateNav: null, estimateChange: null, estimateChangePercent: null, estimateTime: null, estimated: false,
+  };
+}
+
 export default {
   name: 'fund',
   category: 'finance',
@@ -68,22 +108,18 @@ export default {
       params: [{ name: 'code', required: true, desc: '6 位基金代码', example: '161725' }],
       fields: [
         { name: 'code', type: 'string', desc: '6 位基金代码' },
-        { name: 'name', type: 'string', desc: '基金名称' },
+        { name: 'name', type: 'string|null', desc: '基金名称；估值服务不可用、改从净值数据兜底且查不到名称时为 null' },
         { name: 'navDate', type: 'string|null', desc: '最新已公布单位净值（nav）的日期，格式 YYYY-MM-DD，盘中一般为上一交易日；上游为空时为 null' },
         { name: 'nav', type: 'number|null', desc: 'navDate 当日的单位净值（元/份）；上游为空时为 null' },
         { name: 'estimateNav', type: 'number|null', desc: '盘中实时估算的单位净值（元/份），为天天基金的估算值，并非实际净值；上游为空时为 null' },
         { name: 'estimateChange', type: 'number|null', desc: '估算涨跌额（元/份）= estimateNav − nav，保留 4 位小数；两者任一为空时为 null' },
         { name: 'estimateChangePercent', type: 'number|null', desc: '估算涨跌幅，百分数（1.24 表示 +1.24%），相对 nav；上游为空时为 null' },
         { name: 'estimateTime', type: 'string|null', desc: '估值时间，格式 YYYY-MM-DD HH:mm，北京时间（UTC+8）；上游为空时为 null' },
+        { name: 'estimated', type: 'boolean', desc: '是否拿到了盘中估值：false 表示该基金没有估值（如 QDII、货币基金）或估值服务暂时不可用，此时只返回最新公布的净值，估值相关字段为 null' },
       ],
       async handler({ query }) {
         const code = param(query, 'code', { required: true, pattern: CODE_RE });
-        return cache.wrap(`fund:gz:${code}`, 60_000, async () => {
-          const text = await fetchText(`https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`, {
-            headers: { referer: 'https://fund.eastmoney.com/' },
-          });
-          return parseEstimate(text);
-        });
+        return cache.wrap(`fund:gz:${code}`, 60_000, () => loadEstimate(code));
       },
     },
     {

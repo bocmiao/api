@@ -61,6 +61,7 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `EMAIL_VERIFY` | 1 | 配置了 SMTP 时默认要求注册邮箱验证，设为 0 关闭 |
 | `EMAIL_CODE_COOLDOWN_SEC` / `EMAIL_CODE_PER_EMAIL_DAILY` / `EMAIL_CODE_PER_IP_DAILY` | 60 / 10 / 20 | 邮箱验证码防刷：同一邮箱发送间隔、每个邮箱每天上限、每个 IP 每天上限 |
 | `UPDATE_REPO` / `UPDATE_BRANCH` / `GITHUB_TOKEN` | bocmiao/api / 默认分支 / 空 | 在线更新的来源仓库与分支；私有仓库需要 Token |
+| `OUTBOUND_PROXY` / `OUTBOUND_PROXY_HOSTS` | 空 / Steam、V2EX、CoinGecko 等 | 境外数据源代理（HTTP 代理，如 `http://127.0.0.1:7890`）及走代理的域名；服务器在大陆时用 |
 
 第三方密钥（都可以不配，对应接口会显示「需配置」或降级）：
 

@@ -38,17 +38,21 @@ export function planTargets({ includeCostly = false } = {}) {
       const missing = required.find((p) => p.example == null || p.example === '');
       if (/\/:/.test(route.path)) t.skip = '地址里带参数，无法自动测试';
       else if (COSTLY[m.name] && !includeCostly) t.skip = `默认跳过：${COSTLY[m.name]}`;
+      else if (route.inspectSkip) t.skip = route.inspectSkip;
       else if (!available(m)) t.skip = '需要填写的密钥还没有配置';
       else if (missing) t.skip = `缺少参数 ${missing.name} 的示例`;
       else {
-        // 先只带必填参数；参数错误时再带上全部示例参数重试（有的接口是「几个参数任选其一」）
+        // 先只带必填参数；参数错误时再带上全部示例参数重试（有的接口是「几个参数任选其一」）；
+        // 还不行就每次去掉一个可选参数再试（有的接口是「两个参数只能传一个」，如 end 与 days）
         const build = (params) => {
           const q = {};
           const b = {};
           for (const p of params) if (p.example != null && p.example !== '') (p.in === 'body' ? b : q)[p.name] = p.example;
           return { query: q, body: b };
         };
-        t.attempts = [build(required), build(route.params ?? [])];
+        const all = route.params ?? [];
+        const optional = all.filter((p) => !p.required && p.example != null && p.example !== '');
+        t.attempts = [build(required), build(all), ...optional.slice(0, 6).map((skip) => build(all.filter((p) => p !== skip)))];
       }
       list.push(t);
     }
@@ -90,8 +94,11 @@ export async function callTarget(t, user) {
   if (!hit?.route) return { status: 'fail', httpStatus: 404, ms: 0, error: '接口不存在' };
   const attempts = t.attempts ?? [{ query: t.query ?? {}, body: t.body ?? {} }];
   let r;
+  const tried = new Set();
   for (let i = 0; i < attempts.length; i++) {
-    if (i > 0 && JSON.stringify(attempts[i]) === JSON.stringify(attempts[i - 1])) continue;
+    const sig = JSON.stringify(attempts[i]);
+    if (tried.has(sig)) continue;
+    tried.add(sig);
     r = await callOnce(hit, t.method, attempts[i], user);
     if (r.httpStatus !== 400) return r;
   }

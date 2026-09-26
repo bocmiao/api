@@ -1,10 +1,9 @@
 import { domainToUnicode } from 'node:url';
 import { cache } from '../../lib/cache.js';
 import { HttpError, param } from '../../lib/http.js';
-import { normalizeDomain, parseRdap } from '../tools/whois.js';
+import { normalizeDomain, parseRdap, rdapFetch, rdapServerMap } from '../tools/whois.js';
 import { createGate } from './common.js';
 
-const BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
 const TIMEOUT_MS = 5000;
 const gate = createGate(20);
 
@@ -35,24 +34,8 @@ export function bootstrapTlds(json) {
   return set;
 }
 
-async function getJson(url) {
-  let res;
-  try {
-    res = await fetch(url, { headers: { accept: 'application/rdap+json, application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) });
-  } catch (err) {
-    if (err.name === 'TimeoutError') throw new HttpError(504, 'RDAP 服务响应超时');
-    throw new HttpError(502, '无法连接 RDAP 服务');
-  }
-  return res;
-}
-
 async function rdapTlds() {
-  const r = await cache.wrap('net:rdap-bootstrap', 86_400_000, async () => {
-    const res = await getJson(BOOTSTRAP_URL);
-    if (!res.ok) throw new HttpError(502, `RDAP 引导数据返回 HTTP ${res.status}`);
-    return [...bootstrapTlds(await res.json())];
-  });
-  return new Set(r.data);
+  return new Set(Object.keys(await rdapServerMap()));
 }
 
 // 返回接口 data（不含缓存信息）
@@ -83,7 +66,7 @@ export async function checkAvailability(input) {
     return { ...base, reason: `.${domainToUnicode(tld) || tld} 后缀的注册局没有提供 RDAP 查询服务，无法判断是否已注册，请到该后缀的注册局或注册商处查询` };
   }
 
-  const res = await getJson(`https://rdap.org/domain/${domain}`);
+  const res = await rdapFetch(domain, { timeoutMs: TIMEOUT_MS });
   if (res.status === 404) {
     if (!tlds) return { ...base, reason: 'RDAP 未查到该域名，但暂时无法确认该后缀是否支持 RDAP，结果仅供参考' };
     return { ...base, status: 'available', available: true, reason: '注册局的 RDAP 未查到该域名，通常表示尚未注册、可以注册（保留域名、溢价域名或刚删除的域名除外，以注册商实际结果为准）' };
@@ -116,7 +99,7 @@ export default {
   category: 'net',
   title: '域名注册查询',
   description: '通过 RDAP 判断域名是否已被注册，已注册时返回注册商与到期时间',
-  source: 'RDAP (rdap.org / IANA)',
+  source: 'RDAP（IANA 引导 + 各注册局官方服务器）',
   routes: [
     {
       method: 'GET',

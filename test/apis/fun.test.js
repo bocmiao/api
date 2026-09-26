@@ -157,7 +157,7 @@ test('番剧：按星期排序，优先中文名，https 图片', () => {
 test('番剧：weekday 筛选与 UA', async () => {
   mockFetch((url, opts) => {
     assert.equal(url, 'https://api.bgm.tv/calendar');
-    assert.match(opts.headers['user-agent'], /^api-hub\//);
+    assert.match(opts.headers['user-agent'], /^miao-api\//);
     return jsonRes(json('bgm-calendar.json'));
   });
   const { data } = await call('/api/anime/calendar', 'weekday=7');

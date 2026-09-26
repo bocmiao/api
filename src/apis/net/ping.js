@@ -2,6 +2,7 @@ import net from 'node:net';
 import { execFile } from 'node:child_process';
 import { HttpError, param } from '../../lib/http.js';
 import { createGate, requireHost, resolvePublic, isBlockedIP, BLOCKED_MSG, round2 } from './common.js';
+import { connectOnce, summarize } from './tcping.js';
 
 // 每个 ping 都是一个子进程，并发上限比其他接口更低
 export const gate = createGate(5);
@@ -79,23 +80,47 @@ export function runPing(ip, count, { execFileImpl = execFile } = {}) {
   });
 }
 
-// blocked、execFileImpl 仅供测试替换
-export async function ping(hostInput, { count = 4, blocked = isBlockedIP, execFileImpl } = {}) {
+// 服务器不能发 ICMP（Docker 精简镜像没有 ping 命令、容器没有 NET_RAW 权限）时，改用 TCP 连接测延迟：
+// 先试 443 端口，连不上再试 80。结果字段相同，format 为 tcp，ttl 为 null
+export async function tcpFallback(ip, count, { connect = connectOnce } = {}) {
+  let results = [];
+  let port = 443;
+  for (const p of [443, 80]) {
+    port = p;
+    results = [];
+    for (let seq = 1; seq <= count; seq++) {
+      const r = await connect(ip, p, 2000);
+      results.push({ seq, ok: r.ok, ttl: null, ms: r.ok ? r.ms : null });
+    }
+    if (results.some((r) => r.ok)) break;
+  }
+  return { format: 'tcp', port, ...summarize(results), results };
+}
+
+// blocked、execFileImpl、connect 仅供测试替换
+export async function ping(hostInput, { count = 4, blocked = isBlockedIP, execFileImpl, connect } = {}) {
   const h = requireHost(hostInput, blocked);
   const target = await resolvePublic(h, { blocked });
   if (!net.isIP(target.address) || blocked(target.address)) throw new HttpError(400, BLOCKED_MSG);
-  const out = await runPing(target.address, count, { execFileImpl });
+  let out;
+  try {
+    out = await runPing(target.address, count, { execFileImpl });
+  } catch (err) {
+    if (err.status !== 503) throw err;
+    const { format, port, ...rest } = await tcpFallback(target.address, count, { connect });
+    return { host: h.host, ip: target.address, count, format, port, ...rest };
+  }
   const parsed = parsePing(out);
   if (!parsed) throw new HttpError(502, '无法解析 ping 的输出');
   const { format, ...rest } = parsed;
-  return { host: h.host, ip: target.address, count, format, ...rest };
+  return { host: h.host, ip: target.address, count, format, port: null, ...rest };
 }
 
 export default {
   name: 'ping',
   category: 'net',
   title: 'Ping',
-  description: '从本服务器对目标发送 ICMP Ping，返回每次的 TTL、延迟与丢包率',
+  description: '从本服务器对目标发送 ICMP Ping，返回每次的 TTL、延迟与丢包率；服务器不支持 ICMP 时自动改用 TCP 连接测延迟',
   source: '本服务器系统 ping 命令',
   routes: [
     {
@@ -110,7 +135,8 @@ export default {
         { name: 'host', type: 'string', desc: '目标主机（ASCII 形式，中文域名为 punycode）或 IP' },
         { name: 'ip', type: 'string', desc: '实际 ping 的 IP（域名解析后的第一个地址）' },
         { name: 'count', type: 'number', desc: '请求的发送次数' },
-        { name: 'format', type: 'string', desc: '服务器 ping 命令的输出格式：iputils（常见 Linux 发行版）或 busybox（Alpine 等精简系统）' },
+        { name: 'format', type: 'string', desc: '测量方式：iputils（常见 Linux 发行版的 ping）、busybox（Alpine 等精简系统的 ping）；tcp 表示服务器不支持 ICMP（如 Docker 精简镜像），改用 TCP 连接测的延迟，此时没有 TTL' },
+        { name: 'port', type: 'number|null', desc: 'format 为 tcp 时连接的端口（先试 443，连不上再试 80）；ICMP Ping 时为 null' },
         { name: 'sent', type: 'number', desc: '实际发送的包数' },
         { name: 'received', type: 'number', desc: '收到回复的包数（不含重复包）' },
         { name: 'lossRate', type: 'number', desc: '丢包率（百分比，0~100，保留两位小数）' },
@@ -120,7 +146,7 @@ export default {
         { name: 'results', type: 'array', desc: '每个包的结果，按序号排列；超时 2 秒未收到回复的记为失败' },
         { name: 'results[].seq', type: 'number', desc: '序号（从 1 开始；busybox 原始输出从 0 开始，已加 1）' },
         { name: 'results[].ok', type: 'boolean', desc: '是否收到回复' },
-        { name: 'results[].ttl', type: 'number|null', desc: '回复包的 TTL（剩余跳数，可粗略估计经过的路由数）；未收到回复时为 null' },
+        { name: 'results[].ttl', type: 'number|null', desc: '回复包的 TTL（剩余跳数，可粗略估计经过的路由数）；未收到回复或 format 为 tcp 时为 null' },
         { name: 'results[].ms', type: 'number|null', desc: '往返时间（毫秒）；未收到回复时为 null' },
       ],
       async handler({ query }) {

@@ -1,4 +1,5 @@
 // 后台「系统设置」：保存在数据库，启动时及保存后写入 process.env，优先级高于环境变量。
+import { DEFAULT_PROXY_HOSTS } from './proxy.js';
 import { sql } from '../db.js';
 import { HttpError } from './http.js';
 
@@ -76,6 +77,13 @@ export const SETTING_GROUPS = [
     ],
   },
   {
+    id: 'network', title: '网络',
+    fields: [
+      { key: 'OUTBOUND_PROXY', label: '境外数据源代理', type: 'secret', placeholder: 'http://127.0.0.1:7890', help: '服务器在大陆时，Steam、V2EX、加密货币等境外数据源通常连不上。填写一个 HTTP 代理（例如服务器上 Clash 的 http://127.0.0.1:7890，需要账号密码时写成 http://用户名:密码@地址:端口），下面列表里的网站会通过代理访问，其余照常直连。服务器本身在境外时不用填' },
+      { key: 'OUTBOUND_PROXY_HOSTS', label: '走代理的网站', type: 'text', default: DEFAULT_PROXY_HOSTS, help: '域名用逗号分隔，子域名自动包含（填 steampowered.com 即包含 store.steampowered.com）。填 * 表示所有外部请求都走代理' },
+    ],
+  },
+  {
     id: 'other', title: '其他',
     fields: [
       { key: 'LOG_RETENTION_DAYS', label: '调用日志保留天数', type: 'int', default: '30', min: 1, max: 3650 },
@@ -119,6 +127,11 @@ function validate(f, raw) {
     }
     default:
       if (/[\r\n]/.test(v)) throw new HttpError(400, `${f.label}不能包含换行`);
+      if (f.key === 'OUTBOUND_PROXY' && v) {
+        let u;
+        try { u = new URL(v); } catch { throw new HttpError(400, '代理地址格式不对，例如 http://127.0.0.1:7890'); }
+        if (u.protocol !== 'http:') throw new HttpError(400, '目前只支持 HTTP 代理，地址须以 http:// 开头（Clash、V2Ray 等的 HTTP 端口或混合端口都可以）');
+      }
       return v;
   }
 }

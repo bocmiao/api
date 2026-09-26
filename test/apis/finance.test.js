@@ -311,7 +311,22 @@ test('字段说明：/api/fund/estimate', async () => {
   const res = await call('/api/fund/estimate', 'code=161725');
   assert.equal(calls.length, 1);
   assert.equal(res.data.estimateChangePercent, 1.24);
-  checkFields(routeMap.get('/api/fund/estimate'), res.data);
+  assert.equal(res.data.estimated, true);
+  // 估值服务返回格式变了：退回最新净值，名称从基金搜索补上
+  mockFetch({
+    'fundgz.1234567.com.cn/js/000001.js': '<html>error</html>',
+    'api.fund.eastmoney.com/f10/lsjz': fx('fund-lsjz.json'),
+    'fundsuggest.eastmoney.com': JSON.stringify({ Datas: [{ CODE: '000001', NAME: '华夏成长混合' }] }),
+  });
+  const fb = await call('/api/fund/estimate', 'code=000001');
+  assert.equal(fb.data.estimated, false);
+  assert.equal(fb.data.name, '华夏成长混合');
+  assert.equal(typeof fb.data.nav, 'number');
+  assert.equal(fb.data.estimateNav, null);
+  // 净值也取不到时报原来的错误
+  mockFetch({ 'fundgz.1234567.com.cn/js/000002.js': 'jsonpgz();' });
+  await assert.rejects(call('/api/fund/estimate', 'code=000002'), { status: 404 });
+  checkFields(routeMap.get('/api/fund/estimate'), res.data, fb.data);
 });
 
 test('字段说明：/api/fund/history', async () => {

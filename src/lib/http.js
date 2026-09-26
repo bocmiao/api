@@ -5,20 +5,49 @@ export class HttpError extends Error {
   }
 }
 
+import { outboundFetch, proxyConfig, shouldProxy, DEFAULT_PROXY_HOSTS } from './proxy.js';
+
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
+
+// 把网络错误翻译成能看出原因的中文，便于判断是上游挂了、被墙了还是本机网络问题
+const NET_REASONS = [
+  [/ENOTFOUND|EAI_AGAIN|EAI_NONAME/, '域名解析失败'],
+  [/ECONNREFUSED/, '连接被拒绝'],
+  [/ECONNRESET|UND_ERR_SOCKET|EPIPE/, '连接被重置，可能被网络拦截'],
+  [/ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|ENETUNREACH|EHOSTUNREACH/, '连接超时，网络不通'],
+  [/CERT|SSL|TLS|ERR_TLS|DEPTH_ZERO|SELF_SIGNED/, '证书校验失败'],
+];
+export function networkReason(err) {
+  const code = `${err?.cause?.code ?? ''} ${err?.code ?? ''} ${err?.cause?.message ?? ''}`;
+  return NET_REASONS.find(([re]) => re.test(code))?.[1] ?? (err?.proxy ? err.message : '');
+}
+
+// 境外数据源没走代理时，提示可以配置代理
+function overseasHint(url) {
+  if (proxyConfig() && shouldProxy(url)) return '（已通过代理访问，请检查代理是否可用）';
+  const known = shouldProxy(url, { hosts: DEFAULT_PROXY_HOSTS.split(',') });
+  return known ? '。该数据源在境外，服务器在大陆时通常无法直连，可在「系统设置 → 网络」配置代理' : '';
+}
+
+export function upstreamError(err, url, what = '上游服务') {
+  let host = '';
+  try { host = new URL(url).hostname; } catch {}
+  if (err?.name === 'TimeoutError') return new HttpError(504, `${what}响应超时（${host}）${overseasHint(url)}`);
+  const reason = networkReason(err);
+  return new HttpError(502, `无法连接${what}（${host}${reason ? `：${reason}` : ''}）${overseasHint(url)}`);
+}
 
 async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body } = {}) {
   let res;
   try {
-    res = await fetch(url, {
+    res = await outboundFetch(url, {
       method,
       body,
       headers: { 'user-agent': UA, ...headers },
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
-    if (err.name === 'TimeoutError') throw new HttpError(504, '上游服务响应超时');
-    throw new HttpError(502, '无法连接上游服务');
+    throw upstreamError(err, url);
   }
   if (!res.ok) throw new HttpError(502, `上游返回 HTTP ${res.status}`);
   return res;

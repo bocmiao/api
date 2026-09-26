@@ -1,6 +1,7 @@
 import { domainToASCII } from 'node:url';
 import { cache } from '../../lib/cache.js';
-import { HttpError, param } from '../../lib/http.js';
+import { HttpError, param, upstreamError } from '../../lib/http.js';
+import { outboundFetch } from '../../lib/proxy.js';
 
 const LABEL_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
 
@@ -66,17 +67,63 @@ export function parseRdap(raw) {
   };
 }
 
-async function fetchRdap(domain) {
-  let res;
-  try {
-    res = await fetch(`https://rdap.org/domain/${domain}`, {
-      headers: { accept: 'application/rdap+json, application/json' },
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch (err) {
-    if (err.name === 'TimeoutError') throw new HttpError(504, 'RDAP 服务响应超时');
-    throw new HttpError(502, '无法连接 RDAP 服务');
+const BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
+
+// IANA RDAP 引导文件：services 为 [[后缀...], [RDAP 服务器...]]，整理成 { 后缀: [服务器...] }，https 优先
+export function bootstrapServers(json) {
+  const map = {};
+  for (const s of json?.services ?? []) {
+    const urls = (s?.[1] ?? []).map(String).sort((a, b) => Number(b.startsWith('https:')) - Number(a.startsWith('https:')));
+    for (const tld of s?.[0] ?? []) map[String(tld).toLowerCase()] = urls;
   }
+  if (!Object.keys(map).length) throw new HttpError(502, 'RDAP 引导数据格式无法识别');
+  return map;
+}
+
+// 引导数据缓存一天；取不到时抛错，由调用方决定怎么退回
+export async function rdapServerMap() {
+  const r = await cache.wrap('net:rdap-bootstrap-map', 86_400_000, async () => {
+    let res;
+    try {
+      res = await outboundFetch(BOOTSTRAP_URL, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    } catch (err) {
+      throw upstreamError(err, BOOTSTRAP_URL, 'RDAP 引导服务');
+    }
+    if (!res.ok) throw new HttpError(502, `RDAP 引导数据返回 HTTP ${res.status}`);
+    return bootstrapServers(await res.json());
+  });
+  return r.data;
+}
+
+// 直接查询该后缀注册局自己的 RDAP 服务器；rdap.org 只作为最后的备用（它会拒绝部分云服务器 IP，返回 403）。
+// 返回原始 Response（404 等状态由调用方解读）
+export async function rdapFetch(domain, { timeoutMs = 8000 } = {}) {
+  const tld = domain.split('.').at(-1);
+  let servers = [];
+  try {
+    servers = (await rdapServerMap())[tld] ?? [];
+  } catch { /* 引导数据暂时取不到：只用 rdap.org */ }
+  const urls = [...servers.map((b) => `${b.replace(/\/*$/, '/')}domain/${domain}`), `https://rdap.org/domain/${domain}`];
+  let lastErr;
+  for (const url of urls) {
+    let res;
+    try {
+      res = await outboundFetch(url, { headers: { accept: 'application/rdap+json, application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (err) {
+      lastErr = upstreamError(err, url, 'RDAP 服务');
+      continue;
+    }
+    if (res.status === 403 || res.status >= 500) {
+      lastErr = new HttpError(502, `RDAP 服务返回 HTTP ${res.status}（${new URL(url).hostname}）`);
+      continue;
+    }
+    return res;
+  }
+  throw lastErr;
+}
+
+async function fetchRdap(domain) {
+  const res = await rdapFetch(domain);
   if (res.status === 404) throw new HttpError(404, '未查到该域名的注册信息（可能未注册，或该后缀不支持 RDAP）');
   if (res.status === 429) throw new HttpError(429, 'RDAP 服务限流，请稍后再试');
   if (!res.ok) throw new HttpError(502, `RDAP 服务返回 HTTP ${res.status}`);
@@ -92,7 +139,7 @@ export default {
   category: 'tools',
   title: '域名 Whois',
   description: '通过 RDAP 查询域名的注册商、状态、注册/到期时间与 DNS 服务器',
-  source: 'RDAP (rdap.org)',
+  source: 'RDAP（各注册局官方服务器，rdap.org 备用）',
   routes: [
     {
       method: 'GET',

@@ -646,11 +646,15 @@ describe('返回字段都有说明', () => {
     const r = route(whoisModule, 'GET', '/api/whois');
     const rdap = JSON.parse(fixture('rdap-example.json'));
     rdap.entities[0].links = [{ rel: 'about', href: 'https://www.markmonitor.com/' }];
+    (await import('../../src/lib/cache.js')).cache.store.clear();
+    const calls = [];
     t.mock.method(globalThis, 'fetch', async (url) => {
-      assert.equal(String(url), 'https://rdap.org/domain/google.com');
+      calls.push(String(url));
+      if (String(url) === 'https://data.iana.org/rdap/dns.json') return new Response(readFileSync(new URL('../fixtures/net/rdap-bootstrap.json', import.meta.url)));
       return Response.json(rdap);
     });
     const res = await r.handler({ query: q({ domain: 'https://www.Google.com/' }) });
+    assert.equal(calls.at(-1), 'https://rdap.verisign.com/com/v1/domain/google.com', '直接查询注册局的 RDAP 服务器');
     assert.equal(res.data.registrar.url, 'https://www.markmonitor.com/');
     assert.equal(res.data.registrar.abusePhone, '+1.2086851750');
     // 没有注册商、事件、DNS 服务器的最简响应

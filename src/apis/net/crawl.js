@@ -444,6 +444,8 @@ export default {
     {
       method: 'GET',
       path: '/api/crawl/result',
+      // 一键巡检跳过：要先用 /api/crawl 建任务才有结果可查
+      inspectSkip: '需要先创建抓取任务才能查询结果',
       summary: '查询抓取任务的进度与分页结果（不计调用次数）',
       public: true,
       params: [

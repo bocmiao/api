@@ -917,7 +917,21 @@ describe('Ping', () => {
     assert.equal(byName.ip, '93.184.216.34');
     assert.equal(calls.at(-1).args.at(-1), '93.184.216.34', '只把解析后的 IP 传给 ping');
     const lost = await ping('1.2.3.4', { count: 3, execFileImpl: fakeExec((cb) => cb({ code: 1 }, fixture('ping-iputils-timeout.txt'), ''), calls) });
-    checkFields(route('/api/ping'), d, byName, lost);
+    // 没有 ping 命令时改用 TCP：443 连不上再试 80
+    const enoent = Object.assign(new Error('spawn ping ENOENT'), { code: 'ENOENT' });
+    const ports = [];
+    const tcp = await ping('1.1.1.1', {
+      count: 2,
+      execFileImpl: fakeExec((cb) => cb(enoent, '', ''), []),
+      connect: async (ip, port) => { ports.push(port); return port === 80 ? { ok: true, ms: 12.5 } : { ok: false, ms: null }; },
+    });
+    assert.deepEqual(ports, [443, 443, 80, 80]);
+    assert.equal(tcp.format, 'tcp');
+    assert.equal(tcp.port, 80);
+    assert.equal(tcp.received, 2);
+    assert.equal(tcp.avg, 12.5);
+    assert.equal(tcp.results[0].ttl, null);
+    checkFields(route('/api/ping'), d, byName, lost, tcp);
     const r = route('/api/ping');
     await assert.rejects(r.handler({ query: q({ host: '1.1.1.1', count: '5' }) }), { status: 400 });
     await assert.rejects(r.handler({ query: q({}) }), { status: 400 });
@@ -931,7 +945,7 @@ describe('域名注册查询', () => {
   const REG = fixture('rdap-registered.json');
   beforeEach(() => cache.store.clear());
 
-  // RDAP 的 mock：引导文件 + rdap.org/domain/<d>；registered 中的域名返回注册信息，其余 404
+  // RDAP 的 mock：引导文件 + 注册局服务器（或备用 rdap.org）/domain/<d>；registered 中的域名返回注册信息，其余 404
   function mockRdap(t, { registered = ['example.com'], bootstrap = BOOT, status } = {}) {
     const calls = [];
     t.mock.method(globalThis, 'fetch', async (url) => {
@@ -940,7 +954,7 @@ describe('域名注册查询', () => {
       if (u === 'https://data.iana.org/rdap/dns.json') {
         return bootstrap instanceof Error ? Promise.reject(bootstrap) : new Response(bootstrap, { headers: { 'content-type': 'application/json' } });
       }
-      const m = /^https:\/\/rdap\.org\/domain\/(.+)$/.exec(u);
+      const m = /\/domain\/([^/]+)$/.exec(u);
       if (!m) throw new Error(`unexpected ${u}`);
       if (status) return new Response('x', { status });
       if (registered.includes(m[1])) return new Response(REG, { headers: { 'content-type': 'application/rdap+json' } });
@@ -966,7 +980,8 @@ describe('域名注册查询', () => {
     assert.equal(d.registrar, 'RESERVED-Internet Assigned Numbers Authority');
     assert.equal(d.created, '1995-08-14T04:00:00.000Z');
     assert.equal(d.expires, '2027-08-13T04:00:00.000Z');
-    assert.ok(calls.includes('https://rdap.org/domain/example.com'));
+    assert.ok(calls.includes('https://rdap.verisign.com/com/v1/domain/example.com'), '直接查询注册局的 RDAP 服务器');
+    assert.ok(!calls.some((u) => u.startsWith('https://rdap.org/')));
   });
 
   test('RDAP 404 视为未注册；子域名按主域名查询', async (t) => {
@@ -976,7 +991,7 @@ describe('域名注册查询', () => {
     assert.equal(d.status, 'available');
     assert.equal(d.available, true);
     assert.equal(d.registrar, null);
-    assert.ok(calls.includes('https://rdap.org/domain/miao-available-12345.com'));
+    assert.ok(calls.includes('https://rdap.verisign.com/com/v1/domain/miao-available-12345.com'));
   });
 
   test('RDAP 没有覆盖的后缀返回 unknown 并说明原因', async (t) => {
@@ -985,11 +1000,26 @@ describe('域名注册查询', () => {
     assert.equal(d.status, 'unknown');
     assert.equal(d.available, null);
     assert.match(d.reason, /\.cn 后缀.*没有提供 RDAP/);
-    assert.ok(!calls.some((u) => u.startsWith('https://rdap.org/')), '不支持的后缀不查询 rdap.org');
+    assert.ok(!calls.some((u) => u.includes('/domain/example.cn')), '不支持的后缀不查询');
     const idn = await checkAvailability('例子.公司');
     assert.equal(idn.unicode, '例子.公司');
     assert.equal(idn.tld, 'xn--55qx5d');
     assert.equal(idn.status, 'available');
+  });
+
+  test('注册局服务器返回 403 或连不上时改用 rdap.org', async (t) => {
+    const calls = [];
+    t.mock.method(globalThis, 'fetch', async (url) => {
+      const u = String(url);
+      calls.push(u);
+      if (u === 'https://data.iana.org/rdap/dns.json') return new Response(BOOT);
+      if (u.startsWith('https://rdap.verisign.com/')) return new Response('forbidden', { status: 403 });
+      return new Response(REG, { headers: { 'content-type': 'application/rdap+json' } });
+    });
+    const d = await checkAvailability('example.com');
+    assert.equal(d.status, 'registered');
+    assert.equal(calls[1], 'https://rdap.verisign.com/com/v1/domain/example.com');
+    assert.equal(calls.at(-1), 'https://rdap.org/domain/example.com');
   });
 
   test('引导数据取不到时 404 只能判为 unknown；限流与上游错误', async (t) => {

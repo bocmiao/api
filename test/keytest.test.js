@@ -32,7 +32,7 @@ describe('服务定义', () => {
   test('每个服务用到的设置项都在系统设置里，且都有获取地址', () => {
     for (const s of SERVICES) {
       for (const k of s.keys) assert.ok(KEYS.includes(k), `${s.id}: ${k} 不在 SETTING_GROUPS`);
-      assert.match(s.link, /^https:\/\//);
+      if (s.id !== 'proxy') assert.match(s.link, /^https:\/\//, '第三方服务都有获取地址（代理是自己的服务器，没有）');
       assert.equal(serviceOfKey.get(s.keys[0]), s);
     }
     assert.equal(linkOfKey.get('QWEATHER_HOST'), 'https://console.qweather.com/setting');

@@ -18,7 +18,10 @@ test('调用：先用必填参数，参数错误时带上全部示例参数重�
   const get = (p) => plan.find((t) => t.path === p);
   assert.equal((await callTarget(get('/api/tools/uuid'))).status, 'ok');
   assert.equal((await callTarget(get('/api/tools/radix'))).status, 'ok', '重试时带上 from 参数后成功');
-  const w = await callTarget(get('/api/workdays'));
+  const { apiRouter } = await import('../src/registry.js');
+  const { HttpError } = await import('../src/lib/http.js');
+  apiRouter.add('GET', '/api/__badparam', () => { throw new HttpError(400, '参数不对'); }, { route: { method: 'GET' }, module: { name: 'test' } });
+  const w = await callTarget({ method: 'GET', path: '/api/__badparam', attempts: [{ query: {}, body: {} }, { query: { a: 1 }, body: {} }] });
   assert.equal(w.status, 'param');
   assert.match(w.error, /接口本身多半正常/);
   const missing = await callTarget({ method: 'GET', path: '/api/nope' });
@@ -31,4 +34,15 @@ test('超时和程序错误分别标出', async () => {
   const r = await callTarget({ method: 'GET', path: '/api/__boom', attempts: [{ query: {}, body: {} }] });
   assert.equal(r.status, 'fail');
   assert.match(r.error, /程序错误：x is undefined/);
+});
+
+test('「两个参数只能传一个」的接口：去掉一个可选参数后能调通', async () => {
+  const t = planTargets().find((x) => x.path === '/api/workdays');
+  const r = await callTarget(t);
+  assert.equal(r.status, 'ok', r.error);
+});
+
+test('要先建任务才能查的接口直接跳过', () => {
+  const t = planTargets({ includeCostly: true }).find((x) => x.path === '/api/crawl/result');
+  assert.match(t.skip, /先创建抓取任务/);
 });

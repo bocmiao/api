@@ -4,7 +4,7 @@ import { fetchJSON, HttpError, param } from '../../lib/http.js';
 const UPSTREAM = 'https://api.bgm.tv/calendar';
 const TTL_MS = 60 * 60_000;
 // Bangumi API 要求自定义 UA：开发者/应用名 (联系方式)
-const BGM_UA = 'api-hub/0.1 (https://github.com/api-hub/api-hub)';
+const BGM_UA = 'miao-api/1.0 (https://api.miao.club)';
 const WEEKDAY_CN = ['', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
 
 const https = (u) => (typeof u === 'string' ? u.replace(/^http:\/\//, 'https://') : null);
