@@ -160,7 +160,7 @@ const defaultResolver = () => new dns.promises.Resolver({ timeout: LIST_TIMEOUT_
 
 // createResolver、ipInfo、timeoutMs 仅供测试替换。
 // DNS 查询使用服务器的系统 DNS（查询的都是固定黑名单区域与 in-addr.arpa，不涉及用户输入的域名）
-export async function checkReputation(rawIp, { spamhaus = false, createResolver = defaultResolver, ipInfo = loadIpInfo, timeoutMs = LIST_TIMEOUT_MS } = {}) {
+export async function checkReputation(rawIp, { spamhaus = false, createResolver = defaultResolver, ipInfo = (ip) => loadIpInfo(ip, { withAsn: true }), timeoutMs = LIST_TIMEOUT_MS } = {}) {
   const ip = requirePublicIp(rawIp);
   const t0 = performance.now();
   const resolver = createResolver();
@@ -236,7 +236,7 @@ export default {
         { name: 'dnsbl.lists[].meanings', type: 'array', desc: '每个返回码的中文含义（如 DroneBL 的 127.0.0.9 表示 HTTP 代理）' },
         { name: 'dnsbl.lists[].ms', type: 'number', desc: '查询耗时（毫秒）' },
         { name: 'dnsbl.lists[].error', type: 'string|null', desc: '无法查询或出错的原因；正常时为 null' },
-        { name: 'network', type: 'object', desc: 'IP 所属网络（来自 ip-api.com，与 /api/ip 相同数据源）' },
+        { name: 'network', type: 'object', desc: 'IP 所属网络（与 /api/ip 相同数据源；为取得 ASN 总会请求 ip-api.com，失败时退回本地 ip2region 离线库的地名与运营商）' },
         { name: 'network.asn', type: 'string|null', desc: '自治系统编号与名称，如 "AS15169 Google LLC"；查询失败时为 null' },
         { name: 'network.isp', type: 'string|null', desc: '运营商 / ISP 名称' },
         { name: 'network.org', type: 'string|null', desc: '所属组织' },

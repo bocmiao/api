@@ -311,9 +311,15 @@ describe('IP', () => {
     await assert.rejects(call('/api/ip', '', { ip: '::ffff:192.168.0.2' }), { status: 400, message: /内网/ });
     await assert.rejects(call('/api/ip', 'ip=1.2.3'), { status: 400 });
     const calls = mockFetch({ 'ip-api.com': json('ipapi-success.json') });
+    // 国内 IPv4 由本地 ip2region 命中，不请求 ip-api
     const r = await call('/api/ip', '', { ip: '::ffff:113.88.1.1' });
     assert.equal(r.data.city, '深圳');
-    assert.ok(calls[0].url.startsWith('http://ip-api.com/json/113.88.1.1?lang=zh-CN'));
+    assert.equal(r.data.source, 'ip2region');
+    assert.equal(calls.length, 0);
+    // IPv6 仍走 ip-api
+    const v6 = await call('/api/ip', 'ip=2408:8000::1');
+    assert.equal(v6.data.source, 'ip-api');
+    assert.ok(calls[0].url.startsWith('http://ip-api.com/json/2408%3A8000%3A%3A1?lang=zh-CN'));
   });
 });
 
@@ -479,15 +485,18 @@ describe('返回字段说明', () => {
 
   test('/api/ip', async () => {
     mockFetch({ 'ip-api.com': json('ipapi-success.json') });
-    const r = await call('/api/ip', 'ip=113.88.1.1');
+    const r = await call('/api/ip', 'ip=113.88.1.2');
     assert.equal(r.data.location, '中国 广东 深圳');
-    assertFieldsCovered('/api/ip', [r.data]);
+    const v6 = await call('/api/ip', 'ip=2408:8000::2');
+    assertFieldsCovered('/api/ip', [r.data, v6.data]);
   });
 
   test('/api/phone', async () => {
-    mockFetch({ 'number=138': json('phone-360.json'), 'number=130': json('phone-360-municipality.json') });
-    const a = (await call('/api/phone', 'number=13800138000')).data;
-    const b = (await call('/api/phone', 'number=13012345678')).data;
+    mockFetch({ 'number=140': json('phone-360-municipality.json') });
+    const a = (await call('/api/phone', 'number=13800138000')).data; // 本地号段库
+    const b = (await call('/api/phone', 'number=14000000000')).data; // 本地没有，回落 360
+    assert.equal(a.source, 'phonedata');
+    assert.equal(b.source, '360');
     assert.equal(b.location, '北京');
     assertFieldsCovered('/api/phone', [a, b]);
   });

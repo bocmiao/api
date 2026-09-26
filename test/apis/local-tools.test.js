@@ -725,31 +725,34 @@ describe('访客信息', () => {
   });
 
   test('归属地：内网不查询，失败和超时返回 null', async (t) => {
-    const calls = mockFetch(t, { '/json/113.88.1.1?': fixture('ipapi-success.json'), '/json/1.2.4.8?': 500 });
-    assert.equal((await lookupLocation('113.88.1.1')).location, '中国 广东 深圳');
+    const calls = mockFetch(t, { '/json/2408%3A8000%3A%3A10?': fixture('ipapi-success.json'), '/json/2408%3A8000%3A%3A11?': 500 });
+    assert.equal((await lookupLocation('113.88.1.1')).location, '中国 广东 深圳'); // 本地 ip2region，不请求外部
+    assert.equal(calls.length, 0);
+    assert.equal((await lookupLocation('2408:8000::10')).location, '中国 广东 深圳');
     assert.equal(await lookupLocation('::ffff:192.168.1.10'), null);
     assert.equal(await lookupLocation('127.0.0.1'), null);
     assert.equal(await lookupLocation(''), null);
     assert.equal(await lookupLocation('not-an-ip'), null);
     assert.equal(calls.length, 1);
-    assert.equal(await lookupLocation('1.2.4.8'), null);
-    assert.equal(await lookupLocation('9.9.9.9'), null); // 网络错误
+    // IPv6 只能查 ip-api：失败返回 null
+    assert.equal(await lookupLocation('2408:8000::11'), null);
+    assert.equal(await lookupLocation('2408:8000::12'), null); // 网络错误
 
     t.mock.method(globalThis, 'fetch', () => new Promise(() => {}));
     const started = Date.now();
-    assert.equal(await lookupLocation('223.5.5.5', 50), null);
+    assert.equal(await lookupLocation('2408:8000::13', 50), null);
     assert.ok(Date.now() - started < 2000);
   });
 
   test('GET /api/visitor', async (t) => {
     // 归属地按 IP 缓存 6 小时，每个用例用不同的 IP
-    const calls = mockFetch(t, { '/json/14.215.177.39?': fixture('ipapi-success.json') });
+    const calls = mockFetch(t, { '/json/14.215.177.39?': fixture('ipapi-success.json') }); // 本地库命中，实际不会请求
     const r = route(visitorModule, '/api/visitor');
     const req = { headers: { 'user-agent': ` ${CHROME_UA} `, 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8' } };
     const before = Date.now();
     const pub = (await r.handler({ query: q(), ip: '::ffff:14.215.177.39', req })).data;
     assert.equal(pub.ip, '14.215.177.39');
-    assert.deepEqual(pub.location, { text: '中国 广东 深圳', country: '中国', region: '广东', city: '深圳', isp: 'Chinanet', timezone: 'Asia/Shanghai' });
+    assert.deepEqual(pub.location, { text: '中国 广东 广州', country: '中国', region: '广东', city: '广州', isp: '中国电信', timezone: 'Asia/Shanghai' });
     assert.equal(pub.ua, CHROME_UA);
     assert.deepEqual(pub.browser, { name: 'Chrome', version: '128.0.0.0', major: '128' });
     assert.deepEqual(pub.os, { name: 'Windows', version: '10/11' });
@@ -776,7 +779,7 @@ describe('访客信息', () => {
     assert.equal(bare.location, null);
     assert.equal(bare.ua, '');
     assert.equal(bare.bot, 'unknown');
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 0);
     await assert.rejects(r.handler({ query: q({ geo: 'yes' }), ip: '1.1.1.1', req }), { status: 400 });
 
     const fixed = await visitorInfo({ ip: '10.0.0.1', headers: {}, now: Date.parse('2026-09-24T08:00:00Z') });
@@ -872,7 +875,7 @@ describe('IP 签名档', () => {
     assert.equal(res.status, 200);
     assert.equal(res.headers['content-type'], 'image/svg+xml; charset=utf-8');
     assert.equal(res.headers['cache-control'], 'no-store');
-    assert.ok(res.body.includes('中国 广东 深圳'));
+    assert.ok(res.body.includes('中国 广东 广州')); // 本地 ip2region 命中
     assert.ok(res.body.includes('#0f172a'));
     assertSafeSvg(res.body);
 
@@ -884,7 +887,7 @@ describe('IP 签名档', () => {
 
     const noIp = await r.handler({ query: q(), ip: undefined, req: undefined });
     assertSafeSvg(noIp.body);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 0);
     await assert.rejects(r.handler({ query: q({ theme: 'blue' }), ip: '1.1.1.1', req: {} }), { status: 400 });
   });
 });

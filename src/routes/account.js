@@ -23,7 +23,7 @@ import { invoke, apiRouter } from '../registry.js';
 import { localVersion, RUNNING_VERSION } from '../lib/updater.js';
 import { cache } from '../lib/cache.js';
 import { isBlockedIP } from '../lib/netguard.js';
-import { loadIpInfo } from '../apis/life/ip.js';
+import { loadIpInfo, normalizeIp } from '../apis/life/ip.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -503,12 +503,16 @@ async function todayWeather(ctx) {
   }
   if (!isBlockedIP(ctx.ip)) {
     try {
-      const loc = await loadIpInfo(ctx.ip);
+      // loadIpInfo 返回 { data }；国内 IP 多由本地 ip2region 命中，只有城市名、没有经纬度，此时按城市名查
+      const loc = (await loadIpInfo(normalizeIp(ctx.ip)))?.data;
       if (loc?.countryCode === 'CN' && loc.lat != null && loc.lon != null) {
         const w = await invoke('/api/weather', { lat: String(loc.lat), lon: String(loc.lon) });
         return { ...w, location: { ...w.location, name: loc.city || loc.region || w.location?.name }, located: 'ip' };
       }
-    } catch { /* ip-api 限流或失败时用默认城市 */ }
+      if (loc?.countryCode === 'CN' && loc.city) {
+        return { ...(await invoke('/api/weather', { city: loc.city })), located: 'ip' };
+      }
+    } catch { /* 定位或查询失败时用默认城市 */ }
   }
   return { ...(await invoke('/api/weather', { city: DEFAULT_CITY })), located: 'default' };
 }

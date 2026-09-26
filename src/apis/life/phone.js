@@ -1,5 +1,6 @@
 import { cache } from '../../lib/cache.js';
 import { fetchJSON, HttpError, param } from '../../lib/http.js';
+import { lookupPhoneOffline } from './offline-db.js';
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
 
@@ -35,10 +36,34 @@ export function parse360(raw, number) {
     carrier,
     virtual: VIRTUAL.includes(number.slice(0, 3)),
     location: [province, city].filter((x, i, a) => x && a.indexOf(x) === i).join(' '),
+    areaCode: null,
+    zip: null,
+    source: '360',
   };
 }
 
+// 本地号段库结果 → 与 parse360 相同的结构；查不到时返回 null
+export function fromPhoneDat(number, r) {
+  if (!r || (!r.province && !r.city)) return null;
+  const p3 = number.slice(0, 3);
+  return {
+    number,
+    segment: number.slice(0, 7),
+    province: r.province,
+    city: r.city || r.province,
+    carrier: r.carrier ?? carrierBySegment(number),
+    virtual: Boolean(r.virtual) || VIRTUAL.includes(p3),
+    location: [r.province, r.city].filter((x, i, a) => x && a.indexOf(x) === i).join(' '),
+    areaCode: r.areaCode,
+    zip: r.zip,
+    source: 'phonedata',
+  };
+}
+
+// 先查本地号段库，查不到再请求 360 接口
 export async function loadPhoneArea(number) {
+  const local = fromPhoneDat(number, lookupPhoneOffline(number));
+  if (local) return { data: local };
   const seg = number.slice(0, 7);
   // 归属地只取决于前 7 位号段，按号段缓存
   const res = await cache.wrap(`phone:${seg}`, 7 * 86_400_000, async () =>
@@ -50,8 +75,8 @@ export default {
   name: 'phone',
   category: 'life',
   title: '手机号归属地',
-  description: '查询中国大陆手机号的归属省市与运营商',
-  source: '360 手机号码归属地（非官方）',
+  description: '查询中国大陆手机号的归属省市、运营商、区号与邮编；优先使用本地号段库',
+  source: '本地号段库（lovedboy/phone）+ 360 手机号码归属地（非官方，本地查不到时）',
   unofficial: true,
   routes: [
     {
@@ -62,11 +87,14 @@ export default {
       fields: [
         { name: 'number', type: 'string', desc: '查询的 11 位手机号（已去掉 +86 前缀、空格和连字符）' },
         { name: 'segment', type: 'string', desc: '号段，即手机号前 7 位；归属地由号段决定' },
-        { name: 'province', type: 'string|null', desc: '归属省份，如 广东；上游未返回时为 null' },
-        { name: 'city', type: 'string|null', desc: '归属城市，如 深圳；直辖市上游不返回城市，此时与 province 相同；都未返回时为 null' },
-        { name: 'carrier', type: 'string|null', desc: '运营商：中国移动、中国联通、中国电信、中国广电（上游返回其他名称时原样返回）；上游未返回时按号段推断，可能为"虚拟运营商"，仍无法判断时为 null。均为号段原属运营商，携号转网后可能不准' },
-        { name: 'virtual', type: 'boolean', desc: '是否为虚拟运营商号段（170、171、162、165、167 开头），仅按号段判断' },
+        { name: 'province', type: 'string|null', desc: '归属省份，如 广东；未知时为 null' },
+        { name: 'city', type: 'string|null', desc: '归属城市，如 深圳；直辖市与 province 相同（如 北京）；未知时为 null' },
+        { name: 'carrier', type: 'string|null', desc: '运营商：中国移动、中国联通、中国电信、中国广电（上游返回其他名称时原样返回）；本地库与 360 均未给出时按号段推断，可能为"虚拟运营商"，仍无法判断时为 null。均为号段原属运营商，携号转网后可能不准' },
+        { name: 'virtual', type: 'boolean', desc: '是否为虚拟运营商号段：170、171、162、165、167 开头，或本地号段库标记为虚拟运营商（此时 carrier 为其合作的基础运营商）' },
         { name: 'location', type: 'string', desc: '归属地文字：省份与城市以空格连接并去重，如 "广东 深圳"；直辖市为 "北京"；上游只返回运营商时为空字符串' },
+        { name: 'areaCode', type: 'string|null', desc: '归属城市的长途区号（带前导 0），如 0755；仅本地号段库提供，来自 360 时为 null' },
+        { name: 'zip', type: 'string|null', desc: '归属城市的邮政编码（6 位），如 518000；仅本地号段库提供，来自 360 时为 null' },
+        { name: 'source', type: 'string', desc: '数据来源：phonedata（本地离线号段库）或 360（本地查不到时请求 360 接口）' },
       ],
       async handler({ query }) {
         const number = param(query, 'number', { required: true }).replace(/[\s-]/g, '').replace(/^(\+?86)(?=1\d{10}$)/, '');

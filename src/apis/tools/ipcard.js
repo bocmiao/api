@@ -178,7 +178,7 @@ export default {
   category: 'tools',
   title: 'IP 签名档',
   description: '生成显示访问者 IP、归属地、系统、浏览器和日期问候的 SVG 签名图片，可嵌入论坛签名或网页',
-  source: '本地生成 + ip-api.com（归属地）',
+  source: '本地生成 + ip2region 离线库 / ip-api.com（归属地）',
   routes: [
     {
       method: 'GET',
