@@ -56,7 +56,47 @@ async function api(method, path, body) {
     err.status = res.status;
     throw err;
   }
+  if (method !== 'GET') pageCache.clear(); // 改动过数据后，页面缓存全部作废
   return json.data;
+}
+
+// ---------- 页面数据缓存 ----------
+// 切换页面时先用上次的数据立即显示，同时在后台取最新数据；数据有变化且用户还没开始操作时再刷新一次页面
+const pageCache = new Map();
+let navToken = 0;
+
+async function cachedGet(path) {
+  const hit = pageCache.get(path);
+  const token = navToken;
+  const load = () => api('GET', path).then((data) => {
+    pageCache.set(path, { data, at: Date.now(), json: JSON.stringify(data) });
+    return data;
+  });
+  if (!hit) return load();
+  if (Date.now() - hit.at > 2000) {
+    const started = Date.now();
+    load().then(() => {
+      const busy = document.querySelector('#main :focus, .modal-back');
+      if (token === navToken && !busy && Date.now() - started < 4000 && pageCache.get(path)?.json !== hit.json) router({ keepScroll: true });
+    }).catch(() => {});
+  }
+  return hit.data;
+}
+
+// 空闲时预先取好导航栏各页面的数据，第一次点进去也不用等
+function prefetchPages() {
+  const paths = [];
+  if (state.user?.isAdmin) paths.push('/admin/stats', '/admin/users?q=&page=1&size=20', '/admin/changelog', '/admin/settings');
+  if (state.user) paths.push('/account/usage', '/account/keys', '/account/notify');
+  paths.push('/status');
+  let i = 0;
+  const next = () => {
+    const p = paths[i++];
+    if (!p) return;
+    (pageCache.has(p) ? Promise.resolve() : api('GET', p).then((data) => pageCache.set(p, { data, at: Date.now(), json: JSON.stringify(data) })))
+      .catch(() => {}).finally(() => setTimeout(next, 150));
+  };
+  next();
 }
 
 function toast(msg, err = false) {
@@ -183,7 +223,11 @@ async function loadMe() {
     state.user = null;
   }
   // 登录身份变化后重新加载接口目录（管理员可见已关闭的接口）
-  if ((state.user?.id ?? null) !== before) state.catalog = null;
+  if ((state.user?.id ?? null) !== before) {
+    state.catalog = null;
+    pageCache.clear();
+    prefetched = false;
+  }
 }
 
 async function loadCatalog() {
@@ -1067,7 +1111,7 @@ async function pageConsole(tab = 'overview') {
 }
 
 async function consoleOverview(panel) {
-  const u = await api('GET', '/account/usage');
+  const u = await cachedGet('/account/usage');
   const q = u.quota;
   const pct = q.limit ? Math.min(100, (q.used / q.limit) * 100) : 0;
   const total14 = u.daily.reduce((s, d) => s + d.count, 0);
@@ -1094,7 +1138,7 @@ async function consoleOverview(panel) {
 }
 
 async function consoleKeys(panel) {
-  const keys = await api('GET', '/account/keys');
+  const keys = await cachedGet('/account/keys');
   panel.innerHTML = `
     <div class="page-head"><div><h1>API Keys</h1><p>同一账号下的 Key 共享每日 ${fmtNum(state.user.dailyLimit)} 次额度</p></div>
       <button class="btn primary" id="new-key">${icon('key')}创建 Key</button></div>
@@ -1140,7 +1184,7 @@ async function consoleKeys(panel) {
 }
 
 async function consoleNotify(panel) {
-  const n = await api('GET', '/account/notify');
+  const n = await cachedGet('/account/notify');
   const typeOf = (id) => n.types.find((t) => t.id === id);
   const subscribed = (topic, ch) => n.subscriptions.some((s) => s.topic === topic && s.channelId === ch);
 
@@ -1275,7 +1319,7 @@ async function consoleSettings(panel) {
 async function pageAdmin() {
   if (!state.user?.isAdmin) return pageNotFound();
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const s = await api('GET', '/admin/stats');
+  const s = await cachedGet('/admin/stats');
   const t = s.totals;
   const rows = s.daily.map((d) => ({ day: d.day, user: d.count - d.anon, anon: d.anon }));
   const chart = barChart(rows, [{ key: 'user', label: '注册用户' }, { key: 'anon', label: '未登录', cls: 's2' }]);
@@ -1328,7 +1372,7 @@ const adminTabs = (active) => `<div class="seg">
 async function pageAdminChangelog() {
   if (!state.user?.isAdmin) return pageNotFound();
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const d = await api('GET', '/admin/changelog');
+  const d = await cachedGet('/admin/changelog');
   const cur = d.running ?? d.disk;
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>更新记录</h1><p>每个版本改了什么；有新版本时到「管理」页的系统更新里一键更新</p></div>${adminTabs('changelog')}</div>
@@ -1387,7 +1431,7 @@ async function pageAdminUsers(q = '', page = 1, size) {
   const body = $('#users-body');
   let d;
   try {
-    d = await api('GET', `/admin/users?q=${encodeURIComponent(q)}&page=${page}&size=${size}`);
+    d = await cachedGet(`/admin/users?q=${encodeURIComponent(q)}&page=${page}&size=${size}`);
   } catch (err) {
     body.innerHTML = `<div class="form-error" style="margin:16px">${esc(err.message)}</div>`;
     return;
@@ -1417,7 +1461,7 @@ const SOURCE_LABEL = { panel: ['后台', 'brand'], env: ['环境变量', ''], de
 async function pageAdminSettings(focusGroup, focusKeys) {
   if (!state.user?.isAdmin) return pageNotFound();
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const groups = await api('GET', '/admin/settings');
+  const groups = await cachedGet('/admin/settings');
   const fieldHtml = (f) => {
     const [srcText, srcCls] = SOURCE_LABEL[f.source];
     const src = `<span class="badge ${srcCls}" title="当前值来源">${srcText}</span>`;
@@ -1539,6 +1583,7 @@ async function loadModuleSwitches() {
     body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
     return;
   }
+  if (!body.isConnected) return; // 数据回来前已经切到别的页面
   const draw = () => {
     const q = $('#mod-q').value.trim().toLowerCase();
     const on = data.modules.filter((m) => m.enabled).length;
@@ -1696,7 +1741,7 @@ async function runUpdate(sha, managed) {
 // ---------- 运行状态 ----------
 async function pageStatus() {
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const st = await api('GET', '/status');
+  const st = await cachedGet('/status');
   const LABEL = { ok: ['正常', 'ok'], degraded: ['部分失败', 'warn'], down: ['故障', 'danger'], idle: ['24 小时内无调用', ''] };
   const count = (k) => st.modules.filter((m) => m.status === k).length;
   const up = st.uptimeSec;
@@ -1756,13 +1801,21 @@ function pageNotFound() {
 }
 
 // ---------- 路由 ----------
-async function router() {
+let prefetched = false;
+async function router({ keepScroll = false } = {}) {
   const hash = location.hash.replace(/^#\/?/, '');
   if (hash === 'catalog') return;
   const [page, arg, sub, extra] = hash.split('/');
   const routeName = { '': 'home', api: 'api', docs: 'docs', status: 'status', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
+  navToken++;
   renderTopbar(routeName);
-  window.scrollTo(0, 0);
+  // 换一个新的 #main：上一个页面挂在上面的事件监听随之清除，不会越积越多
+  const oldMain = $('#main');
+  const scrollY = window.scrollY;
+  const freshMain = oldMain.cloneNode(true);
+  oldMain.replaceWith(freshMain);
+  if (!keepScroll) window.scrollTo(0, 0);
+  if (!prefetched) { prefetched = true; setTimeout(prefetchPages, 1500); }
   try {
     await loadCatalog();
     switch (page) {
@@ -1778,11 +1831,12 @@ async function router() {
   } catch (err) {
     $('#main').innerHTML = `<div class="wrap"><div class="empty" style="padding:100px 0">加载失败：${esc(err.message)}</div></div>`;
   }
+  if (keepScroll) window.scrollTo(0, scrollY);
   document.title = { home: 'Miao API', api: 'Miao API · 接口', docs: 'Miao API · 文档', auth: 'Miao API · 登录', console: 'Miao API · 控制台', admin: 'Miao API · 管理' }[routeName] ?? 'Miao API';
 }
 
-window.addEventListener('hashchange', router);
-loadMe().then(router);
+window.addEventListener('hashchange', () => router());
+loadMe().then(() => router());
 
 
 // ---------- AI 分析接口失败原因（管理后台） ----------
