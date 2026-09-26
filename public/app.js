@@ -181,12 +181,8 @@ function renderTopbar(route) {
     ['#/', '接口', route === 'home' || route === 'api'],
     ['#/docs', '文档', route === 'docs'],
     ...(u ? [['#/console', '控制台', route === 'console']] : []),
-    ...(u?.isAdmin ? [
-      ['#/admin', '管理', route === 'admin' && !/^#\/admin\/(settings|users|changelog)/.test(location.hash)],
-      ['#/admin/users', '用户', location.hash.startsWith('#/admin/users')],
-      ['#/admin/changelog', '更新记录', location.hash.startsWith('#/admin/changelog')],
-      ['#/admin/settings', '设置', location.hash.startsWith('#/admin/settings')],
-    ] : []),
+    // 管理后台的「概览 / 用户 / 更新记录 / 系统设置」在页面右上角切换，导航栏只放一个入口
+    ...(u?.isAdmin ? [['#/admin', '管理', route === 'admin']] : []),
   ];
   $('#topbar').innerHTML = `<div class="wrap">
     <a class="logo" href="#/"><span class="logo-mark">${icon('logo')}</span>Miao API</a>
