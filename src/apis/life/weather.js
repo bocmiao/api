@@ -3,6 +3,9 @@ import { fetchJSON, HttpError, param } from '../../lib/http.js';
 
 const TTL_MS = 10 * 60_000;
 const GEO_TTL_MS = 7 * 86_400_000;
+const SEARCH_TTL_MS = 86_400_000;
+const CANDIDATES = 5; // 按城市名查询时额外返回的重名候选数
+const ID_RE = /^[A-Za-z0-9]{1,20}$/;
 
 // WMO 天气代码 → 中文
 export const WMO_TEXT = {
@@ -30,7 +33,11 @@ export function windScale(kmh) {
 export function parseOpenMeteoGeo(raw) {
   const r = raw?.results?.[0];
   if (!r) return null;
+  return omLocation(r);
+}
+function omLocation(r) {
   return {
+    ...(r.id == null ? {} : { id: String(r.id) }),
     name: r.name,
     admin: [r.admin1, r.admin2].filter(Boolean).join(' '),
     country: r.country ?? null,
@@ -79,10 +86,66 @@ export function parseOpenMeteoForecast(raw, location) {
   };
 }
 
+// 城市搜索的统一候选结构（两种数据源字段一致，缺的为 null）
+const str = (v) => (v == null || v === '' ? null : String(v));
+const numOrNull = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+export function parseOpenMeteoSearch(raw) {
+  return (raw?.results ?? []).map((r) => ({
+    id: String(r.id),
+    name: r.name,
+    adm1: str(r.admin1),
+    adm2: str(r.admin2),
+    adm3: str(r.admin3),
+    country: str(r.country),
+    countryCode: str(r.country_code),
+    lat: numOrNull(r.latitude),
+    lon: numOrNull(r.longitude),
+    timezone: str(r.timezone),
+    type: str(r.feature_code),
+    population: numOrNull(r.population),
+  }));
+}
+export function parseQWeatherSearch(raw) {
+  return (raw?.location ?? []).map((r) => ({
+    id: String(r.id),
+    name: r.name,
+    adm1: str(r.adm1),
+    adm2: str(r.adm2),
+    adm3: null,
+    country: str(r.country),
+    countryCode: null,
+    lat: numOrNull(r.lat),
+    lon: numOrNull(r.lon),
+    timezone: str(r.tz),
+    type: str(r.type),
+    population: null,
+  }));
+}
+// 重名候选：除第一个外最多 CANDIDATES 个
+const toCandidates = (items) => items.slice(1, 1 + CANDIDATES).map(({ id, name, adm1, adm2, country }) => ({ id, name, adm1, adm2, country }));
+
+// Open-Meteo /v1/get 直接返回地点对象（兼容包在 results 里的情况）
+export function parseOpenMeteoGet(raw) {
+  const r = raw?.results?.[0] ?? raw;
+  if (!r || r.error || r.latitude == null || r.longitude == null) return null;
+  return omLocation(r);
+}
+
 async function openMeteoGeocode(city) {
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh&format=json`;
-  const res = await cache.wrap(`weather:geo:om:${city}`, GEO_TTL_MS, async () => parseOpenMeteoGeo(await fetchJSON(url)));
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=${1 + CANDIDATES}&language=zh&format=json`;
+  const res = await cache.wrap(`weather:geo:om:${city}`, GEO_TTL_MS, async () => {
+    const raw = await fetchJSON(url);
+    const location = parseOpenMeteoGeo(raw);
+    return location && { location, candidates: toCandidates(parseOpenMeteoSearch(raw)) };
+  });
   if (!res.data) throw new HttpError(404, `找不到城市：${city}`);
+  return res.data;
+}
+
+async function openMeteoById(id) {
+  const url = `https://geocoding-api.open-meteo.com/v1/get?id=${encodeURIComponent(id)}&language=zh&format=json`;
+  const res = await cache.wrap(`weather:geoid:om:${id}`, GEO_TTL_MS, async () => parseOpenMeteoGet(await fetchJSON(url)));
+  if (!res.data) throw new HttpError(404, `找不到该城市编号：${id}`);
   return res.data;
 }
 
@@ -170,10 +233,43 @@ export function parseQWeather(now, daily, location) {
 
 async function qweatherGeocode(city) {
   const { geo } = qweatherHosts();
-  const res = await cache.wrap(`weather:geo:qw:${city}`, GEO_TTL_MS, async () =>
-    parseQWeatherGeo(await qweatherGet(geo, '/geo/v2/city/lookup', { location: city, number: '1' })));
+  const res = await cache.wrap(`weather:geo:qw:${city}`, GEO_TTL_MS, async () => {
+    const raw = await qweatherGet(geo, '/geo/v2/city/lookup', { location: city, number: String(1 + CANDIDATES) });
+    const location = parseQWeatherGeo(raw);
+    return location && { location, candidates: toCandidates(parseQWeatherSearch(raw)) };
+  });
   if (!res.data) throw new HttpError(404, `找不到城市：${city}`);
   return res.data;
+}
+
+// 和风 GeoAPI 的 location 参数也接受 LocationID，用来补全地点名称、行政区和时区
+async function qweatherById(id) {
+  const { geo } = qweatherHosts();
+  const res = await cache.wrap(`weather:geoid:qw:${id}`, GEO_TTL_MS, async () =>
+    parseQWeatherGeo(await qweatherGet(geo, '/geo/v2/city/lookup', { location: id, number: '1' })));
+  if (!res.data) throw new HttpError(404, `找不到该城市编号：${id}`);
+  return res.data;
+}
+
+// 城市搜索：配置和风时用和风 GeoAPI，否则用 Open-Meteo geocoding；结果缓存 1 天
+export async function searchCity(q, limit = 10) {
+  const useQ = Boolean(process.env.QWEATHER_KEY);
+  const provider = useQ ? 'qweather' : 'open-meteo';
+  return cache.wrap(`weather:search:${useQ ? 'qw' : 'om'}:${limit}:${q}`, SEARCH_TTL_MS, async () => {
+    let items;
+    if (useQ) {
+      try {
+        items = parseQWeatherSearch(await qweatherGet(qweatherHosts().geo, '/geo/v2/city/lookup', { location: q, number: String(limit) }));
+      } catch (err) {
+        if (err.status !== 404) throw err;
+        items = [];
+      }
+    } else {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=${limit}&language=zh&format=json`;
+      items = parseOpenMeteoSearch(await fetchJSON(url));
+    }
+    return { provider, query: q, count: Math.min(items.length, limit), items: items.slice(0, limit) };
+  });
 }
 
 async function qweatherWeather(location) {
@@ -192,15 +288,21 @@ function gridLoc(lat, lon) {
   return { name: `${la},${lo}`, admin: '', country: null, lat: la, lon: lo, timezone: null };
 }
 
-// 供推送复用：loadWeather({ city }) 或 loadWeather({ lat, lon })
-export async function loadWeather({ city, lat, lon }) {
+// 供推送复用：loadWeather({ city })、loadWeather({ id }) 或 loadWeather({ lat, lon })
+// 返回的 data 总带 candidates（按城市名查询时为其他重名候选，其余情况为空数组）
+export async function loadWeather({ city, id, lat, lon }) {
   const useQ = Boolean(process.env.QWEATHER_KEY);
   // 经纬度按 2 位小数（约 1 公里）取整后查询和缓存，同一网格内的请求返回一致的坐标
   const coordLoc = lat != null ? gridLoc(lat, lon) : null;
-  const key = `weather:${useQ ? 'qw' : 'om'}:${coordLoc ? coordLoc.name : city}`;
+  const target = coordLoc ? coordLoc.name : id != null ? `id:${id}` : city;
+  const key = `weather:${useQ ? 'qw' : 'om'}:${target}`;
   return cache.wrap(key, TTL_MS, async () => {
-    if (useQ) return qweatherWeather(coordLoc ?? (await qweatherGeocode(city)));
-    return openMeteoWeather(coordLoc ?? (await openMeteoGeocode(city)));
+    let location = coordLoc;
+    let candidates = [];
+    if (!location && id != null) location = useQ ? await qweatherById(id) : await openMeteoById(id);
+    if (!location) ({ location, candidates } = useQ ? await qweatherGeocode(city) : await openMeteoGeocode(city));
+    const w = useQ ? await qweatherWeather(location) : await openMeteoWeather(location);
+    return { ...w, candidates };
   });
 }
 
@@ -217,14 +319,15 @@ export default {
       path: '/api/weather',
       summary: '查询实时天气与 7 天预报',
       params: [
-        { name: 'city', default: '北京', desc: '城市名（与 lat/lon 二选一）', example: '上海' },
-        { name: 'lat', desc: '纬度，-90~90', example: '31.23' },
-        { name: 'lon', desc: '经度，-180~180', example: '121.47' },
+        { name: 'city', default: '北京', desc: '城市名（city / id / lat+lon 三选一）。重名时取地理编码的第一个结果，其他候选见返回的 candidates', example: '上海' },
+        { name: 'id', desc: '城市编号（city / id / lat+lon 三选一），取自 /api/weather/city 的 items[].id：配置和风天气时为和风 LocationID，否则为 Open-Meteo（GeoNames）编号。编号只在对应数据源有效，服务端切换数据源后需重新搜索', example: '1816670' },
+        { name: 'lat', desc: '纬度，-90~90（与 lon 同时提供）', example: '31.23' },
+        { name: 'lon', desc: '经度，-180~180（与 lat 同时提供）', example: '121.47' },
       ],
       fields: [
         { name: 'provider', type: 'string', desc: '实际使用的数据源：open-meteo（默认）或 qweather（服务端配置了和风天气 Key 时）。两者输出结构相同，个别字段只有其中一方有值，见各字段说明' },
         { name: 'location', type: 'object', desc: '查询地点' },
-        { name: 'location.id', type: 'string', desc: '仅 qweather 且按城市名查询时有：和风天气 LocationID（如 101010100）。open-meteo 或按经纬度查询时没有此字段' },
+        { name: 'location.id', type: 'string', desc: '城市编号，可作为下次请求的 id 参数：qweather 为和风天气 LocationID（如 101010100），open-meteo 为 GeoNames 编号（如 1816670）。按城市名或 id 查询时有；按经纬度查询时没有此字段' },
         { name: 'location.name', type: 'string', desc: '地点名称（如 北京市）；按经纬度查询时为 "纬度,经度" 形式的字符串（保留 2 位小数）' },
         { name: 'location.admin', type: 'string', desc: '上级行政区，空格分隔、已去重（如 "北京市 北京"）；按经纬度查询或上游未提供时为空字符串' },
         { name: 'location.country', type: 'string|null', desc: '国家名称（如 中国）；按经纬度查询时为 null' },
@@ -258,10 +361,24 @@ export default {
         { name: 'daily[].uvIndex', type: 'number|null', desc: '紫外线指数。open-meteo 为当天最大值（可带小数）；qweather 为整数。上游缺失时为 null' },
         { name: 'daily[].sunrise', type: 'string|null', desc: '日出时间，HH:mm（当地时间）；极昼、极夜等没有日出或上游未提供时为 null' },
         { name: 'daily[].sunset', type: 'string|null', desc: '日落时间，HH:mm（当地时间）；没有日落或上游未提供时为 null' },
+        { name: 'candidates', type: 'array', desc: `按城市名查询时，除已采用的第一个结果外的其他同名/相近地点（最多 ${CANDIDATES} 个），用于发现重名，可用其 id 重新查询；无重名或按 id、经纬度查询时为空数组` },
+        { name: 'candidates[].id', type: 'string', desc: '城市编号，与 location.id 属于同一数据源（见 provider），可作为 id 参数' },
+        { name: 'candidates[].name', type: 'string', desc: '地点名称' },
+        { name: 'candidates[].adm1', type: 'string|null', desc: '一级行政区（省/直辖市/州），上游未提供时为 null' },
+        { name: 'candidates[].adm2', type: 'string|null', desc: '二级行政区（地级市），上游未提供时为 null' },
+        { name: 'candidates[].country', type: 'string|null', desc: '国家名称，上游未提供时为 null' },
       ],
       async handler({ query }) {
         const latRaw = query.get('lat');
         const lonRaw = query.get('lon');
+        const idRaw = query.get('id');
+        const given = [query.get('city'), idRaw, latRaw || lonRaw].filter(Boolean).length;
+        if (given > 1) throw new HttpError(400, 'city、id、lat/lon 只能提供其中一种');
+        if (idRaw) {
+          const id = idRaw.trim();
+          if (!ID_RE.test(id)) throw new HttpError(400, 'id 须为 1~20 位字母或数字');
+          return loadWeather({ id });
+        }
         if (latRaw || lonRaw) {
           const lat = Number(latRaw);
           const lon = Number(lonRaw);
@@ -273,6 +390,39 @@ export default {
         const city = param(query, 'city', { default: '北京', max: 30 }).trim();
         if (!city) throw new HttpError(400, 'city 不能为空');
         return loadWeather({ city });
+      },
+    },
+    {
+      method: 'GET',
+      path: '/api/weather/city',
+      summary: '搜索城市，获取可用于天气查询的城市编号',
+      params: [
+        { name: 'q', required: true, desc: '城市/地区名称关键字，1~30 字（和风天气支持拼音、区县名）', example: '汝阳' },
+        { name: 'limit', default: '10', desc: '返回候选数量，1~20', example: '10' },
+      ],
+      fields: [
+        { name: 'provider', type: 'string', desc: '搜索使用的数据源，也是 items[].id 所属的服务：qweather（服务端配置了和风天气 Key，id 为和风 LocationID）或 open-meteo（默认，id 为 GeoNames 编号）。id 只能在同一数据源下传给 /api/weather' },
+        { name: 'query', type: 'string', desc: '实际搜索的关键字（已去除首尾空白）' },
+        { name: 'count', type: 'number', desc: '返回的候选数量；没有匹配时为 0' },
+        { name: 'items', type: 'array', desc: '候选地点，按上游相关度排序（第一项即 /api/weather?city= 采用的结果）' },
+        { name: 'items[].id', type: 'string', desc: '城市编号，传给 /api/weather 的 id 参数可精确查询：qweather 为 LocationID（如 101180309），open-meteo 为 GeoNames 编号（如 1786640）' },
+        { name: 'items[].name', type: 'string', desc: '地点名称' },
+        { name: 'items[].adm1', type: 'string|null', desc: '一级行政区（省/直辖市/州，如 河南省）；上游未提供时为 null' },
+        { name: 'items[].adm2', type: 'string|null', desc: '二级行政区（地级市，如 洛阳）；上游未提供时为 null' },
+        { name: 'items[].adm3', type: 'string|null', desc: '仅 open-meteo 可能有值：三级行政区（区县）；qweather 恒为 null（区县级地点本身就是 name）' },
+        { name: 'items[].country', type: 'string|null', desc: '国家名称（如 中国）；上游未提供时为 null' },
+        { name: 'items[].countryCode', type: 'string|null', desc: '仅 open-meteo 有值：ISO 3166-1 二位国家代码（如 CN）；qweather 恒为 null' },
+        { name: 'items[].lat', type: 'number|null', desc: '纬度（十进制度，北纬为正）' },
+        { name: 'items[].lon', type: 'number|null', desc: '经度（十进制度，东经为正）' },
+        { name: 'items[].timezone', type: 'string|null', desc: '时区（IANA 名称，如 Asia/Shanghai）；上游未提供时为 null' },
+        { name: 'items[].type', type: 'string|null', desc: '地点类型。qweather 为上游 type（如 city）；open-meteo 为 GeoNames 要素代码（如 PPLA 省会、PPLA2 地级市驻地、PPLA3 区县驻地、PPL 居民点、ADM3 区县级行政区）' },
+        { name: 'items[].population', type: 'number|null', desc: '仅 open-meteo 可能有值：人口数；qweather 或上游未提供时为 null' },
+      ],
+      async handler({ query }) {
+        const q = param(query, 'q', { required: true, max: 30 }).trim();
+        if (!q) throw new HttpError(400, 'q 不能为空');
+        const limit = param(query, 'limit', { default: 10, int: true, min: 1, max: 20 });
+        return searchCity(q, limit);
       },
     },
   ],

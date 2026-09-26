@@ -14,6 +14,24 @@
       "country_id": 1814991,
       "country": "中国",
       "admin1": "北京市"
+    },
+    {
+      "id": 1816671,
+      "name": "北京",
+      "latitude": 34.21,
+      "longitude": 112.63,
+      "elevation": 300.0,
+      "feature_code": "PPL",
+      "country_code": "CN",
+      "admin1_id": 1809445,
+      "admin2_id": 1808926,
+      "admin3_id": 1784658,
+      "timezone": "Asia/Shanghai",
+      "country_id": 1814991,
+      "country": "中国",
+      "admin1": "河南省",
+      "admin2": "洛阳市",
+      "admin3": "汝阳县"
     }
   ],
   "generationtime_ms": 0.73

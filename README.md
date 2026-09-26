@@ -155,6 +155,7 @@ await fetch('https://api.example.com/api/shorturl', {
 | 接口 | 路径 | 说明 |
 | --- | --- | --- |
 | 天气预报 🔓 | `/api/weather` | 查询实时天气与 7 天预报 |
+| 天气城市搜索 🔓 | `/api/weather/city` | 搜索城市，获取可用于天气查询的城市编号 |
 | 节假日与调休 | `/api/holiday` | 查询某天是否放假/上班及节日名 |
 |  | `/api/holiday/next` | 下一个法定假期及倒计时天数 |
 |  | `/api/holiday/year` | 某年全部放假安排与调休日 |
