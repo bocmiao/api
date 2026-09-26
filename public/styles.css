@@ -483,3 +483,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* AI 分析 */
 .modal:has(.diag) { max-width: 640px; }
 .diag-list { margin: 4px 0 12px; padding-left: 20px; display: grid; gap: 4px; line-height: 1.6; }
+
+/* 接口开关：密钥标签 */
+.key-badge { margin-left: 6px; font-size: 11px; vertical-align: 1px; text-decoration: none; }
+.key-badge:hover { text-decoration: none; filter: brightness(.95); }
+.key-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 14px; }
+.key-legend .badge { font-size: 11px; }

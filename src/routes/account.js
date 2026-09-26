@@ -16,7 +16,7 @@ import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
 import { isModuleEnabled, setModulesEnabled } from '../lib/modules.js';
-import { listSettings, saveSettings } from '../lib/settings.js';
+import { listSettings, saveSettings, SETTING_GROUPS } from '../lib/settings.js';
 import { testService, serviceOfKey, linkOfKey } from '../lib/keytest.js';
 import { sendMail } from '../notify/smtp.js';
 import { invoke, apiRouter } from '../registry.js';
@@ -407,10 +407,28 @@ r('GET', '/admin/modules', (ctx) => {
         enabled: isModuleEnabled(m.name),
         routes: m.routes.map((x) => x.path),
         calls7d: m.routes.reduce((n, x) => n + (calls.get(x.path) ?? 0), 0),
+        keys: moduleKeys(m),
       })),
     },
   };
 });
+
+// 接口需要的第三方密钥：required 不填就用不了（含「任选其一」），optional 不填也能用、填了更好
+function moduleKeys(m) {
+  const env = (m.env ?? []).map((e) => (typeof e === 'string' ? { name: e, optional: false } : { name: e.name, optional: Boolean(e.optional) }));
+  if (!env.length) return null;
+  const isSet = (name) => Boolean((process.env[name] || '').trim());
+  const required = Boolean(m.isAvailable) || env.some((e) => !e.optional);
+  const available = m.isAvailable ? Boolean(m.isAvailable()) : env.every((e) => e.optional || isSet(e.name));
+  const group = SETTING_GROUPS.find((g) => g.fields.some((f) => f.key === env[0].name))?.id ?? 'keys';
+  return {
+    mode: required ? 'required' : 'optional',
+    anyOf: Boolean(m.isAvailable) && env.every((e) => e.optional), // 多个服务任选其一（如翻译）
+    configured: required ? available : env.some((e) => isSet(e.name)),
+    names: env.map((e) => e.name),
+    group,
+  };
+}
 
 // body: { names: [...], enabled: true|false }
 r('PUT', '/admin/modules', (ctx) => {

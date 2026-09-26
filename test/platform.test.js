@@ -229,6 +229,14 @@ test('管理员可关闭指定接口模块：所有人 403，普通用户目录�
   const admin = client();
   await admin('POST', '/auth/login', { email: 'admin@example.com', password: 'password123' });
   const list = await admin('GET', '/admin/modules');
+  // 密钥标注：快递必填、翻译任选其一、天气可选、本地接口不需要
+  const keysOf = (name) => list.body.data.modules.find((m) => m.name === name).keys;
+  assert.deepEqual({ ...keysOf('express'), configured: undefined }, { mode: 'required', anyOf: false, configured: undefined, names: ['KUAIDI100_KEY', 'KUAIDI100_CUSTOMER'], group: 'keys' });
+  assert.equal(keysOf('translate').anyOf, true);
+  assert.equal(keysOf('translate').mode, 'required');
+  assert.equal(keysOf('weather').mode, 'optional');
+  assert.equal(keysOf('ai').group, 'ai');
+  assert.equal(keysOf('devtools'), null);
   assert.ok(list.body.data.modules.some((m) => m.name === 'devtools' && m.enabled));
 
   assert.equal((await admin('PUT', '/admin/modules', { names: ['devtools'], enabled: false })).status, 200);

@@ -1583,8 +1583,11 @@ async function loadModuleSwitches() {
   const draw = () => {
     const q = $('#mod-q').value.trim().toLowerCase();
     const on = data.modules.filter((m) => m.enabled).length;
-    $('#mod-count').textContent = `已开放 ${on} / ${data.modules.length}`;
-    body.innerHTML = data.categories.map((c) => {
+    const needKey = data.modules.filter((m) => m.keys?.mode === 'required' && !m.keys.configured).length;
+    $('#mod-count').textContent = `已开放 ${on} / ${data.modules.length}${needKey ? ` · ${needKey} 个待填 Key` : ''}`;
+    const legend = `<div class="key-legend small faint"><span class="badge danger">需填 Key</span> 不填写无法使用
+      <span class="badge ok">已填 Key</span> 已配置可用 <span class="badge">可选 Key</span> 不填也能用，填了效果更好或限额更高 · 点标签去设置里填写</div>`;
+    body.innerHTML = legend + data.categories.map((c) => {
       const list = data.modules.filter((m) => m.category === c.id && (!q || `${m.title} ${m.name} ${m.routes.join(' ')}`.toLowerCase().includes(q)));
       if (!list.length) return '';
       return `<div class="mod-group">
@@ -1593,7 +1596,7 @@ async function loadModuleSwitches() {
         <div class="mod-grid">${list.map((m) => `
           <label class="mod-item ${m.enabled ? '' : 'off'}" title="${esc(m.routes.join('\n'))}">
             <span class="switch"><input type="checkbox" data-mod="${esc(m.name)}" ${m.enabled ? 'checked' : ''}><span></span></span>
-            <span class="grow"><span class="mod-title">${esc(m.title)}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
+            <span class="grow"><span class="mod-title">${esc(m.title)}${keyBadge(m.keys)}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
             <span class="small faint" title="近 7 天调用">${fmtNum(m.calls7d)}</span>
           </label>`).join('')}</div></div>`;
     }).join('') || '<div class="empty">没有匹配的接口</div>';
@@ -1621,6 +1624,17 @@ async function loadModuleSwitches() {
   };
   $('#mod-q').oninput = draw;
   draw();
+}
+
+// 接口开关里的密钥标签：点击直达设置里对应的密钥
+function keyBadge(k) {
+  if (!k) return '';
+  const href = `#/admin/settings/${k.group}/${k.names.join(',')}`;
+  const tip = `${k.anyOf ? '任选其一填写：' : k.mode === 'required' ? '需要填写：' : '可选填写：'}${k.names.join('、')}`;
+  const [cls, text] = k.mode === 'required'
+    ? (k.configured ? ['ok', '已填 Key'] : ['danger', k.anyOf ? '需填 Key（任选其一）' : '需填 Key'])
+    : (k.configured ? ['ok', '已填可选 Key'] : ['', '可选 Key']);
+  return ` <a class="badge ${cls} key-badge" href="${href}" title="${esc(tip)}">${text}</a>`;
 }
 
 // ---------- 在线更新 ----------
