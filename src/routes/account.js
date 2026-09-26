@@ -10,7 +10,7 @@ import { channelCatalog, validateChannel, sendToChannel, maskConfig } from '../n
 import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
-import { checkUpdate, startUpdate, updateProgress, versionInfo, localChangelog } from '../lib/updater.js';
+import { checkUpdate, startUpdate, startUploadUpdate, updateProgress, versionInfo, localChangelog } from '../lib/updater.js';
 import { diagnose } from '../lib/diagnose.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
@@ -385,6 +385,16 @@ r('GET', '/admin/changelog', (ctx) => {
   requireAdmin(ctx);
   return { data: { ...versionInfo(), entries: localChangelog() } };
 });
+
+// 手动上传更新包（GitHub 的 Download ZIP 或 .tar.gz），最大 60 MB；在后台安装，进度同样查 /admin/update/progress
+r('POST', '/admin/update/upload', (ctx) => {
+  requireAdmin(ctx);
+  if (!ctx.body?.length) throw new HttpError(400, '没有收到文件');
+  const started = startUploadUpdate(ctx.body, (result) => {
+    if (result.restart) setTimeout(() => process.exit(75), 3000).unref();
+  });
+  return { data: started };
+}, { rawBody: 60 * 1024 * 1024 });
 
 r('GET', '/admin/update/progress', (ctx) => {
   requireAdmin(ctx);

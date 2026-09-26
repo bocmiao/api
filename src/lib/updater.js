@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync
 import { dirname, join, normalize, sep } from 'node:path';
 import { HttpError } from './http.js';
 import { extractTar } from './tar.js';
+import { extractZip, isZip } from './zip.js';
 import { ROOT, KEEP, dataDir } from './paths.js';
 import { STAGING, BACKUPS, swapIn, writePending } from './swap.js';
 
@@ -282,6 +283,11 @@ export function unpackTo(tarGz, dest) {
     throw new HttpError(502, '更新包解压失败');
   }
   const { entries, comment } = extractTar(tar);
+  return { files: writeEntries(entries, dest), sha: comment };
+}
+
+// 写入临时目录：去掉第一层目录（GitHub 包里的 仓库名-分支/），拒绝越界路径，跳过需保留的顶层条目
+function writeEntries(entries, dest) {
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   let files = 0;
@@ -301,7 +307,31 @@ export function unpackTo(tarGz, dest) {
       files++;
     }
   }
-  return { files, sha: comment };
+  return files;
+}
+
+// 解开手动上传的更新包：GitHub 的「Download ZIP」（.zip）或源码包（.tar.gz）
+export function unpackUpload(buf, dest) {
+  if (isZip(buf)) {
+    let entries;
+    try {
+      ({ entries } = extractZip(buf, { maxTotal: MAX_UNPACKED }));
+    } catch (err) {
+      throw new HttpError(400, `更新包解压失败：${err.message}`);
+    }
+    // 只有一个顶层目录（GitHub 包的结构）才去掉第一层；否则说明是把代码直接压缩的，整体下移一层再处理
+    const tops = new Set(entries.map((e) => e.path.split('/')[0]));
+    const wrapped = tops.size === 1 && entries.some((e) => e.path.includes('/'));
+    return writeEntries(wrapped ? entries : entries.map((e) => ({ ...e, path: `pkg/${e.path}` })), dest);
+  }
+  if (buf[0] === 0x1f && buf[1] === 0x8b) {
+    try {
+      return unpackTo(buf, dest).files;
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+  }
+  throw new HttpError(400, '只支持 .zip 或 .tar.gz 格式的更新包（在 GitHub 仓库页点「Code → Download ZIP」下载）');
 }
 
 // ---------- 增量更新 ----------
@@ -467,6 +497,67 @@ export function startUpdate(opts = {}, onDone) {
   return updateProgress();
 }
 
+// 临时目录里已经是完整的新代码：试启动 → 备份并替换 → 记录版本 → 标记待确认（守护进程重启后 20 秒内崩溃会自动恢复）
+async function installStaging(versionInfo, files, detail, managed) {
+  report({ stage: '正在检查新版本能否正常启动', percent: 65, detail });
+  // 试启动一般要几秒到十几秒，期间进度缓慢前进，让页面看得出没有卡住
+  const tick = setInterval(() => report({ percent: Math.min(90, progress.percent + 1) }), 800);
+  try { await verifyStaging(STAGING); } finally { clearInterval(tick); }
+
+  report({ stage: '正在备份并替换文件', percent: 92, detail: '' });
+  const previousVersion = currentVersion();
+  const backup = join(BACKUPS, new Date().toISOString().replace(/[:.]/g, '-'));
+  swapIn(backup);
+  rmSync(STAGING, { recursive: true, force: true });
+
+  const version = { ...versionInfo, updatedAt: new Date().toISOString() };
+  mkdirSync(dataDir(), { recursive: true });
+  writeFileSync(versionFile(), JSON.stringify(version, null, 2));
+  rmSync(join(dataDir(), 'update-rollback.json'), { force: true });
+  writePending({ backup, sha: version.sha ?? null, previousVersion, at: version.updatedAt });
+  pruneBackups();
+  report({ percent: 97 });
+  return { version, files, restart: managed };
+}
+
+// 手动上传的更新包（服务器下载 GitHub 太慢时使用）：解压后走同样的检查、备份、替换流程
+export async function applyUploadedUpdate(buf) {
+  if (running) throw new HttpError(409, '已有更新正在进行');
+  running = true;
+  try {
+    report({ stage: '正在解压更新包', percent: 55, detail: mb(buf.length) });
+    const files = unpackUpload(buf, STAGING);
+    let pkg;
+    try {
+      pkg = JSON.parse(readFileSync(join(STAGING, 'package.json'), 'utf8'));
+    } catch {
+      throw new HttpError(400, '更新包里没有 package.json，不是 Miao API 的代码包');
+    }
+    if (pkg.name && pkg.name !== JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).name) {
+      throw new HttpError(400, `更新包是「${pkg.name}」项目的代码，不是 Miao API`);
+    }
+    report({ target: { version: pkg.version ?? null, sha: null } });
+    const version = { version: pkg.version ?? null, sha: null, source: 'upload', message: '手动上传的更新包' };
+    return await installStaging(version, files, `上传的更新包 · 共 ${files} 个文件`, process.env.MIAO_LAUNCHER === '1');
+  } finally {
+    rmSync(STAGING, { recursive: true, force: true });
+    running = false;
+  }
+}
+
+// 后台处理上传的更新包，立即返回进度
+export function startUploadUpdate(buf, onDone) {
+  if (running) throw new HttpError(409, '已有更新正在进行');
+  progress = { ...idle(), state: 'running', stage: '正在解压更新包', percent: 55, startedAt: new Date().toISOString() };
+  applyUploadedUpdate(buf)
+    .then((result) => {
+      report({ state: 'done', stage: result.restart ? '更新完成，正在重启服务' : '更新完成，需要手动重启服务', percent: 100, result });
+      onDone?.(result);
+    })
+    .catch((err) => report({ state: 'error', stage: '更新失败', error: err.message || String(err) }));
+  return updateProgress();
+}
+
 export async function applyUpdate({ sha: expectedSha } = {}) {
   if (running) throw new HttpError(409, '已有更新正在进行');
   running = true;
@@ -502,25 +593,8 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
       mode = '完整更新';
       files = (await downloadFull(cfg, target, onBytes)).files;
     }
-    report({ stage: '正在检查新版本能否正常启动', percent: 65, detail: `${mode} · 共 ${files} 个文件` });
-    // 试启动一般要几秒到十几秒，期间进度缓慢前进，让页面看得出没有卡住
-    const tick = setInterval(() => report({ percent: Math.min(90, progress.percent + 1) }), 800);
-    try { await verifyStaging(STAGING); } finally { clearInterval(tick); }
-
-    report({ stage: '正在备份并替换文件', percent: 92, detail: '' });
-    const previousVersion = currentVersion();
-    const backup = join(BACKUPS, new Date().toISOString().replace(/[:.]/g, '-'));
-    swapIn(backup);
-    rmSync(STAGING, { recursive: true, force: true });
-
-    const version = { version: target.version, sha: target.sha, message: target.message, date: target.date, branch: info.branch, repo: cfg.repo, updatedAt: new Date().toISOString() };
-    mkdirSync(dataDir(), { recursive: true });
-    writeFileSync(versionFile(), JSON.stringify(version, null, 2));
-    rmSync(join(dataDir(), 'update-rollback.json'), { force: true });
-    writePending({ backup, sha: target.sha, previousVersion, at: version.updatedAt });
-    pruneBackups();
-    report({ percent: 97 });
-    return { version, files, restart: info.managed };
+    const version = { version: target.version, sha: target.sha, message: target.message, date: target.date, branch: info.branch, repo: cfg.repo };
+    return await installStaging(version, files, `${mode} · 共 ${files} 个文件`, info.managed);
   } finally {
     rmSync(STAGING, { recursive: true, force: true });
     running = false;

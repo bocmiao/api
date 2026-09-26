@@ -82,12 +82,31 @@ async function readBody(req) {
 }
 
 // 基于 Cookie 的写操作：要求 JSON 且同源，防止 CSRF
-function assertSameOrigin(req) {
+function assertSameOrigin(req, { raw = false } = {}) {
   const origin = req.headers.origin;
   if (origin && new URL(origin).host !== req.headers.host) throw new HttpError(403, '跨站请求被拒绝');
+  if (raw) {
+    // 上传文件：必须是本站页面发出的请求（浏览器会带 Origin），且类型为二进制
+    if (!origin) throw new HttpError(403, '跨站请求被拒绝');
+    if (!String(req.headers['content-type']).startsWith('application/octet-stream')) throw new HttpError(415, '请求体须为文件');
+    return;
+  }
   if (req.method !== 'GET' && !String(req.headers['content-type']).includes('application/json')) {
     throw new HttpError(415, '请求体须为 JSON');
   }
+}
+
+// 读取二进制请求体（上传更新包），超过上限直接拒绝
+async function readRawBody(req, limit) {
+  if (Number(req.headers['content-length'] || 0) > limit) throw new HttpError(413, `文件过大，最大 ${Math.round(limit / 1048576)} MB`);
+  const chunks = [];
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > limit) throw new HttpError(413, `文件过大，最大 ${Math.round(limit / 1048576)} MB`);
+    chunks.push(c);
+  }
+  return Buffer.concat(chunks);
 }
 
 // 静态文件默认 no-cache + ETag：浏览器每次都向服务器确认，未变化时返回 304，在线更新后无需强制刷新；
@@ -151,10 +170,13 @@ export async function handle(req, res) {
     const acct = accountRouter.match(req.method, path);
     if (acct) {
       if (acct.methodNotAllowed) throw new HttpError(405, '不支持的请求方法');
-      assertSameOrigin(req);
+      const raw = acct.route.rawBody;
+      assertSameOrigin(req, { raw: Boolean(raw) });
+      // 上传前先确认是管理员，避免陌生人往服务器传大文件
+      if (raw && !publicUser(userFromSession(cookies.sid))?.isAdmin) throw new HttpError(403, '需要管理员权限');
       const cookieOut = [];
       const ctx = {
-        req, ip, params: acct.params, query: url.searchParams, body: await readBody(req),
+        req, ip, params: acct.params, query: url.searchParams, body: raw ? await readRawBody(req, raw) : await readBody(req),
         sessionToken: cookies.sid, user: userFromSession(cookies.sid), setCookie: (c) => cookieOut.push(c),
       };
       const result = await acct.route.handler(ctx);

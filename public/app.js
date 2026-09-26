@@ -1343,7 +1343,9 @@ async function pageAdmin() {
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计、系统更新与接口开关</p></div>${adminTabs('overview')}</div>
     <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
-      <button class="btn sm" id="check-update">检查更新</button></div><div class="card-pad" id="update-body"><div id="ver-now" class="small faint">正在读取当前版本…</div></div></div>
+      <div class="row" style="gap:8px"><button class="btn sm ghost" id="upload-update" title="服务器下载 GitHub 太慢时使用：在电脑上下载代码包后在这里上传">上传更新包</button>
+      <input type="file" id="upload-file" accept=".zip,.tar.gz,.tgz,application/zip,application/gzip" hidden>
+      <button class="btn sm" id="check-update">检查更新</button></div></div><div class="card-pad" id="update-body"><div id="ver-now" class="small faint">正在读取当前版本…</div></div></div>
     <div class="tiles">
       ${[['24h 调用', t.calls], ['24h 独立 IP', t.ips], ['24h 平均耗时', `${fmtNum(t.avgMs)} ms`], ['24h 失败', t.errors],
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
@@ -1365,6 +1367,8 @@ async function pageAdmin() {
   </div>`;
   chart.mount($('#main'));
   $('#check-update').onclick = () => checkUpdate();
+  $('#upload-update').onclick = () => uploadUpdateHelp();
+  $('#upload-file').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) uploadUpdate(f); };
   api('GET', '/admin/version').then((v) => {
     const el = $('#ver-now');
     if (!el) return;
@@ -1733,6 +1737,11 @@ async function runUpdate(sha, managed) {
     body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
     return;
   }
+  await followUpdate(p, body);
+}
+
+// 跟踪后台更新进度，直到完成、失败或服务重启完成（在线更新和上传更新包共用）
+async function followUpdate(p, body) {
   // 1. 轮询更新进度（下载、解压、试启动、替换）
   let fails = 0;
   while (p.state === 'running') {
@@ -1767,6 +1776,56 @@ async function runUpdate(sha, managed) {
     await sleep(1000);
   }
   updateBar(body, { percent: 98, stage: '服务长时间没有恢复', detail: '如果新版本启动失败，守护进程会自动恢复旧版本；请刷新页面查看，或到服务器面板查看运行日志', tone: 'bad' });
+}
+
+// ---------- 上传更新包 ----------
+const ZIP_URL = 'https://github.com/bocmiao/api/archive/refs/heads/Miao-API.zip';
+
+function uploadUpdateHelp() {
+  modal(`<h2>上传更新包</h2>
+    <p class="muted small" style="line-height:1.8">服务器下载 GitHub 太慢时用这个办法：</p>
+    <ol class="small" style="line-height:1.9;padding-left:20px;margin:0 0 12px">
+      <li>在你自己的电脑上下载代码包：<a href="${ZIP_URL}" target="_blank" rel="noopener">点这里下载 Miao-API.zip</a>（约 11 MB，不用解压）</li>
+      <li>点下面的「选择文件」，选中刚下载的 zip</li>
+      <li>上传后服务器会检查新版本能否正常启动，再自动备份、替换并重启；失败会自动恢复</li>
+    </ol>
+    <p class="small faint">账号、API Key、调用记录和系统设置都不受影响。也支持 .tar.gz 格式。</p>
+    <div class="actions"><button class="btn" data-no>取消</button><button class="btn primary" data-pick>选择文件</button></div>`, (root, close) => {
+    $('[data-no]', root).onclick = close;
+    $('[data-pick]', root).onclick = () => { close(); $('#upload-file')?.click(); };
+  });
+}
+
+async function uploadUpdate(file) {
+  const mbText = (n) => `${(n / 1048576).toFixed(1)} MB`;
+  if (!/\.(zip|tar\.gz|tgz)$/i.test(file.name)) return toast('请选择 .zip 或 .tar.gz 格式的代码包', true);
+  if (file.size > 60 * 1048576) return toast(`文件太大（${mbText(file.size)}），最大 60 MB`, true);
+  if (!(await confirmDialog('确认上传更新', `将用「${file.name}」（${mbText(file.size)}）更新网站并自动重启，网站会中断几秒钟。账号和数据不受影响。`, { danger: false, okText: '上传并更新' }))) return;
+  const body = $('#update-body');
+  updateBar(body, { percent: 0, stage: '正在上传更新包', detail: `0 / ${mbText(file.size)}` });
+  let p;
+  try {
+    p = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/admin/update/upload');
+      xhr.setRequestHeader('content-type', 'application/octet-stream');
+      // 上传占进度条的前一半
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) updateBar(body, { percent: Math.round((e.loaded / e.total) * 50), stage: '正在上传更新包', detail: `${mbText(e.loaded)} / ${mbText(e.total)}` }); };
+      xhr.onload = () => {
+        let json = null;
+        try { json = JSON.parse(xhr.responseText); } catch { /* 非 JSON（比如反向代理的错误页） */ }
+        if (xhr.status === 200 && json?.code === 200) resolve(json.data);
+        else if (xhr.status === 413) reject(new Error(json?.message ?? '文件超过了服务器允许的上传大小：请在 1Panel 网站设置里把上传大小限制调到 60M 以上，或改用 1Panel 文件管理手动更新'));
+        else reject(new Error(json?.message ?? `上传失败（HTTP ${xhr.status}）`));
+      };
+      xhr.onerror = () => reject(new Error('上传中断，请检查网络后重试'));
+      xhr.send(file);
+    });
+  } catch (err) {
+    updateBar(body, { percent: 0, stage: '上传失败', detail: err.message, tone: 'bad' });
+    return;
+  }
+  await followUpdate(p, body);
 }
 
 // ---------- 运行状态 ----------
