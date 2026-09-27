@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import { HttpError } from './lib/http.js';
+import { renderPage, siteOrigin, sitemap, robots } from './lib/seo.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled } from './lib/modules.js';
 import { applySettings } from './lib/settings.js';
@@ -111,7 +112,7 @@ async function readRawBody(req, limit) {
 
 // 静态文件默认 no-cache + ETag：浏览器每次都向服务器确认，未变化时返回 304，在线更新后无需强制刷新；
 // 页面引用的脚本和样式带内容指纹，这类地址可以长期缓存
-async function serveStatic(req, res, pathname, query, { page = false, status = 200 } = {}) {
+async function serveStatic(req, res, pathname, query, { page = false, status = 200, transform } = {}) {
   const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
   const file = normalize(join(PUBLIC_DIR, rel));
   if (!file.startsWith(PUBLIC_DIR)) return false;
@@ -125,6 +126,11 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
           const h = createHash('sha1').update(await readFile(join(PUBLIC_DIR, asset))).digest('base64url').slice(0, 10);
           html = html.replaceAll(`"/${asset}"`, `"/${asset}?v=${h}"`);
         } catch {}
+      }
+      if (transform) {
+        const t = transform(html);
+        html = t.html;
+        status = t.status;
       }
       body = Buffer.from(html);
     }
@@ -151,15 +157,20 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
   }
 }
 
-// 网页的页面地址（/docs/epic、/console/keys、/admin/users……）：浏览器直接打开时返回页面，
+// 网页的页面地址（/docs/epic、/console/keys、/admin/users……）返回页面。
+// 只有同时也是 JSON 地址的（如 /status、/admin/users）才按请求类型区分：浏览器直接打开或搜索引擎爬虫返回页面，
 // 网页程序内部用 fetch 取数据时照常返回 JSON。/api/ 开头的接口和 /s/ 短链接不受影响
 const PAGE_ROOTS = new Set(['', 'docs', 'status', 'login', 'register', 'reset', 'console', 'admin']);
+const BOT_RE = /bot|spider|crawl|slurp|bingpreview|facebookexternalhit|embedly|quora link preview|whatsapp|telegram|skype|lark|dingtalk/i;
 export function pageNavigation(req, path) {
   if (req.method !== 'GET' || path === '/api' || /^\/(api|s)\//.test(path) || /\.[a-z0-9]+$/i.test(path)) return null;
   const mode = req.headers['sec-fetch-mode'];
   const html = mode ? mode === 'navigate' : /text\/html/.test(req.headers.accept ?? '');
-  if (!html) return null;
-  return PAGE_ROOTS.has(path.split('/')[1]) ? 200 : 404;
+  const isPage = PAGE_ROOTS.has(path.split('/')[1]);
+  const hit = accountRouter.match('GET', path);
+  if (isPage && !(hit && !hit.methodNotAllowed)) return 200; // 只是页面的地址：一律返回页面
+  if (!html && !BOT_RE.test(req.headers['user-agent'] ?? '')) return null;
+  return isPage ? 200 : 404;
 }
 
 export async function handle(req, res) {
@@ -174,7 +185,17 @@ export async function handle(req, res) {
   try {
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
     const pageStatus = pageNavigation(req, path);
-    if (pageStatus && (await serveStatic(req, res, '/', url.searchParams, { page: true, status: pageStatus }))) return;
+    if (pageStatus) {
+      const origin = siteOrigin(req);
+      // 每个页面在服务端写好标题、描述和主要内容，方便搜索引擎收录；不存在的页面返回 404
+      const transform = (html) => {
+        const r = renderPage(html, path, origin);
+        return { html: r.html, status: pageStatus === 404 ? 404 : r.status };
+      };
+      if (await serveStatic(req, res, '/', url.searchParams, { page: true, status: pageStatus, transform })) return;
+    }
+    if (req.method === 'GET' && path === '/robots.txt') return send(res, 200, robots(siteOrigin(req)), { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+    if (req.method === 'GET' && path === '/sitemap.xml') return send(res, 200, sitemap(siteOrigin(req)), { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' });
     if (req.method === 'GET' && path === '/health') return send(res, 200, envelope({ data: { status: 'up' } }));
     if (req.method === 'GET' && path === '/api') {
       const viewer = userFromSession(cookies.sid);

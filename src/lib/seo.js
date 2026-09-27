@@ -1,0 +1,186 @@
+// 搜索引擎优化：网页是单页应用，服务器返回的 index.html 原本只有一个加载动画，
+// 百度等不执行 JS 的爬虫看不到任何内容。这里按页面地址在服务端写好标题、描述、规范链接、分享卡片、结构化数据，
+// 并在 <main> 里预先放入页面主要内容（接口列表、接口文档），浏览器加载完脚本后由前端正常渲染替换。
+// 另外提供 sitemap.xml 和 robots.txt。
+import { categories, modules } from '../apis/index.js';
+import { isModuleEnabled } from './modules.js';
+import { config } from '../config.js';
+import { localChangelog } from './updater.js';
+
+const SITE = 'Miao API';
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+
+const enabled = () => modules.filter((m) => isModuleEnabled(m.name));
+const routeCount = (list) => list.reduce((n, m) => n + m.routes.length, 0);
+
+// 站点地址：优先用后台配置的 PUBLIC_URL，否则按请求头推断（只接受合法的主机名，防止注入）
+export function siteOrigin(req) {
+  if (config.publicUrl) return config.publicUrl;
+  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || 'localhost').split(',')[0].trim();
+  const proto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ? 'https' : 'http';
+  return /^[a-z0-9.-]+(:\d+)?$/i.test(host) ? `${proto}://${host}` : 'http://localhost';
+}
+
+function homeBody(list) {
+  const total = list.length;
+  return `<div class="wrap seo-pre" style="padding:40px 20px">
+<h1>${SITE}：免费聚合 API 接口平台</h1>
+<p>一个 Key 调用 ${total} 个常用接口（${routeCount(list)} 个调用地址）：游戏限免、全网热榜、天气节假日、金融行情、诗词壁纸、开发工具、网络检测与 AI。统一 JSON 格式，每个返回字段都有中文说明，支持跨域，免注册每天可免费调用。</p>
+${categories.map((c) => {
+    const ms = list.filter((m) => m.category === c.id);
+    if (!ms.length) return '';
+    return `<section><h2>${esc(c.title)}接口（${ms.length} 个）</h2><ul>${ms.map((m) => `<li><a href="/docs/${encodeURIComponent(m.name)}">${esc(m.title)} API</a>：${esc(m.description ?? '')}</li>`).join('')}</ul></section>`;
+  }).join('\n')}
+</div>`;
+}
+
+function moduleBody(m, cat) {
+  const routes = m.routes.map((r) => {
+    const params = (r.params ?? []).map((p) => `<li><code>${esc(p.name)}</code>${p.required ? '（必填）' : ''}：${esc(p.desc ?? '')}${p.example != null && p.example !== '' ? `，示例 <code>${esc(p.example)}</code>` : ''}</li>`).join('');
+    const fields = (r.fields ?? []).slice(0, 30).map((f) => `<li><code>${esc(f.name)}</code>（${esc(f.type)}）：${esc(f.desc)}</li>`).join('');
+    return `<section><h2>${esc(r.summary ?? r.path)}</h2>
+<p><code>${esc(r.method)} ${esc(r.path)}</code></p>
+${params ? `<h3>请求参数</h3><ul>${params}</ul>` : '<p>无需参数。</p>'}
+${fields ? `<h3>返回字段</h3><ul>${fields}</ul>` : ''}</section>`;
+  }).join('\n');
+  return `<div class="wrap seo-pre" style="padding:40px 20px">
+<nav><a href="/">接口</a> / ${esc(cat?.title ?? '')} / ${esc(m.title)}</nav>
+<h1>${esc(m.title)} API</h1>
+<p>${esc(m.description ?? '')}</p>
+${m.suspended ? `<p><b>该接口暂不可用</b>：${esc(m.suspended)}</p>` : ''}
+${m.source ? `<p>数据来源：${esc(m.source)}</p>` : ''}
+<p>返回统一的 JSON 格式 <code>{ code, message, cached, stale, updatedAt, data }</code>，支持跨域，免注册每天可免费调用 100 次，注册后每天 10000 次。</p>
+${routes}
+</div>`;
+}
+
+const DOCS_BODY = `<div class="wrap seo-pre" style="padding:40px 20px">
+<h1>${SITE} 开发文档</h1>
+<p>所有接口以 <code>/api/</code> 开头，绝大多数是 GET 请求，参数直接拼在网址后面。返回统一的 JSON 格式：<code>{ code, message, cached, stale, updatedAt, data }</code>，code 为 200 表示成功。</p>
+<p>接口已开启跨域（CORS），网页前端可以直接调用。不登录时按 IP 每天可免费调用 100 次；注册后创建 API Key，通过请求头 <code>X-API-Key</code> 传入，每天 10000 次。</p>
+<p>支持订阅 Epic 周免、游戏限免、必应壁纸等主题，更新时推送到微信（Server 酱）、Bark、Telegram、钉钉、飞书、企业微信、邮件或自定义 Webhook。</p>
+<p><a href="/">浏览全部接口</a> · <a href="/status">运行状态</a></p>
+</div>`;
+
+// 根据地址返回页面信息；status 为 404 表示页面不存在
+export function pageMeta(path) {
+  const list = enabled();
+  const seg = path.split('/').filter(Boolean).map((s) => { try { return decodeURIComponent(s); } catch { return s; } });
+  const total = list.length;
+  if (!seg.length) {
+    return {
+      title: `${SITE} - 免费聚合 API 接口平台 | 游戏限免、热榜、天气、节假日等 ${total} 个常用接口`,
+      description: `${SITE} 免费聚合 ${total} 个常用 API 接口：Epic 游戏限免、微博知乎热搜、天气预报、节假日、汇率、诗词、二维码、DNS 与 SSL 检测等。统一 JSON 格式，字段中文说明，支持跨域，免注册即可调用。`,
+      keywords: '免费API,API接口,聚合API,开放API,Epic免费游戏API,热搜API,天气API,节假日API,二维码API,Miao API',
+      body: homeBody(list),
+      schema: 'home',
+    };
+  }
+  if (seg[0] === 'docs' && seg.length === 1) {
+    return { title: `开发文档 - 调用方式、API Key 与推送 | ${SITE}`, description: `${SITE} 开发文档：接口调用方式、统一返回格式、API Key 与调用额度、跨域调用和订阅推送说明。`, body: DOCS_BODY };
+  }
+  if (seg[0] === 'docs' && seg.length === 2) {
+    const m = list.find((x) => x.name === seg[1]);
+    if (!m) return { status: 404, title: `页面不存在 | ${SITE}`, description: '', noindex: true };
+    const cat = categories.find((c) => c.id === m.category);
+    const summaries = m.routes.map((r) => r.summary).filter(Boolean).join('、');
+    return {
+      title: `${m.title} API 接口 - 免费调用 | ${SITE}`,
+      description: clip(`${m.title} API：${m.description ?? ''}。${summaries ? `${summaries}。` : ''}免费调用，统一 JSON 格式，含参数说明、返回字段中文注释与示例代码。`, 160),
+      keywords: `${m.title}API,${m.title}接口,免费${m.title}API,${cat?.title ?? ''}API,Miao API`,
+      body: moduleBody(m, cat),
+      schema: 'module',
+      module: m,
+      category: cat,
+    };
+  }
+  if (seg[0] === 'status' && seg.length === 1) {
+    return { title: `运行状态 - 各接口实时可用性 | ${SITE}`, description: `${SITE} 各接口最近 24 小时的调用量、平均耗时与失败率，实时查看哪些接口运行正常。` };
+  }
+  // 登录、控制台、管理后台等不需要被收录
+  return { title: SITE, description: '', noindex: true };
+}
+
+function jsonLd(meta, origin, url) {
+  const graph = [];
+  if (meta.schema === 'home') {
+    graph.push({ '@type': 'WebSite', name: SITE, url: `${origin}/`, inLanguage: 'zh-CN', description: meta.description });
+    graph.push({
+      '@type': 'SoftwareApplication', name: SITE, applicationCategory: 'DeveloperApplication', operatingSystem: 'Web',
+      url: `${origin}/`, offers: { '@type': 'Offer', price: '0', priceCurrency: 'CNY' }, license: 'https://www.gnu.org/licenses/gpl-3.0.html',
+    });
+  }
+  if (meta.schema === 'module') {
+    graph.push({
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: '接口', item: `${origin}/` },
+        { '@type': 'ListItem', position: 2, name: meta.category?.title ?? '', item: `${origin}/` },
+        { '@type': 'ListItem', position: 3, name: meta.module.title, item: url },
+      ],
+    });
+    graph.push({ '@type': 'WebAPI', name: `${meta.module.title} API`, description: meta.description, url, documentation: url, provider: { '@type': 'Organization', name: SITE, url: `${origin}/` } });
+  }
+  if (!graph.length) return '';
+  // </ 转义，防止 JSON 里的内容提前结束 <script>
+  return `<script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c')}</script>\n`;
+}
+
+// 把页面信息写进 index.html
+export function renderPage(html, path, origin) {
+  const meta = pageMeta(path);
+  const url = `${origin}${path === '/' ? '/' : path}`;
+  const head = [
+    `<title>${esc(meta.title)}</title>`,
+    meta.description ? `<meta name="description" content="${esc(meta.description)}">` : '',
+    meta.keywords ? `<meta name="keywords" content="${esc(meta.keywords)}">` : '',
+    meta.noindex ? '<meta name="robots" content="noindex, nofollow">' : `<link rel="canonical" href="${esc(url)}">`,
+    ...(meta.noindex ? [] : [
+      `<meta property="og:type" content="website">`,
+      `<meta property="og:site_name" content="${SITE}">`,
+      `<meta property="og:title" content="${esc(meta.title)}">`,
+      `<meta property="og:description" content="${esc(meta.description)}">`,
+      `<meta property="og:url" content="${esc(url)}">`,
+      `<meta property="og:image" content="${esc(origin)}/og.png">`,
+      `<meta property="og:locale" content="zh_CN">`,
+      '<meta name="twitter:card" content="summary_large_image">',
+    ]),
+  ].filter(Boolean).join('\n');
+  let out = html
+    .replace(/<title>[^<]*<\/title>/, head)
+    .replace(/<meta name="description"[^>]*>\n?/, '');
+  out = out.replace('</head>', `${jsonLd(meta, origin, url)}</head>`);
+  if (meta.body) out = out.replace(/<main id="main">[\s\S]*?<\/main>/, `<main id="main">${meta.body}</main>`);
+  return { status: meta.status ?? 200, html: out };
+}
+
+export function sitemap(origin) {
+  const lastmod = localChangelog()[0]?.date?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  const urls = [
+    ['/', '1.0', 'daily'], ['/docs', '0.8', 'weekly'], ['/status', '0.5', 'hourly'],
+    ...enabled().map((m) => [`/docs/${encodeURIComponent(m.name)}`, '0.7', 'weekly']),
+  ];
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.map(([p, pr, cf]) => `  <url><loc>${esc(origin + p)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}<changefreq>${cf}</changefreq><priority>${pr}</priority></url>`).join('\n')}
+</urlset>
+`;
+}
+
+export function robots(origin) {
+  return `User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /s/
+Disallow: /admin
+Disallow: /console
+Disallow: /login
+Disallow: /register
+Disallow: /reset
+Disallow: /auth/
+Disallow: /account/
+
+Sitemap: ${origin}/sitemap.xml
+`;
+}

@@ -75,6 +75,13 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `GLOBALPING_TOKEN` | 多节点检测提高额度（不填也可用，匿名约每小时 250 次） |
 | `LLM_API_KEY`（+ `LLM_BASE_URL` / `LLM_MODEL`） | AI 分类接口，兼容 OpenAI 格式的任意服务，默认 DeepSeek（`https://api.deepseek.com/v1`、`deepseek-chat`）；`AI_DAILY_LIMIT`（默认 20）为每个账号每天可用次数 |
 
+## 搜索引擎优化
+
+- 首页、开发文档、每个接口的文档页（`/docs/<接口名>`）和运行状态页，服务器都会直接返回对应的标题、描述、规范链接（canonical）、分享卡片（Open Graph）、结构化数据（JSON-LD）和页面正文，百度等不执行 JavaScript 的爬虫也能收录。
+- 自动生成 `/sitemap.xml`（包含全部已开启的接口文档页）和 `/robots.txt`；登录、控制台、管理后台不收录。
+- **请在「系统设置 → 基础」填写站点地址（PUBLIC_URL）**，规范链接、站点地图里的网址都以它为准。
+- 上线后可以到 [百度搜索资源平台](https://ziyuan.baidu.com/)、[Google Search Console](https://search.google.com/search-console)、[Bing 网站管理员工具](https://www.bing.com/webmasters) 验证站点并提交 `https://你的域名/sitemap.xml`。
+
 ## 接口开关
 
 管理后台的「接口开关」可以按模块关闭接口：关闭后所有人（包括管理员）调用都返回 403「该接口已被管理员关闭」（已生成的短链接也会停止跳转），普通用户在首页和 `/api` 目录中看不到；管理员仍能看到并带有「已关闭」标记。依赖该接口的推送主题会暂停推送。开关状态保存在数据库中，重启和在线更新后保持不变。

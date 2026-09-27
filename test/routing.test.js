@@ -77,3 +77,52 @@ test('前端不再使用 #/ 地址', async () => {
     assert.ok(!/href="#\//.test(src) && !/location\.hash\s*=/.test(src), f);
   }
 });
+
+test('SEO：接口文档页在服务端写好标题、描述、规范链接和正文', async () => {
+  const r = await get('/docs/epic', { 'user-agent': 'Mozilla/5.0 (compatible; Baiduspider/2.0)', accept: '*/*', host: 'api.example.com' });
+  assert.equal(r.status, 200, '爬虫不带 Accept: text/html 也能拿到页面');
+  assert.match(r.body, /<title>Epic 每周免费游戏 API 接口 - 免费调用 \| Miao API<\/title>/);
+  assert.match(r.body, /<meta name="description" content="Epic 每周免费游戏 API：/);
+  assert.match(r.body, /<link rel="canonical" href="http:\/\/api\.example\.com\/docs\/epic">/);
+  assert.match(r.body, /<meta property="og:image" content="http:\/\/api\.example\.com\/og\.png">/);
+  assert.match(r.body, /"@type":"WebAPI"/);
+  assert.match(r.body, /<h1>Epic 每周免费游戏 API<\/h1>/);
+  assert.match(r.body, /GET \/api\/epic\/free/);
+  assert.equal((r.body.match(/<meta name="description"/g) ?? []).length, 1, '原来的描述被替换，不重复');
+});
+
+test('SEO：首页列出全部接口链接；不存在的接口 404 且不收录；登录页不收录', async () => {
+  const home = await get('/', { accept: '*/*' });
+  assert.match(home.body, /<h1>Miao API：免费聚合 API 接口平台<\/h1>/);
+  assert.match(home.body, /<a href="\/docs\/epic">/);
+  assert.match(home.body, /"@type":"WebSite"/);
+  const missing = await get('/docs/no-such-api', nav);
+  assert.equal(missing.status, 404);
+  assert.match(missing.body, /noindex/);
+  const login = await get('/login', nav);
+  assert.match(login.body, /<meta name="robots" content="noindex, nofollow">/);
+  // 恶意 Host 不会被写进页面
+  const evil = await get('/', { host: 'evil.com"><script>' });
+  assert.doesNotMatch(evil.body, /evil\.com"/);
+});
+
+test('SEO：/status 对爬虫返回页面，对网页程序和命令行返回 JSON', async () => {
+  const bot = await get('/status', { 'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1)', accept: '*/*' });
+  assert.match(bot.headers['content-type'], /text\/html/);
+  assert.match(bot.body, /<title>运行状态/);
+  const curl = await get('/status', { 'user-agent': 'curl/8.0', accept: '*/*' });
+  assert.match(curl.headers['content-type'], /json/);
+});
+
+test('robots.txt 与 sitemap.xml', async () => {
+  const robots = await get('/robots.txt', { host: 'api.example.com' });
+  assert.match(robots.headers['content-type'], /text\/plain/);
+  assert.match(robots.body, /Disallow: \/api\//);
+  assert.match(robots.body, /Sitemap: http:\/\/api\.example\.com\/sitemap\.xml/);
+  const sm = await get('/sitemap.xml', { host: 'api.example.com' });
+  assert.match(sm.headers['content-type'], /xml/);
+  assert.match(sm.body, /<loc>http:\/\/api\.example\.com\/docs\/epic<\/loc>/);
+  assert.match(sm.body, /<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/);
+  const og = await get('/og.png');
+  assert.equal(og.headers['content-type'], 'image/png');
+});

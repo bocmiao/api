@@ -1995,6 +1995,22 @@ function pageNotFound() {
 }
 
 // ---------- 路由 ----------
+// 站内切换页面时同步标题、描述和规范链接（与服务端首次返回的一致，便于搜索引擎渲染后收录）
+function setPageMeta(routeName, arg) {
+  const cat = state.catalog;
+  const n = cat?.modules.length ?? 0;
+  const m = routeName === 'api' ? cat?.modules.find((x) => x.name === arg) : null;
+  const title = m ? `${m.title} API 接口 - 免费调用 | Miao API`
+    : { home: `Miao API - 免费聚合 API 接口平台 | 游戏限免、热榜、天气、节假日等 ${n} 个常用接口`, docs: '开发文档 - 调用方式、API Key 与推送 | Miao API',
+      status: '运行状态 - 各接口实时可用性 | Miao API', auth: '登录 | Miao API', console: '控制台 | Miao API', admin: '管理后台 | Miao API' }[routeName] ?? 'Miao API';
+  document.title = title;
+  const desc = m ? `${m.title} API：${m.description}。免费调用，统一 JSON 格式，含参数说明、返回字段中文注释与示例代码。` : null;
+  const metaDesc = document.querySelector('meta[name="description"]');
+  if (desc && metaDesc) metaDesc.setAttribute('content', desc);
+  const canonical = document.querySelector('link[rel="canonical"]');
+  if (canonical) canonical.setAttribute('href', location.origin + location.pathname);
+}
+
 // 页面地址用普通路径（/docs/epic、/console/keys），不带 #/。站内链接点击后用 pushState 切换，不整页刷新
 let prefetched = false;
 function navigate(path, { replace = false } = {}) {
@@ -2052,7 +2068,7 @@ async function router({ keepScroll = false } = {}) {
     $('#main').innerHTML = `<div class="wrap"><div class="empty" style="padding:100px 0">加载失败：${esc(err.message)}</div></div>`;
   }
   if (keepScroll) window.scrollTo(0, scrollY);
-  document.title = { home: 'Miao API', api: 'Miao API · 接口', docs: 'Miao API · 文档', auth: 'Miao API · 登录', console: 'Miao API · 控制台', admin: 'Miao API · 管理' }[routeName] ?? 'Miao API';
+  setPageMeta(routeName, arg);
 }
 
 migrateHashUrl();
