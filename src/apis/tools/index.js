@@ -17,6 +17,10 @@ import textTools from './texttools.js';
 import svgImage from './svgimage.js';
 import cron from './cron.js';
 import regex from './regex.js';
+import pinyin from './pinyin.js';
+import chineseConvert from './chinese-convert.js';
+import barcode from './barcode.js';
+import random from './random.js';
 
 export default [qrcode, shorturl, webmeta, whois, translate, devtools, captcha, visitor, useragent, color, ipcard,
-  netcalc, codec, securityTools, debugTools, textTools, svgImage, cron, regex];
+  netcalc, codec, securityTools, debugTools, textTools, svgImage, cron, regex, pinyin, chineseConvert, barcode, random];

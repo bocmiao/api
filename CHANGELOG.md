@@ -4,6 +4,12 @@
 1. 修改 `package.json` 中的 `version`；
 2. 在下面最上方加一段 `## v版本号 · 日期`，每条改动一行，以 `- ` 开头。
 
+## v0.9.13 · 2026-09-27
+- 新增「汉字转拼音」：/api/pinyin 支持带声调、数字声调、无声调、首字母四种格式，多音字可返回全部读音，还给出拼音缩写（如 中国 → ZG）
+- 新增「简繁转换」：/api/chinese/convert 简体和繁体互转，内置常用词语修正（如 头发 → 頭髮），并列出一简对多繁的字供核对；字表来自 OpenCC
+- 新增「条形码生成」：/api/barcode 支持 Code128、EAN-13、EAN-8，输出 SVG 或 PNG 图片，可直接放进 <img>
+- 新增「随机工具」：随机数、抽签、打乱列表、随机字符串（/api/random/number、/pick、/shuffle、/string）
+
 ## v0.9.12 · 2026-09-27
 - 热榜新增掘金热榜（/api/hot/juejin）、CSDN 热榜（/api/hot/csdn）、百度贴吧热议（/api/hot/tieba），也可以在热榜合集里选用
 - 新增「网易云音乐榜单」：/api/music/toplist 返回热歌榜、飙升榜、新歌榜、原创榜的歌曲列表

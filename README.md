@@ -377,4 +377,4 @@ test/                 测试与样例数据
 
 本项目以 [GNU GPL v3](LICENSE) 发布：可以自由使用、修改和分发；分发修改后的版本时须同样以 GPL v3 开源并保留版权声明。
 
-内置的离线数据各自沿用原许可：`ip2region` 离线 IP 库（Apache-2.0）、手机号归属地库（MIT）。
+内置的离线数据各自沿用原许可：`ip2region` 离线 IP 库（Apache-2.0）、手机号归属地库（MIT）、[OpenCC](https://github.com/BYVoid/OpenCC) 简繁转换字表（Apache-2.0）。
