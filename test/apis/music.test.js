@@ -47,11 +47,11 @@ test('解析旧版 result 结构：跳过无效条目，封面改 https', () => 
   assert.equal(d.tracks.length, 3);
   assert.deepEqual(d.tracks[0], {
     rank: 1, id: 186016, name: '晴天', artists: ['周杰伦'], album: '叶惠美', durationMs: 269000,
-    cover: 'https://p1.music.126.net/album/yehuimei.jpg', url: 'https://music.163.com/#/song?id=186016',
+    cover: 'https://p1.music.126.net/album/yehuimei.jpg', url: 'https://music.163.com/#/song?id=186016', playUrl: 'https://music.163.com/song/media/outer/url?id=186016.mp3',
   });
   assert.deepEqual(d.tracks[1].artists, ['买辣椒也用券']);
   assert.deepEqual(d.tracks[2], {
-    rank: 3, id: 2, name: '只有名字', artists: [], album: null, durationMs: null, cover: null, url: 'https://music.163.com/#/song?id=2',
+    rank: 3, id: 2, name: '只有名字', artists: [], album: null, durationMs: null, cover: null, url: 'https://music.163.com/#/song?id=2', playUrl: 'https://music.163.com/song/media/outer/url?id=2.mp3',
   });
 });
 

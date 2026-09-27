@@ -15,6 +15,9 @@ export const TOPLISTS = {
   original: { id: 2884035, title: '原创榜' },
 };
 
+// 网易云官方外链播放地址：打开后跳转到歌曲的 MP3 文件。只对免费歌曲有效，会员和付费歌曲会跳到网易云的 404 页
+export const outerUrl = (id) => `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
+
 const https = (u) => (typeof u === 'string' && /^https?:\/\//.test(u) ? u.replace(/^http:/, 'https:') : null);
 const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
 const time = (ms) => {
@@ -45,6 +48,7 @@ export function parsePlaylist(raw) {
       durationMs: num(t.dt ?? t.duration),
       cover: https(album.picUrl),
       url: `https://music.163.com/#/song?id=${id}`,
+      playUrl: outerUrl(id),
     });
   }
   return {
@@ -104,6 +108,7 @@ export default {
         { name: 'tracks[].durationMs', type: 'number|null', desc: '歌曲时长（毫秒）；上游缺失时为 null' },
         { name: 'tracks[].cover', type: 'string|null', desc: '专辑封面图链接（https）；上游缺失时为 null' },
         { name: 'tracks[].url', type: 'string', desc: '网易云音乐歌曲页链接 https://music.163.com/#/song?id=歌曲ID' },
+        { name: 'tracks[].playUrl', type: 'string', desc: '网易云官方外链播放地址，可直接放进 <audio src>；会员或付费歌曲无法播放' },
       ],
       async handler({ query }) {
         const list = param(query, 'list', { default: 'hot', oneOf: Object.keys(TOPLISTS) });

@@ -14,13 +14,8 @@ const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const enabled = () => modules.filter((m) => isModuleEnabled(m.name));
 const routeCount = (list) => list.reduce((n, m) => n + m.routes.length, 0);
 
-// 站点地址：优先用后台配置的 PUBLIC_URL，否则按请求头推断（只接受合法的主机名，防止注入）
-export function siteOrigin(req) {
-  if (config.publicUrl) return config.publicUrl;
-  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || 'localhost').split(',')[0].trim();
-  const proto = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' ? 'https' : 'http';
-  return /^[a-z0-9.-]+(:\d+)?$/i.test(host) ? `${proto}://${host}` : 'http://localhost';
-}
+export { siteOrigin } from './origin.js';
+import { siteOrigin } from './origin.js';
 
 function homeBody(list) {
   const total = list.length;
