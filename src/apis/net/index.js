@@ -18,5 +18,6 @@ import probe from './probe.js';
 import dnsPropagation from './propagation.js';
 import batchCheck from './batch.js';
 import ipReputation from './iprep.js';
+import asn from './asn.js';
 
-export default [dns, ssl, site, tcping, ping, domain, robots, favicon, links, tld, headers, emailSecurity, emailCheck, rss, webContent, crawl, appstore, probe, dnsPropagation, batchCheck, ipReputation];
+export default [dns, ssl, site, tcping, ping, domain, robots, favicon, links, tld, headers, emailSecurity, emailCheck, rss, webContent, crawl, appstore, probe, dnsPropagation, batchCheck, ipReputation, asn];

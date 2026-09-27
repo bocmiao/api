@@ -1,0 +1,35 @@
+{
+  "code": 200,
+  "message": "success",
+  "traceId": "abc-123",
+  "data": [
+    {
+      "hotRankScore": "21563",
+      "pcHotRankScore": "2.1万",
+      "loginUserIsFollow": false,
+      "nickName": "程序员阿猫",
+      "avatarUrl": "https://profile-avatar.csdnimg.cn/default.jpg",
+      "userName": "cat_coder",
+      "articleTitle": "深入理解 JVM 垃圾回收机制",
+      "articleDetailUrl": "https://blog.csdn.net/cat_coder/article/details/142000001",
+      "commentCount": "58",
+      "favorCount": "320",
+      "viewCount": "12045",
+      "hotComment": null,
+      "picList": ["https://i-blog.csdnimg.cn/direct/cover1.png"]
+    },
+    {
+      "hotRankScore": "15002",
+      "pcHotRankScore": "1.5万",
+      "nickName": "",
+      "userName": "py_dog",
+      "articleTitle": "Python 异步编程 asyncio 全解",
+      "articleDetailUrl": "http://blog.csdn.net/py_dog/article/details/142000002",
+      "commentCount": "0",
+      "favorCount": "12",
+      "viewCount": "3400",
+      "picList": []
+    },
+    { "hotRankScore": "100", "articleTitle": "", "articleDetailUrl": "https://blog.csdn.net/x/article/details/1" }
+  ]
+}

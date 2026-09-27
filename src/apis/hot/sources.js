@@ -198,6 +198,37 @@ export const SOURCES = {
   ithome: { title: 'IT之家', key: () => '', load: () => loadNews({ source: 'ithome' }) },
   '36kr': { title: '36氪', key: () => '', load: () => loadNews({ source: '36kr' }) },
   sspai: { title: '少数派', key: () => '', load: () => loadNews({ source: 'sspai' }) },
+  juejin: {
+    title: '掘金热榜',
+    key: () => '',
+    async load() {
+      // category_id=1 为综合榜
+      const raw = await fetchJSON('https://api.juejin.cn/content_api/v1/content/article_rank?category_id=1&type=hot', {
+        headers: { 'user-agent': UA, referer: 'https://juejin.cn/', origin: 'https://juejin.cn' },
+      });
+      return { title: '掘金热榜', items: P.parseJuejin(raw) };
+    },
+  },
+  csdn: {
+    title: 'CSDN 热榜',
+    key: () => '',
+    async load() {
+      const raw = await fetchJSON('https://blog.csdn.net/phoenix/web/blog/hot-rank?page=0&pageSize=30', {
+        headers: { 'user-agent': UA, referer: 'https://blog.csdn.net/rank/list' },
+      });
+      return { title: 'CSDN 热榜', items: P.parseCsdn(raw) };
+    },
+  },
+  tieba: {
+    title: '百度贴吧热议',
+    key: () => '',
+    async load() {
+      const raw = await fetchJSON('https://tieba.baidu.com/hottopic/browse/topicList?res_type=1', {
+        headers: { 'user-agent': UA, referer: 'https://tieba.baidu.com/' },
+      });
+      return { title: '百度贴吧热议', items: P.parseTieba(raw) };
+    },
+  },
   hackernews: {
     title: 'Hacker News',
     key: ({ limit = 30 } = {}) => String(limit),

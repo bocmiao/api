@@ -1,0 +1,10 @@
+{
+  "description": "RDAP bootstrap file for IPv6 address allocations（测试用精简版）",
+  "publication": "2026-09-01T00:00:00Z",
+  "services": [
+    [["2001:200::/23", "2400::/12"], ["https://rdap.apnic.net/"]],
+    [["2001:400::/23", "2600::/12"], ["https://rdap.arin.net/registry/", "http://rdap.arin.net/registry/"]],
+    [["2001:600::/23", "2a00::/12"], ["https://rdap.db.ripe.net/"]]
+  ],
+  "version": "1.0"
+}

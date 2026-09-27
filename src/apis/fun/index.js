@@ -1,3 +1,4 @@
+import music from './music.js';
 import hitokoto from './hitokoto.js';
 import poem from './poem.js';
 import bing from './bing.js';
@@ -25,5 +26,5 @@ import poetry from './poetry.js';
 export default [
   hitokoto, poem, bing, wallpaper, anime, douban, boxoffice, english,
   answer, fortune, numerology, quotes, greeting, avatar,
-  idiom, xiehouyu, brainTeaser, coldFact, compliment, joke, hanzi, poetry,
+  idiom, xiehouyu, brainTeaser, coldFact, compliment, joke, hanzi, poetry, music,
 ];

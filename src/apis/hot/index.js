@@ -82,6 +82,9 @@ const modules = [
     source: 'Hacker News API',
     unofficial: false,
   }),
+  hotModule({ id: 'juejin', title: '掘金热榜', description: '掘金综合热榜文章', source: '掘金' }),
+  hotModule({ id: 'csdn', title: 'CSDN 热榜', description: 'CSDN 博客综合热榜文章', source: 'CSDN' }),
+  hotModule({ id: 'tieba', title: '百度贴吧热议', description: '百度贴吧热议榜话题', source: '百度贴吧' }),
 ];
 
 const DEFAULT_ALL = ['weibo', 'zhihu', 'baidu', 'douyin', 'toutiao', 'bilibili'];

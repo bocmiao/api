@@ -1,0 +1,14 @@
+{
+  "objectClassName": "ip network",
+  "handle": "2a00:1450::/29",
+  "startAddress": "2a00:1450::",
+  "endAddress": "2a00:1457:ffff:ffff:ffff:ffff:ffff:ffff",
+  "ipVersion": "v6",
+  "name": "IE-GOOGLE-2a00-1450-4000-1",
+  "type": "ALLOCATED-BY-RIR",
+  "country": "ie",
+  "entities": [
+    { "handle": "ORG-GIL1-RIPE", "roles": ["registrant"], "objectClassName": "entity" }
+  ],
+  "port43": "whois.ripe.net"
+}

@@ -1,0 +1,12 @@
+{
+  "description": "RDAP bootstrap file for IPv4 address allocations（测试用精简版）",
+  "publication": "2026-09-01T00:00:00Z",
+  "services": [
+    [["1.0.0.0/8", "14.0.0.0/8", "27.0.0.0/8", "36.0.0.0/8", "101.0.0.0/8", "114.0.0.0/8", "223.0.0.0/8"], ["https://rdap.apnic.net/"]],
+    [["8.0.0.0/8", "23.0.0.0/8", "104.0.0.0/8"], ["http://rdap.arin.net/registry/", "https://rdap.arin.net/registry/"]],
+    [["2.0.0.0/8", "5.0.0.0/8", "185.0.0.0/8"], ["https://rdap.db.ripe.net/"]],
+    [["177.0.0.0/8", "200.0.0.0/8"], ["https://rdap.lacnic.net/rdap/"]],
+    [["41.0.0.0/8", "102.0.0.0/8"], ["https://rdap.afrinic.net/rdap/", "http://rdap.afrinic.net/rdap/"]]
+  ],
+  "version": "1.0"
+}

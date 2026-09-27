@@ -34,8 +34,8 @@ import { assertFieldsDocumented, matcher } from '../helpers/fields.js';
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/net/${name}`, import.meta.url), 'utf8');
 const q = (obj) => new URLSearchParams(obj);
-// 站长类新接口（安全头、邮件、RSS、正文、整站抓取、App Store）在 test/apis/webmaster.test.js 中测试
-const WEBMASTER = new Set(['site-headers', 'email-security', 'email-check', 'rss', 'web-content', 'crawl', 'appstore', 'probe', 'dns-propagation', 'batch-check', 'ip-reputation']);
+// 站长类新接口（安全头、邮件、RSS、正文、整站抓取、App Store）在 test/apis/webmaster.test.js 中测试；asn 在 test/apis/asn.test.js 中测试
+const WEBMASTER = new Set(['site-headers', 'email-security', 'email-check', 'rss', 'web-content', 'crawl', 'appstore', 'probe', 'dns-propagation', 'batch-check', 'ip-reputation', 'asn']);
 const netModules = allNetModules.filter((m) => !WEBMASTER.has(m.name));
 const routes = netModules.flatMap((m) => m.routes);
 const route = (path) => routes.find((r) => r.path === path);

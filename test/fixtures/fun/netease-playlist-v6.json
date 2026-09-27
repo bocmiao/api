@@ -1,0 +1,27 @@
+{
+  "code": 200,
+  "relatedVideos": null,
+  "playlist": {
+    "id": 19723756,
+    "name": "飙升榜",
+    "updateTime": 1790553600000,
+    "trackCount": 100,
+    "tracks": [
+      {
+        "name": "新歌一号",
+        "id": 2600000001,
+        "ar": [{ "id": 1, "name": "歌手甲" }, { "id": 2, "name": "歌手乙" }],
+        "al": { "id": 300, "name": "专辑一号", "picUrl": "http://p3.music.126.net/album/1.jpg" },
+        "dt": 201000
+      },
+      {
+        "name": "新歌二号",
+        "id": 2600000002,
+        "ar": [{ "id": 3, "name": "歌手丙" }],
+        "al": { "id": 301, "name": "专辑二号", "picUrl": "http://p3.music.126.net/album/2.jpg" },
+        "dt": 188000
+      }
+    ],
+    "trackIds": [{ "id": 2600000001 }, { "id": 2600000002 }]
+  }
+}

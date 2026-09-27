@@ -344,3 +344,82 @@ function zhihuWebUrl(link) {
   if (answer) return `https://www.zhihu.com/answer/${answer[1]}`;
   return link.replace('//api.zhihu.com/', '//www.zhihu.com/');
 }
+
+// ---------- 掘金（content_api/v1/content/article_rank） ----------
+// { err_no: 0, data: [{ content: { content_id, title, brief }, content_counter: { hot_rank, view, like, comment_count }, author: { name } }] }
+export function parseJuejin(raw) {
+  if (raw?.err_no != null && raw.err_no !== 0) throw new HttpError(502, `掘金接口返回错误：${raw.err_msg || raw.err_no}`);
+  const list = raw?.data;
+  if (!Array.isArray(list)) throw bad('掘金');
+  return normalize(
+    list.map((v) => {
+      const c = v?.content ?? {};
+      const n = v?.content_counter ?? {};
+      return {
+        title: c.title,
+        url: c.content_id ? `https://juejin.cn/post/${c.content_id}` : null,
+        hot: n.hot_rank ?? null,
+        desc: c.brief || null,
+        extra: {
+          author: v?.author?.name,
+          like: parseHotNumber(n.like),
+          comments: parseHotNumber(n.comment_count),
+        },
+      };
+    }),
+  );
+}
+
+// ---------- CSDN（phoenix/web/blog/hot-rank） ----------
+// { code: 200, data: [{ articleTitle, articleDetailUrl, hotRankScore, nickName, commentCount, picList }] }，数字多为字符串
+export function parseCsdn(raw) {
+  if (raw?.code != null && Number(raw.code) !== 200) throw new HttpError(502, `CSDN 接口返回错误：${raw.message || raw.code}`);
+  const list = raw?.data;
+  if (!Array.isArray(list)) throw bad('CSDN');
+  return normalize(
+    list.map((v) => ({
+      title: v?.articleTitle,
+      url: /^https?:\/\//.test(v?.articleDetailUrl ?? '') ? v.articleDetailUrl.replace(/^http:/, 'https:') : null,
+      hot: v?.hotRankScore ?? v?.pcHotRankScore,
+      desc: null,
+      extra: {
+        author: v?.nickName || v?.userName,
+        comments: parseHotNumber(v?.commentCount),
+        cover: Array.isArray(v?.picList) ? v.picList.find((p) => typeof p === 'string' && /^https?:\/\//.test(p)) : null,
+      },
+    })),
+  );
+}
+
+// ---------- 百度贴吧热议（hottopic/browse/topicList） ----------
+// { errno: 0, data: { bang_topic: { topic_list: [{ topic_id, topic_name, topic_desc, abstract, topic_pic, discuss_num, topic_url, create_time }] } } }
+export function parseTieba(raw) {
+  if (raw?.errno != null && raw.errno !== 0) throw new HttpError(502, `贴吧接口返回错误：${raw.errmsg || raw.errno}`);
+  const list = raw?.data?.bang_topic?.topic_list;
+  if (!Array.isArray(list)) throw bad('百度贴吧');
+  const absUrl = (u) => {
+    if (typeof u !== 'string' || !u) return null;
+    if (u.startsWith('//')) return `https:${u}`;
+    if (u.startsWith('/')) return `https://tieba.baidu.com${u}`;
+    return /^https?:\/\//.test(u) ? u.replace(/^http:/, 'https:') : null;
+  };
+  return normalize(
+    list.map((v) => {
+      const name = v?.topic_name;
+      const fallback = v?.topic_id
+        ? `https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=${encodeURIComponent(v.topic_id)}&topic_name=${encodeURIComponent(name ?? '')}`
+        : null;
+      const t = Number(v?.create_time);
+      return {
+        title: name,
+        url: absUrl(v?.topic_url) ?? fallback,
+        hot: v?.discuss_num,
+        desc: v?.topic_desc || v?.abstract || null,
+        extra: {
+          cover: absUrl(v?.topic_pic),
+          time: Number.isFinite(t) && t > 0 ? new Date(t * 1000).toISOString() : null,
+        },
+      };
+    }),
+  );
+}

@@ -377,6 +377,7 @@ const UPSTREAM = [
   ['ithome.com/rss', fx('ithome.xml')],
   ['36kr.com/feed', fx('36kr.xml')],
   ['sspai.com/feed', fx('sspai.xml')],
+  ['api.juejin.cn', fx('juejin.json')], ['blog.csdn.net/phoenix', fx('csdn.json')], ['tieba.baidu.com/hottopic', fx('tieba.json')],
   // Firebase：41000009 获取失败（404），41000003 已删除
   ['topstories.json', JSON.stringify([41000001, 41000009, 41000002, 41000003])],
   ...json('hn-items.json')
@@ -387,6 +388,7 @@ const UPSTREAM = [
 // 每个路由的样例请求：[查询参数, 优先匹配的上游 mock]
 const FIELD_CASES = {
   '/api/hot/weibo': [['']],
+  '/api/hot/juejin': [['']], '/api/hot/csdn': [['']], '/api/hot/tieba': [['']],
   '/api/hot/zhihu': [[''], ['', [['api.zhihu.com', fx('zhihu-web.json')]]]],
   '/api/hot/bilibili': [['type=popular'], ['type=rank']],
   '/api/hot/douyin': [['']],

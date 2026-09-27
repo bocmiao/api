@@ -1,0 +1,33 @@
+{
+  "rdapConformance": ["nro_rdap_profile_0", "rdap_level_0", "nro_rdap_profile_asn_flat_0"],
+  "handle": "AS13335",
+  "startAutnum": 13335,
+  "endAutnum": 13335,
+  "name": "CLOUDFLARENET",
+  "type": "DIRECT ALLOCATION",
+  "status": ["active"],
+  "events": [
+    { "eventAction": "last changed", "eventDate": "2024-02-17T17:54:05-05:00" },
+    { "eventAction": "registration", "eventDate": "2010-07-14T18:35:57-04:00" }
+  ],
+  "links": [{ "value": "https://rdap.arin.net/registry/autnum/13335", "rel": "self", "type": "application/rdap+json", "href": "https://rdap.arin.net/registry/autnum/13335" }],
+  "remarks": [{ "title": "Registration Comments", "description": ["All Cloudflare abuse reporting can be done via https://www.cloudflare.com/abuse"] }],
+  "entities": [
+    {
+      "handle": "CLOUD14",
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Cloudflare, Inc."], ["kind", {}, "text", "org"]]],
+      "roles": ["registrant"],
+      "entities": [
+        {
+          "handle": "ABUSE2916-ARIN",
+          "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Abuse"], ["kind", {}, "text", "group"], ["email", {}, "text", "abuse@cloudflare.com"]]],
+          "roles": ["abuse"],
+          "objectClassName": "entity"
+        }
+      ],
+      "objectClassName": "entity"
+    }
+  ],
+  "port43": "whois.arin.net",
+  "objectClassName": "autnum"
+}

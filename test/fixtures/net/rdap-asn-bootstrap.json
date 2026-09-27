@@ -1,0 +1,10 @@
+{
+  "description": "RDAP bootstrap file for Autonomous System Number allocations（测试用精简版）",
+  "publication": "2026-09-01T00:00:00Z",
+  "services": [
+    [["1-1876", "1902-2042", "13312-15359", "393216-399259"], ["https://rdap.arin.net/registry/", "http://rdap.arin.net/registry/"]],
+    [["4134", "4608-4865", "7467-7722", "131072-141625"], ["https://rdap.apnic.net/"]],
+    [["1877-1901", "3154-3353", "196608-213403"], ["https://rdap.db.ripe.net/"]]
+  ],
+  "version": "1.0"
+}

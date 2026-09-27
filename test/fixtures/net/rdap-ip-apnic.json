@@ -1,0 +1,49 @@
+{
+  "objectClassName": "ip network",
+  "handle": "1.1.1.0 - 1.1.1.255",
+  "startAddress": "1.1.1.0",
+  "endAddress": "1.1.1.255",
+  "ipVersion": "v4",
+  "name": "APNIC-LABS",
+  "type": "ASSIGNED PORTABLE",
+  "country": "AU",
+  "parentHandle": "1.1.0.0 - 1.1.255.255",
+  "status": ["active"],
+  "cidr0_cidrs": [{ "v4prefix": "1.1.1.0", "length": 24 }],
+  "remarks": [
+    {
+      "title": "description",
+      "description": ["APNIC and Cloudflare DNS Resolver project", "Routed globally by AS13335/Cloudflare", "Research prefix for APNIC Labs"]
+    },
+    { "title": "remarks", "description": ["---------------", "All Cloudflare abuse reporting can be done via", "resolver-abuse@cloudflare.com", "---------------"] }
+  ],
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "handle": "ORG-ARAD1-AP",
+      "roles": ["registrant"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "APNIC Research and Development"], ["kind", {}, "text", "org"]]]
+    },
+    {
+      "objectClassName": "entity",
+      "handle": "IRT-APNICRANDNET-AU",
+      "roles": ["abuse"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "IRT-APNICRANDNET-AU"], ["kind", {}, "text", "group"], ["email", { "pref": "1" }, "text", "helpdesk@apnic.net"]]]
+    },
+    {
+      "objectClassName": "entity",
+      "handle": "AR302-AP",
+      "roles": ["administrative", "technical"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "APNIC RESEARCH"], ["kind", {}, "text", "group"]]]
+    }
+  ],
+  "events": [
+    { "eventAction": "registration", "eventDate": "2011-08-10T23:12:35Z" },
+    { "eventAction": "last changed", "eventDate": "2023-04-26T22:57:58Z" }
+  ],
+  "links": [
+    { "value": "https://rdap.apnic.net/ip/1.1.1.1", "rel": "self", "href": "https://rdap.apnic.net/ip/1.1.1.0/24", "type": "application/rdap+json" }
+  ],
+  "port43": "whois.apnic.net",
+  "rdapConformance": ["history_version_0", "nro_rdap_profile_0", "cidr0", "rdap_level_0"]
+}

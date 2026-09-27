@@ -1,0 +1,39 @@
+{
+  "errno": 0,
+  "errmsg": "success",
+  "data": {
+    "bang_head_pic": "https://tieba-fe.cdn.bcebos.com/head.png",
+    "bang_topic": {
+      "module_title": "贴吧热议榜",
+      "topic_list": [
+        {
+          "topic_id": 28001234,
+          "topic_name": "国庆假期出行高峰",
+          "topic_desc": "今年国庆黄金周，你打算去哪里玩？",
+          "abstract": "国庆出行话题",
+          "topic_pic": "https://tiebapic.baidu.com/forum/pic/item/aaa.jpg",
+          "tag": 2,
+          "discuss_num": 1856432,
+          "idx_num": 1,
+          "create_time": 1790000000,
+          "content_num": 3021,
+          "topic_avatar": "https://tiebapic.baidu.com/forum/pic/item/avatar.jpg",
+          "is_video_topic": "0",
+          "topic_url": "http://tieba.baidu.com/hottopic/browse/hottopic?topic_id=28001234&topic_name=%E5%9B%BD%E5%BA%86%E5%81%87%E6%9C%9F%E5%87%BA%E8%A1%8C%E9%AB%98%E5%B3%B0"
+        },
+        {
+          "topic_id": 28001235,
+          "topic_name": "新赛季开赛",
+          "topic_desc": "",
+          "abstract": "",
+          "topic_pic": "",
+          "tag": 0,
+          "discuss_num": 523100,
+          "idx_num": 2
+        },
+        { "topic_id": 28001236, "topic_name": "", "discuss_num": 1 }
+      ]
+    },
+    "timestamp": 1790000100
+  }
+}

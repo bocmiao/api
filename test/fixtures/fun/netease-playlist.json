@@ -1,0 +1,31 @@
+{
+  "code": 200,
+  "result": {
+    "id": 3778678,
+    "name": "云音乐热歌榜",
+    "coverImgUrl": "http://p1.music.126.net/cover/hot.jpg",
+    "updateTime": 1790467200000,
+    "trackCount": 200,
+    "description": "云音乐热歌榜：云音乐用户一周内收听所有线上歌曲官方TOP排行榜，每周四更新。",
+    "tracks": [
+      {
+        "name": "晴天",
+        "id": 186016,
+        "position": 1,
+        "duration": 269000,
+        "artists": [{ "name": "周杰伦", "id": 6452 }],
+        "album": { "name": "叶惠美", "id": 18905, "picUrl": "http://p1.music.126.net/album/yehuimei.jpg" }
+      },
+      {
+        "name": "起风了",
+        "id": 1330348068,
+        "duration": 325868,
+        "artists": [{ "name": "买辣椒也用券", "id": 12085016 }, { "name": "" }],
+        "album": { "name": "起风了", "id": 74715426, "picUrl": "https://p2.music.126.net/album/qifengle.jpg" }
+      },
+      { "name": "", "id": 1 },
+      { "name": "无 ID 的歌" },
+      { "name": "只有名字", "id": 2 }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "objectClassName": "autnum",
+  "handle": "AS4134",
+  "startAutnum": 4134,
+  "endAutnum": 4134,
+  "name": "CHINANET-BACKBONE",
+  "type": "ALLOCATED PORTABLE",
+  "country": "CN",
+  "status": ["active"],
+  "remarks": [{ "title": "description", "description": ["No.31,Jin-rong Street"] }],
+  "entities": [
+    {
+      "handle": "ORG-CT1-AP",
+      "roles": ["registrant"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "China Telecom"], ["kind", {}, "text", "org"]]]
+    },
+    {
+      "handle": "IRT-CHINANET-CN",
+      "roles": ["abuse"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "IRT-CHINANET-CN"], ["email", {}, "text", "anti-spam@chinatelecom.cn"]]]
+    }
+  ],
+  "events": [
+    { "eventAction": "registration", "eventDate": "2008-09-04T07:55:09Z" },
+    { "eventAction": "last changed", "eventDate": "2021-06-15T08:18:21Z" }
+  ],
+  "port43": "whois.apnic.net"
+}
