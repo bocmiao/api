@@ -42,7 +42,7 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 
 **推荐在网站「管理 → 系统设置」里配置**：下表中的大部分项目（额度、邮件、第三方密钥、在线更新等）都可以在后台填写，保存后立即生效，优先级高于环境变量；密钥类只显示「已设置」，不会回显。以下环境变量适合在首次部署时使用。
 
-复制 `.env.example` 为 `.env` 后按需修改（Docker 用 `--env-file`，直接运行可用 `node --env-file=.env src/server.js`）。
+复制 `.env.example` 为 `.env` 后按需修改：`npm start` 会自动读取项目目录下的 `.env`（已经设置的环境变量优先）；Docker 用 `--env-file`。
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |

@@ -2,10 +2,21 @@
 // - 退出码 75：在线更新完成，立即用新代码重启
 // - 其他异常退出：延迟重启；若刚完成更新且新版本在健康确认前崩溃，先回滚到旧版本再重启
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readPending, rollbackPending } from './lib/swap.js';
 
 const SERVER = fileURLToPath(new URL('./server.js', import.meta.url));
+const ENV_FILE = fileURLToPath(new URL('../.env', import.meta.url));
+
+// 项目目录下有 .env 时自动读取（已经存在的环境变量优先，不会被覆盖），npm start 不用再加 --env-file
+if (existsSync(ENV_FILE)) {
+  try {
+    process.loadEnvFile(ENV_FILE);
+  } catch (err) {
+    console.error('[launcher] 读取 .env 失败：', err.message);
+  }
+}
 export const RESTART_CODE = 75;
 
 let child = null;

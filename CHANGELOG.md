@@ -4,6 +4,9 @@
 1. 修改 `package.json` 中的 `version`；
 2. 在下面最上方加一段 `## v版本号 · 日期`，每条改动一行，以 `- ` 开头。
 
+## v0.9.7 · 2026-09-27
+- `npm start` 会自动读取项目目录下的 `.env`（已经设置的环境变量优先），不用再手动加 `--env-file`
+
 ## v0.9.6 · 2026-09-27
 - 项目以 GPL v3 许可证开源：README 新增「许可证」说明，package.json 的 license 字段与 LICENSE 文件保持一致
 - Docker 镜像带上 CHANGELOG.md，用 Docker 部署时后台「更新记录」页不再为空
