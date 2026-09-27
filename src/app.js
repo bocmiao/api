@@ -7,7 +7,7 @@ import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import { HttpError } from './lib/http.js';
-import { renderPage, siteOrigin, sitemap, robots } from './lib/seo.js';
+import { renderPage, renderAbout, siteOrigin, sitemap, robots } from './lib/seo.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled } from './lib/modules.js';
 import { applySettings } from './lib/settings.js';
@@ -19,7 +19,7 @@ import { consume, logRequest } from './lib/limits.js';
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json; charset=utf-8',
 };
 const CORS = {
   'access-control-allow-origin': '*',
@@ -184,6 +184,11 @@ export async function handle(req, res) {
 
   try {
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
+    // 产品发布页：独立的静态页面，服务端填入接口数量等信息（about.html 是模板，不直接对外）
+    if (req.method === 'GET' && (path === '/about' || path === '/about.html')) {
+      const origin = siteOrigin(req);
+      if (await serveStatic(req, res, '/about.html', url.searchParams, { page: true, transform: (html) => ({ html: renderAbout(html, origin), status: 200 }) })) return;
+    }
     const pageStatus = pageNavigation(req, path);
     if (pageStatus) {
       const origin = siteOrigin(req);

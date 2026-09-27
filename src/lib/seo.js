@@ -5,7 +5,7 @@
 import { categories, modules } from '../apis/index.js';
 import { isModuleEnabled } from './modules.js';
 import { config } from '../config.js';
-import { localChangelog } from './updater.js';
+import { localChangelog, RUNNING_VERSION } from './updater.js';
 
 const SITE = 'Miao API';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -155,10 +155,60 @@ export function renderPage(html, path, origin) {
   return { status: meta.status ?? 200, html: out };
 }
 
+// 产品发布页（/about）：把接口数量、额度、分类卡片等填进 about.html
+const CAT_INFO = {
+  games: ['🎮', 'Epic 周免、Steam / GOG 限免、PS Plus 会免、Xbox Game Pass', 'epic'],
+  hot: ['🔥', '微博、知乎、B 站、抖音、百度、GitHub Trending、Hacker News', 'hot-weibo'],
+  life: ['☀️', '天气、节假日、农历黄历、油价、IP / 手机号归属地、个税', 'weather'],
+  finance: ['📈', '汇率换算、股票行情、基金净值、加密货币、金价银价', 'fx'],
+  fun: ['✨', '一言、诗词、成语词典、必应壁纸、每日英语、豆瓣电影', 'hitokoto'],
+  ai: ['🤖', '文本摘要、情感分析、AI 翻译、智能对话', 'ai'],
+  tools: ['🛠️', '二维码、短链接、翻译、时间戳、Base64、JWT、正则测试', 'qrcode'],
+  net: ['🌐', 'DNS、SSL 证书、网站测速、Ping、多节点检测、Whois', 'dns'],
+};
+const fmtInt = (n) => Number(n).toLocaleString('en-US');
+
+export function renderAbout(html, origin) {
+  const list = enabled();
+  const cats = categories.map((c) => {
+    const n = list.filter((m) => m.category === c.id).length;
+    if (!n) return '';
+    const [ico, desc, doc] = CAT_INFO[c.id] ?? ['•', '', ''];
+    const href = list.some((m) => m.name === doc) ? `/docs/${doc}` : '/';
+    return `<a class="cat reveal" href="${href}"><div class="cat-top"><span class="cat-ico" aria-hidden="true">${ico}</span><span class="cat-n">${n}</span></div><h3>${esc(c.title)}</h3><p>${esc(desc)}</p></a>`;
+  }).filter(Boolean);
+  const ld = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'SoftwareApplication', name: SITE, applicationCategory: 'DeveloperApplication', operatingSystem: 'Web, Linux, Docker',
+        url: `${origin}/about`, softwareVersion: RUNNING_VERSION, license: 'https://www.gnu.org/licenses/gpl-3.0.html',
+        codeRepository: 'https://github.com/bocmiao/api', offers: { '@type': 'Offer', price: '0', priceCurrency: 'CNY' },
+        description: `开源免费的聚合 API 接口平台，提供 ${list.length} 个常用接口。`,
+      },
+      {
+        '@type': 'FAQPage',
+        mainEntity: [
+          ['Miao API 是免费的吗？', `是的。在线站点不注册每天可免费调用 ${config.limits.anonDaily} 次，免费注册后每天 ${config.limits.userDaily} 次；自己部署则没有任何限制。`],
+          ['调用需要 API Key 吗？', '不需要。大多数接口直接请求就能用；注册后创建 API Key 可获得更高额度。'],
+          ['可以部署到自己的服务器吗？', '可以。项目以 GPL v3 协议开源，只需要 Node.js 22.13 以上或 Docker，没有任何第三方依赖。'],
+        ].map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+      },
+    ],
+  };
+  const vars = {
+    ORIGIN: esc(origin), MODULES: String(list.length), ROUTES: String(routeCount(list)), CAT_COUNT: String(cats.length),
+    ANON: fmtInt(config.limits.anonDaily), USER: fmtInt(config.limits.userDaily), VERSION: esc(RUNNING_VERSION),
+    CATS: cats.join(''),
+    JSONLD: `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`,
+  };
+  return html.replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => (k in vars ? vars[k] : m));
+}
+
 export function sitemap(origin) {
   const lastmod = localChangelog()[0]?.date?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
   const urls = [
-    ['/', '1.0', 'daily'], ['/docs', '0.8', 'weekly'], ['/status', '0.5', 'hourly'],
+    ['/', '1.0', 'daily'], ['/about', '0.9', 'weekly'], ['/docs', '0.8', 'weekly'], ['/status', '0.5', 'hourly'],
     ...enabled().map((m) => [`/docs/${encodeURIComponent(m.name)}`, '0.7', 'weekly']),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>

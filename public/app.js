@@ -2029,7 +2029,7 @@ document.addEventListener('click', (e) => {
   const a = e.target.closest('a[href]');
   if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
   const url = new URL(a.href, location.href);
-  if (url.origin !== location.origin || url.pathname === '/api' || /^\/(api|s)\//.test(url.pathname) || /\.[a-z0-9]+$/i.test(url.pathname)) return;
+  if (url.origin !== location.origin || url.pathname === '/api' || url.pathname === '/about' || /^\/(api|s)\//.test(url.pathname) || /\.[a-z0-9]+$/i.test(url.pathname)) return;
   if (url.pathname === location.pathname && url.hash) return; // 页内锚点
   e.preventDefault();
   navigate(url.pathname + url.search);

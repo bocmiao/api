@@ -78,6 +78,7 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 ## 搜索引擎优化
 
 - 首页、开发文档、每个接口的文档页（`/docs/<接口名>`）和运行状态页，服务器都会直接返回对应的标题、描述、规范链接（canonical）、分享卡片（Open Graph）、结构化数据（JSON-LD）和页面正文，百度等不执行 JavaScript 的爬虫也能收录。
+- 产品发布页 `/about`：介绍功能、在线试用、部署步骤和常见问题，接口数量、额度等数字由服务端实时填入，适合对外宣传和分享。
 - 自动生成 `/sitemap.xml`（包含全部已开启的接口文档页）和 `/robots.txt`；登录、控制台、管理后台不收录。
 - **请在「系统设置 → 基础」填写站点地址（PUBLIC_URL）**，规范链接、站点地图里的网址都以它为准。
 - 上线后可以到 [百度搜索资源平台](https://ziyuan.baidu.com/)、[Google Search Console](https://search.google.com/search-console)、[Bing 网站管理员工具](https://www.bing.com/webmasters) 验证站点并提交 `https://你的域名/sitemap.xml`。

@@ -126,3 +126,24 @@ test('robots.txt 与 sitemap.xml', async () => {
   const og = await get('/og.png');
   assert.equal(og.headers['content-type'], 'image/png');
 });
+
+test('产品发布页 /about：填好接口数量等信息，不留模板占位符，也在站点地图里', async () => {
+  for (const headers of [nav, { accept: '*/*' }]) {
+    const r = await get('/about', { ...headers, host: 'api.example.com' });
+    assert.equal(r.status, 200);
+    assert.match(r.headers['content-type'], /text\/html/);
+    assert.doesNotMatch(r.body, /\{\{[A-Z_]+\}\}/, '占位符全部替换');
+    assert.match(r.body, /<link rel="canonical" href="http:\/\/api\.example\.com\/about">/);
+    assert.match(r.body, /"@type":"FAQPage"/);
+    assert.match(r.body, /<a class="cat reveal" href="\/docs\/epic">/);
+    assert.match(r.body, /<b>\d+<\/b><span>个常用接口<\/span>/);
+  }
+  const raw = await get('/about.html', nav);
+  assert.doesNotMatch(raw.body, /\{\{[A-Z_]+\}\}/, '直接访问模板文件也会被填好');
+  const sm = await get('/sitemap.xml', { host: 'api.example.com' });
+  assert.match(sm.body, /<loc>http:\/\/api\.example\.com\/about<\/loc>/);
+  const js = await get('/about.js');
+  assert.match(js.headers['content-type'], /javascript/);
+  const img = await get('/img/playground.jpg');
+  assert.equal(img.headers['content-type'], 'image/jpeg');
+});

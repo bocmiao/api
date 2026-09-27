@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Miao API - 开源免费的聚合 API 接口平台 | {{MODULES}} 个常用接口一站搞定</title>
+<meta name="description" content="Miao API 是开源免费的聚合 API 接口平台：游戏限免、全网热搜、天气、节假日、汇率、二维码、网络检测等 {{MODULES}} 个常用接口，统一 JSON 格式、字段中文说明、支持跨域，免注册即可调用，也能一键部署到自己的服务器。">
+<meta name="keywords" content="免费API,API接口,聚合API,开源API平台,自建API,热搜API,天气API,节假日API,Epic免费游戏API,Miao API">
+<link rel="canonical" href="{{ORIGIN}}/about">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Miao API">
+<meta property="og:title" content="Miao API - 开源免费的聚合 API 接口平台">
+<meta property="og:description" content="{{MODULES}} 个常用接口一站搞定：统一格式、中文文档、在线调试、更新推送，免注册即可调用，也能部署到自己的服务器。">
+<meta property="og:url" content="{{ORIGIN}}/about">
+<meta property="og:image" content="{{ORIGIN}}/og.png">
+<meta property="og:locale" content="zh_CN">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+{{JSONLD}}
+<style>
+  body { background: var(--bg); color: var(--text); }
+  .lp { --max: 1160px; overflow-x: hidden; }
+  .lp a { color: inherit; text-decoration: none; }
+  .lp-wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+  .lp-nav { position: sticky; top: 0; z-index: 20; backdrop-filter: saturate(180%) blur(12px); background: color-mix(in srgb, var(--bg) 82%, transparent); border-bottom: 1px solid var(--border); }
+  .lp-nav .lp-wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .lp-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+  .lp-logo svg { width: 32px; height: 32px; }
+  .lp-links { display: flex; gap: 22px; font-size: 14px; color: var(--text-2); }
+  .lp-links a:hover { color: var(--text); }
+  .lp-nav .grow { flex: 1; }
+  .lp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 20px; border-radius: 11px; font-size: 15px; font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; transition: transform .15s, background .15s, border-color .15s; white-space: nowrap; }
+  .lp-btn:hover { transform: translateY(-1px); border-color: var(--text-3); }
+  .lp-btn.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); box-shadow: 0 8px 24px color-mix(in srgb, var(--brand) 35%, transparent); }
+  .lp-btn.primary:hover { background: var(--brand-2); border-color: var(--brand-2); }
+  .lp-btn.sm { height: 36px; padding: 0 14px; font-size: 14px; }
+  .lp-btn svg { width: 18px; height: 18px; }
+  .lp-btn.lp-icon-btn { width: 36px; height: 36px; padding: 0; border-radius: 10px; flex: none; }
+
+  /* 首屏 */
+  .lp-hero { position: relative; padding: 84px 0 72px; }
+  .lp-hero::before { content: ""; position: absolute; inset: -120px 0 0; background: radial-gradient(640px 380px at 78% 18%, color-mix(in srgb, var(--brand) 22%, transparent), transparent 70%), radial-gradient(520px 360px at 8% 90%, color-mix(in srgb, var(--series-2) 12%, transparent), transparent 70%); pointer-events: none; z-index: -1; }
+  .lp-hero .lp-wrap { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+  .lp-hero .lp-wrap > *, .try > *, .deploy > *, .oss > * { min-width: 0; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 13px; color: var(--text-2); }
+  .pill b { background: var(--brand-soft); color: var(--brand); padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .lp-hero h1 { font-size: clamp(40px, 5.6vw, 64px); line-height: 1.12; letter-spacing: -.02em; margin: 22px 0 18px; font-weight: 800; }
+  .lp-hero h1 em { font-style: normal; background: linear-gradient(90deg, var(--brand), #a855f7); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lp-hero p.lead { font-size: 18px; line-height: 1.75; color: var(--text-2); margin: 0 0 30px; max-width: 34em; }
+  .lp-hero .ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+  .install { margin-top: 26px; display: flex; align-items: center; gap: 10px; max-width: 480px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 6px 6px 6px 16px; font-family: var(--mono); font-size: 13.5px; color: var(--text-2); }
+  .install code { flex: 1; overflow-x: auto; white-space: nowrap; }
+  .install code::before { content: "$ "; color: var(--brand); }
+
+  .term { background: var(--code-bg); border-radius: 18px; box-shadow: 0 30px 70px rgb(15 17 40 / .28); overflow: hidden; border: 1px solid rgb(255 255 255 / .06); }
+  .term-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid rgb(255 255 255 / .07); }
+  .term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3d4d; display: block; }
+  .term-bar i:nth-child(1) { background: #f87171; } .term-bar i:nth-child(2) { background: #fbbf24; } .term-bar i:nth-child(3) { background: #34d399; }
+  .term-bar span { margin-left: 10px; color: #8b8fa8; font: 12.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .term pre { margin: 0; padding: 18px 20px 22px; color: #e5e7ff; font: 13.5px/1.7 var(--mono); height: 340px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .j-k { color: #a5b4fc; } .j-s { color: #86efac; } .j-n { color: #fdba74; } .j-b { color: #f9a8d4; } .j-c { color: #6b7093; }
+
+  /* 数字条 */
+  .stats { border-block: 1px solid var(--border); background: var(--surface); }
+  .stats .lp-wrap { display: grid; grid-template-columns: repeat(5, 1fr); }
+  .stat { padding: 26px 10px; text-align: center; }
+  .stat + .stat { border-left: 1px solid var(--border); }
+  .stat b { display: block; font-size: 32px; font-weight: 800; letter-spacing: -.02em; }
+  .stat span { font-size: 13px; color: var(--text-3); }
+
+  /* 通用区块 */
+  .sec { padding: 96px 0; }
+  .sec.alt { background: var(--surface); border-block: 1px solid var(--border); }
+  .sec-head { text-align: center; max-width: 680px; margin: 0 auto 52px; }
+  .eyebrow { display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: .08em; color: var(--brand); margin-bottom: 12px; }
+  .sec-head h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.25; letter-spacing: -.01em; margin: 0 0 14px; }
+  .sec-head p { color: var(--text-2); font-size: 16.5px; line-height: 1.75; margin: 0; }
+
+  .cats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .cat { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px; transition: transform .15s, box-shadow .15s, border-color .15s; display: block; }
+  .sec.alt .cat { background: var(--bg); }
+  .cat:hover { transform: translateY(-3px); box-shadow: 0 14px 34px rgb(20 20 60 / .08); border-color: color-mix(in srgb, var(--brand) 40%, var(--border)); }
+  .cat-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .cat-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; background: var(--brand-soft); }
+  .cat-n { font-size: 26px; font-weight: 800; color: var(--brand); }
+  .cat h3 { font-size: 17px; margin: 0 0 6px; }
+  .cat p { font-size: 13.5px; color: var(--text-2); line-height: 1.65; margin: 0; }
+
+  .feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .feat { padding: 26px; border-radius: 16px; background: var(--bg); border: 1px solid var(--border); }
+  .feat .fi { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); margin-bottom: 16px; }
+  .feat .fi svg { width: 22px; height: 22px; }
+  .feat h3 { font-size: 17px; margin: 0 0 8px; }
+  .feat p { font-size: 14.5px; line-height: 1.75; color: var(--text-2); margin: 0; }
+
+  /* 在线试一试 */
+  .try { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+  .try-list { display: flex; flex-direction: column; gap: 8px; }
+  .try-item { text-align: left; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font: inherit; color: inherit; transition: border-color .15s, background .15s; }
+  .try-item:hover { border-color: var(--text-3); }
+  .try-item.on { border-color: var(--brand); background: var(--brand-soft); }
+  .try-item b { display: block; font-size: 15px; margin-bottom: 3px; }
+  .try-item code { font: 12.5px var(--mono); color: var(--text-3); word-break: break-all; }
+  .try .term pre { height: 420px; }
+  .try-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid rgb(255 255 255 / .07); color: #8b8fa8; font: 12.5px var(--mono); }
+  .try-meta a { color: #a5b4fc; }
+
+  /* 截图 */
+  .shots-tabs { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-bottom: 26px; }
+  .shots-tabs button { height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font: 600 14px/1 inherit; cursor: pointer; }
+  .shots-tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .shot { border-radius: 16px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 30px 70px rgb(20 20 60 / .12); background: var(--surface); }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot-cap { text-align: center; color: var(--text-2); font-size: 14.5px; margin-top: 18px; }
+
+  /* 部署 */
+  .deploy { display: grid; grid-template-columns: .9fr 1.1fr; gap: 40px; align-items: start; }
+  .steps { display: flex; flex-direction: column; gap: 14px; }
+  .step { display: flex; gap: 16px; padding: 18px 20px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border); }
+  .step .no { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--brand); color: var(--on-brand); font-weight: 800; display: grid; place-items: center; font-size: 15px; }
+  .step h3 { font-size: 16px; margin: 3px 0 5px; }
+  .step p { margin: 0; font-size: 14px; color: var(--text-2); line-height: 1.7; }
+  .step code, .faq code, .feat code { font: 12.5px var(--mono); background: var(--surface-2); padding: 1px 6px; border-radius: 5px; }
+  .code-tabs { display: flex; gap: 4px; padding: 10px 12px 0; }
+  .code-tabs button { background: none; border: 0; color: #8b8fa8; font: 600 13px var(--mono); padding: 8px 12px; border-radius: 8px 8px 0 0; cursor: pointer; }
+  .code-tabs button.on { color: #fff; background: rgb(255 255 255 / .07); }
+  .code-box { position: relative; }
+  .code-box pre { height: auto; min-height: 250px; }
+  .copy { position: absolute; top: 12px; right: 12px; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid rgb(255 255 255 / .14); background: rgb(255 255 255 / .06); color: #cfd2e6; font: 12.5px inherit; cursor: pointer; }
+  .copy:hover { background: rgb(255 255 255 / .12); }
+
+  /* 开源 */
+  .oss { display: grid; grid-template-columns: 1.2fr .8fr; gap: 40px; align-items: center; padding: 48px; border-radius: 22px; background: linear-gradient(135deg, #1e1b4b, #312e81 55%, #4c1d95); color: #eef0ff; position: relative; overflow: hidden; }
+  .oss::after { content: ""; position: absolute; width: 420px; height: 420px; right: -120px; top: -160px; border-radius: 50%; background: radial-gradient(closest-side, rgb(165 180 252 / .35), transparent); }
+  .oss h2 { font-size: 32px; margin: 0 0 14px; color: #fff; }
+  .oss p { color: #c7cbf2; line-height: 1.8; margin: 0 0 22px; font-size: 15.5px; }
+  .oss ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; position: relative; z-index: 1; }
+  .oss li { display: flex; gap: 12px; align-items: flex-start; background: rgb(255 255 255 / .07); border: 1px solid rgb(255 255 255 / .1); border-radius: 12px; padding: 14px 16px; font-size: 14.5px; }
+  .oss li b { color: #fff; }
+  .oss .lp-btn { background: #fff; color: #1e1b4b; border-color: #fff; }
+
+  .faq { max-width: 780px; margin: 0 auto; display: grid; gap: 10px; }
+  .faq details { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 0 22px; }
+  .faq summary { cursor: pointer; list-style: none; padding: 18px 0; font-weight: 600; font-size: 15.5px; display: flex; justify-content: space-between; gap: 12px; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; color: var(--text-3); font-size: 20px; line-height: 1; transition: transform .2s; }
+  .faq details[open] summary::after { transform: rotate(45deg); }
+  .faq details p { margin: 0 0 18px; color: var(--text-2); line-height: 1.8; font-size: 14.5px; }
+
+  .final { text-align: center; padding: 100px 0; }
+  .final h2 { font-size: clamp(30px, 4vw, 44px); margin: 0 0 16px; letter-spacing: -.01em; }
+  .final p { color: var(--text-2); margin: 0 0 30px; font-size: 17px; }
+  .final .ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .lp-foot { border-top: 1px solid var(--border); padding: 30px 0 40px; color: var(--text-3); font-size: 13.5px; }
+  .lp-foot .lp-wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .lp-foot a:hover { color: var(--text); }
+  .lp-foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+
+  .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+  .js .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .js .reveal { opacity: 1; transform: none; transition: none; } .lp-btn:hover, .cat:hover { transform: none; } }
+
+  @media (max-width: 960px) {
+    .lp-hero .lp-wrap, .deploy, .oss, .try { grid-template-columns: 1fr; }
+    .lp-hero { padding: 56px 0 48px; }
+    .cats { grid-template-columns: repeat(2, 1fr); }
+    .feats { grid-template-columns: 1fr 1fr; }
+    .stats .lp-wrap { grid-template-columns: repeat(3, 1fr); }
+    .stat:nth-child(4) { border-left: 0; }
+    .stat:nth-child(n+4) { border-top: 1px solid var(--border); }
+    .lp-links { display: none; }
+    .try-list { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+    .try-item { flex: none; width: 220px; }
+    .oss { padding: 32px 24px; }
+  }
+  @media (max-width: 600px) {
+    .cats, .feats { grid-template-columns: 1fr; }
+    .stats .lp-wrap { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(n) { border-left: 0; border-top: 1px solid var(--border); }
+    .stat:nth-child(even) { border-left: 1px solid var(--border); }
+    .stat:nth-child(-n+2) { border-top: 0; }
+    .stat:last-child { grid-column: span 2; border-left: 0; }
+    .sec { padding: 68px 0; }
+    .lp-nav .gh-btn { display: none; }
+    .term pre { height: 300px; font-size: 12.5px; }
+  }
+</style>
+</head>
+<body class="lp">
+
+<header class="lp-nav">
+  <div class="lp-wrap">
+    <a class="lp-logo" href="/about" aria-label="Miao API 首页">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#4f46e5"/><g transform="translate(4 3.5)" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 10.5V4l4.2 3.1a9 9 0 0 1 5.6 0L19 4v6.5c.6 1.1 1 2.3 1 3.6C20 18.5 16.4 21 12 21s-8-2.5-8-6.9c0-1.3.4-2.5 1-3.6z"/><path d="M9 13.5v.6M15 13.5v.6M11 16.6l1 .7 1-.7"/></g></svg>
+      Miao API
+    </a>
+    <nav class="lp-links" aria-label="页面导航">
+      <a href="#apis">接口</a><a href="#features">特性</a><a href="#try">在线试用</a><a href="#deploy">自己部署</a><a href="#faq">常见问题</a>
+    </nav>
+    <span class="grow"></span>
+    <button class="lp-btn sm lp-icon-btn" id="theme" type="button" aria-label="切换深色 / 浅色">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="lp-btn sm gh-btn" href="https://github.com/bocmiao/api" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <a class="lp-btn sm primary" href="/">开始使用</a>
+  </div>
+</header>
+
+<main>
+  <section class="lp-hero">
+    <div class="lp-wrap">
+      <div>
+        <span class="pill"><b>v{{VERSION}}</b> 开源 · GPL-3.0 · 零依赖</span>
+        <h1>常用接口<br><em>一站搞定</em></h1>
+        <p class="lead">Miao API 把游戏限免、全网热搜、天气节假日、金融行情、诗词壁纸、开发工具和网络检测等 <b>{{MODULES}} 个</b>常用接口聚合在一起：统一 JSON 格式，每个字段都有中文说明，支持跨域，免注册就能调用。</p>
+        <div class="ctas">
+          <a class="lp-btn primary" href="/">浏览全部接口
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+          <a class="lp-btn" href="#deploy">部署到自己的服务器</a>
+        </div>
+        <div class="install"><code>curl {{ORIGIN}}/api/hitokoto</code><button class="lp-btn sm" type="button" data-copy="curl {{ORIGIN}}/api/hitokoto">复制</button></div>
+      </div>
+      <div class="term" aria-label="接口返回示例">
+        <div class="term-bar"><i></i><i></i><i></i><span id="hero-url">GET /api/hot/weibo?limit=3</span></div>
+<pre id="hero-json"><span class="j-c">// 返回示例</span>
+{
+  <span class="j-k">"code"</span>: <span class="j-n">200</span>,
+  <span class="j-k">"message"</span>: <span class="j-s">"ok"</span>,
+  <span class="j-k">"cached"</span>: <span class="j-b">true</span>,
+  <span class="j-k">"data"</span>: {
+    <span class="j-k">"title"</span>: <span class="j-s">"微博热搜"</span>,
+    <span class="j-k">"items"</span>: [
+      {
+        <span class="j-k">"rank"</span>: <span class="j-n">1</span>,
+        <span class="j-k">"title"</span>: <span class="j-s">"……"</span>,
+        <span class="j-k">"hot"</span>: <span class="j-n">1234567</span>,
+        <span class="j-k">"url"</span>: <span class="j-s">"https://s.weibo.com/weibo?q=…"</span>
+      }
+    ]
+  }
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats" aria-label="数据概览">
+    <div class="lp-wrap">
+      <div class="stat"><b>{{MODULES}}</b><span>个常用接口</span></div>
+      <div class="stat"><b>{{ROUTES}}</b><span>个调用地址</span></div>
+      <div class="stat"><b>{{ANON}}</b><span>次/天 免注册调用</span></div>
+      <div class="stat"><b>{{USER}}</b><span>次/天 注册用户</span></div>
+      <div class="stat"><b>0</b><span>个第三方依赖</span></div>
+    </div>
+  </section>
+
+  <section class="sec" id="apis">
+    <div class="lp-wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">接口一览</span>
+        <h2>{{CAT_COUNT}} 大类，覆盖日常开发最常用的数据</h2>
+        <p>做博客挂件、QQ / 微信机器人、小程序、运维看板时要找的接口，基本都在这里。点击分类查看代表接口的文档。</p>
+      </div>
+      <div class="cats">{{CATS}}</div>
+    </div>
+  </section>
+
+  <section class="sec alt" id="features">
+    <div class="lp-wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">为什么选 Miao API</span>
+        <h2>不只是把接口堆在一起</h2>
+        <p>每个接口都经过同样的打磨：格式统一、文档完整、有缓存兜底，出了问题一眼就能看到。</p>
+      </div>
+      <div class="feats">
+        <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h2M16 3h2a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-2"/></svg></div>
+          <h3>统一格式，字段中文说明</h3><p>所有接口外层都是 <code>{ code, message, data }</code>，每个返回字段都写明含义、单位和何时为空，并有自动化测试保证文档与实际一致。</p></div>
+        <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+          <h3>快，上游挂了也不空白</h3><p>按数据特点缓存，热门接口提前预热，大部分请求毫秒级返回；上游出故障时先返回最近一次成功的数据。</p></div>
+        <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+          <h3>前端直接调用</h3><p>全部接口开启跨域，网页里 <code>fetch</code> 就能用；二维码、壁纸、徽章等图片接口直接写进 <code>&lt;img&gt;</code>。</p></div>
+        <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+          <h3>内容更新自动推送</h3><p>订阅 Epic 周免、游戏限免、必应壁纸、节假日提醒等主题，推送到微信、Bark、Telegram、钉钉、飞书、企业微信或邮件。</p></div>
+        <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+          <h3>运行状态公开透明</h3><p>公开的状态页按真实调用统计每个接口 24 小时的调用量、耗时和失败率，数据源失效的接口会明确标出原因。</p></div>
+        <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
+          <h3>零依赖，拷过去就能跑</h3><p>只用 Node.js 自带能力和内置 SQLite，没有任何 npm 依赖；自带管理后台、一键巡检、AI 故障分析和在线更新。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="try">
+    <div class="lp-wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">在线试用</span>
+        <h2>点一下，看看真实返回</h2>
+        <p>下面的数据都是刚刚实时请求的，和你在自己项目里调用拿到的完全一样。</p>
+      </div>
+      <div class="try">
+        <div class="try-list" role="tablist" aria-label="示例接口">
+          <button class="try-item on" type="button" role="tab" data-path="/api/hitokoto" data-doc="hitokoto"><b>一言</b><code>/api/hitokoto</code></button>
+          <button class="try-item" type="button" role="tab" data-path="/api/holiday" data-doc="holiday"><b>今天放假吗</b><code>/api/holiday</code></button>
+          <button class="try-item" type="button" role="tab" data-path="/api/hot/weibo?limit=5" data-doc="hot-weibo"><b>微博热搜前 5</b><code>/api/hot/weibo?limit=5</code></button>
+          <button class="try-item" type="button" role="tab" data-path="/api/weather?city=上海" data-doc="weather"><b>上海天气</b><code>/api/weather?city=上海</code></button>
+          <button class="try-item" type="button" role="tab" data-path="/api/fx/convert?from=USD&amp;to=CNY&amp;amount=100" data-doc="fx"><b>100 美元换人民币</b><code>/api/fx/convert?from=USD&amp;to=CNY&amp;amount=100</code></button>
+        </div>
+        <div class="term">
+          <div class="term-bar"><i></i><i></i><i></i><span id="try-url">GET /api/hitokoto</span></div>
+          <pre id="try-json"><span class="j-c">// 点击左侧的接口开始请求</span></pre>
+          <div class="try-meta"><span id="try-time">&nbsp;</span><a id="try-doc" href="/">查看文档 →</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec alt" id="shots">
+    <div class="lp-wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">产品截图</span>
+        <h2>从调试到运维，都在网页里完成</h2>
+      </div>
+      <div class="shots-tabs" role="tablist" aria-label="产品截图">
+        <button class="on" type="button" data-shot="0">在线调试</button>
+        <button type="button" data-shot="1">运行状态</button>
+        <button type="button" data-shot="2">用户控制台</button>
+        <button type="button" data-shot="3">管理后台</button>
+        <button type="button" data-shot="4">系统设置</button>
+      </div>
+      <figure class="reveal" style="margin:0">
+        <div class="shot"><img id="shot-img" src="/img/playground.jpg" width="1400" height="875" alt="Miao API 在线调试：返回结果带中文字段注释和示例代码" loading="lazy"></div>
+        <figcaption class="shot-cap" id="shot-cap">每个接口都能在线调试，返回结果旁边直接显示字段的中文说明，下方附 cURL、JavaScript、Python 示例代码。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="sec" id="deploy">
+    <div class="lp-wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">自己部署</span>
+        <h2>10 分钟，拥有自己的 API 站</h2>
+        <p>没有额度限制，可以自己加接口、给团队用。只需要 Node.js 22.13+ 或 Docker。</p>
+      </div>
+      <div class="deploy">
+        <div class="steps">
+          <div class="step reveal"><span class="no">1</span><div><h3>下载并启动</h3><p><code>git clone</code> 后执行 <code>npm start</code>，或用 Docker 运行，默认端口 3000。</p></div></div>
+          <div class="step reveal"><span class="no">2</span><div><h3>绑定域名</h3><p>Nginx、1Panel 或宝塔反向代理到 <code>127.0.0.1:3000</code>，开启 HTTPS。</p></div></div>
+          <div class="step reveal"><span class="no">3</span><div><h3>注册管理员</h3><p>打开网站注册，<b>第一个账号自动成为管理员</b>。</p></div></div>
+          <div class="step reveal"><span class="no">4</span><div><h3>后台设置</h3><p>填写站点地址、开启「信任反向代理」，按需配置第三方密钥，每项都能一键测试连通性。</p></div></div>
+          <div class="step reveal"><span class="no">5</span><div><h3>之后一键升级</h3><p>后台检查到新版本后点一下即可更新，只下载有变化的文件，启动失败自动回滚。</p></div></div>
+        </div>
+        <div class="term code-box">
+          <div class="code-tabs" role="tablist" aria-label="部署方式"><button class="on" type="button" data-code="node">Node.js</button><button type="button" data-code="docker">Docker</button></div>
+          <button class="copy" type="button" id="copy-code">复制</button>
+<pre id="code-node"><span class="j-c"># 需要 Node.js 22.13 以上，没有任何 npm 依赖</span>
+git clone https://github.com/bocmiao/api.git miao-api
+cd miao-api
+cp .env.example .env   <span class="j-c"># 可选，npm start 会自动读取</span>
+npm start
+
+<span class="j-c"># 看到这一行就成功了：</span>
+<span class="j-k">Miao API 已启动：</span><span class="j-n">http://localhost:3000</span></pre>
+<pre id="code-docker" hidden><span class="j-c"># 数据保存在 miao-api-data 数据卷，重建容器不丢失</span>
+git clone https://github.com/bocmiao/api.git miao-api
+cd miao-api
+docker build -t miao-api .
+docker run -d --name miao-api --restart unless-stopped \
+  -p 3000:3000 -v miao-api-data:/app/data miao-api</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" style="padding-top:0">
+    <div class="lp-wrap">
+      <div class="oss reveal">
+        <div style="position:relative;z-index:1">
+          <h2>开源，并且会一直开源</h2>
+          <p>Miao API 以 GNU GPL v3 协议开源。你可以自由地使用、修改和部署；欢迎提交 Issue 反馈问题、提交 PR 贡献新接口。如果它对你有帮助，点个 Star 就是最好的支持。</p>
+          <a class="lp-btn" href="https://github.com/bocmiao/api" target="_blank" rel="noopener">在 GitHub 上查看 →</a>
+        </div>
+        <ul>
+          <li><span>📦</span><span><b>零依赖</b>：只用 Node.js 内置模块与 SQLite</span></li>
+          <li><span>🧪</span><span><b>900+ 自动化测试</b>：接口解析、字段文档、限流、在线更新全覆盖</span></li>
+          <li><span>🧩</span><span><b>模块化</b>：新增一个接口只需一个文件，自动出现在文档和调试页</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec alt" id="faq">
+    <div class="lp-wrap">
+      <div class="sec-head reveal"><span class="eyebrow">常见问题</span><h2>你可能想知道</h2></div>
+      <div class="faq">
+        <details open><summary>Miao API 是免费的吗？</summary><p>是的。在线站点不注册每天可免费调用 {{ANON}} 次，免费注册后每天 {{USER}} 次；自己部署则没有任何限制。</p></details>
+        <details><summary>调用需要 API Key 吗？</summary><p>不需要。大多数接口直接请求就能用；注册后在控制台创建 API Key，通过请求头 <code>X-API-Key</code> 传入可获得更高额度。在公开网页里调用时建议不带 Key。</p></details>
+        <details><summary>可以用在商业项目里吗？</summary><p>可以调用在线站点的接口，也可以部署源码使用。项目以 GPL v3 协议开源：如果你分发修改后的版本，需要同样以 GPL v3 开源并保留版权声明。部分接口的数据来自第三方网站，请同时遵守相应网站的使用条款。</p></details>
+        <details><summary>服务器在国内，境外接口连不上怎么办？</summary><p>在后台「系统设置 → 网络」填写一个 HTTP 代理（例如服务器上 Clash 的 <code>http://127.0.0.1:7890</code>），Steam、GitHub、V2EX 等境外数据源会自动走代理，其他请求照常直连。</p></details>
+        <details><summary>如何新增自己的接口？</summary><p>在 <code>src/apis/&lt;分类&gt;/</code> 下按约定新建一个模块文件并注册，它会自动出现在接口目录、文档页和在线调试中。欢迎把通用的接口提交 PR 分享给大家。</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="lp-wrap reveal">
+      <h2>现在就开始用</h2>
+      <p>不用注册，打开就能调用。</p>
+      <div class="ctas">
+        <a class="lp-btn primary" href="/">浏览全部 {{MODULES}} 个接口</a>
+        <a class="lp-btn" href="/docs">阅读开发文档</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="lp-foot">
+  <div class="lp-wrap">
+    <span>© Miao API · 以 GPL-3.0 协议开源</span>
+    <nav aria-label="页脚导航"><a href="/">接口</a><a href="/docs">开发文档</a><a href="/status">运行状态</a><a href="https://github.com/bocmiao/api" target="_blank" rel="noopener">GitHub</a></nav>
+  </div>
+</footer>
+
+<script src="/about.js"></script>
+</body>
+</html>
