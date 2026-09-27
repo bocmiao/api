@@ -4,6 +4,12 @@
 1. 修改 `package.json` 中的 `version`；
 2. 在下面最上方加一段 `## v版本号 · 日期`，每条改动一行，以 `- ` 开头。
 
+## v0.9.14 · 2026-09-27
+- 新增「文本对比」：/api/tools/diff 按行、按词或按字比较两段文本，返回增删统计、相似度和 git 风格的差异（unified diff）
+- 新增「格式转换」：/api/tools/convert 在 JSON、YAML、CSV 之间互相转换
+- 新增「Markdown 转 HTML」：/api/tools/markdown 支持表格、任务列表、代码块等常用语法，默认过滤危险内容，同时返回目录和字数
+- 新增「开发速查」：HTTP 状态码（/api/devref/http-status）、MIME 类型（/api/devref/mime）、常用端口（/api/devref/port），支持模糊搜索
+
 ## v0.9.13 · 2026-09-27
 - 新增「汉字转拼音」：/api/pinyin 支持带声调、数字声调、无声调、首字母四种格式，多音字可返回全部读音，还给出拼音缩写（如 中国 → ZG）
 - 新增「简繁转换」：/api/chinese/convert 简体和繁体互转，内置常用词语修正（如 头发 → 頭髮），并列出一简对多繁的字供核对；字表来自 OpenCC
