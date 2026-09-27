@@ -18,6 +18,10 @@ import age from './age.js';
 import workdays from './workdays.js';
 import health from './health.js';
 import sudoku from './sudoku.js';
+import jieqi from './jieqi.js';
+import sun from './sun.js';
+import worldtime from './worldtime.js';
+import progress from './progress.js';
 
 export default [weather, holiday, lunar, oil, express, ip, phone, history, news60s, moyu, bmi, garbage,
-  tax, idcard, geo, unit, age, workdays, health, sudoku];
+  tax, idcard, geo, unit, age, workdays, health, sudoku, jieqi, sun, worldtime, progress];
