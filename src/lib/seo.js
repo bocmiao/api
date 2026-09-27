@@ -63,6 +63,29 @@ const DOCS_BODY = `<div class="wrap seo-pre" style="padding:40px 20px">
 <p><a href="/">浏览全部接口</a> · <a href="/status">运行状态</a></p>
 </div>`;
 
+// 用户交流群：群号和加群链接可在后台「系统设置 → 基础」修改，群号填 0 不显示
+export const DEFAULT_QQ_GROUP = '2639496';
+export const DEFAULT_QQ_NAME = 'MiaoClub';
+export const DEFAULT_QQ_LINK = 'https://qm.qq.com/q/vj3vttbYh';
+export function community() {
+  const raw = String(process.env.COMMUNITY_QQ ?? '').trim();
+  const qq = raw === '' ? DEFAULT_QQ_GROUP : raw === '0' ? null : raw;
+  if (!qq) return null;
+  const isDefault = qq === DEFAULT_QQ_GROUP;
+  // 默认的群名和加群链接只属于默认群号，换了群号不会误用
+  const link = String(process.env.COMMUNITY_QQ_LINK ?? '').trim() || (isDefault ? DEFAULT_QQ_LINK : '');
+  const name = String(process.env.COMMUNITY_QQ_NAME ?? '').trim() || (isDefault ? DEFAULT_QQ_NAME : '');
+  return { qq, name: name || null, link: /^https?:\/\//.test(link) ? link : null };
+}
+export function communityHtml(label = '用户 QQ 群') {
+  const c = community();
+  if (!c) return '';
+  const title = c.name ? `${label}「${esc(c.name)}」` : label;
+  return c.link
+    ? `${title}：<a href="${esc(c.link)}" target="_blank" rel="noopener">${esc(c.qq)}（点击加群）</a>`
+    : `${title}：<b>${esc(c.qq)}</b>`;
+}
+
 // 根据地址返回页面信息；status 为 404 表示页面不存在
 export function pageMeta(path) {
   const list = enabled();
@@ -152,6 +175,8 @@ export function renderPage(html, path, origin) {
     .replace(/<meta name="description"[^>]*>\n?/, '');
   out = out.replace('</head>', `${jsonLd(meta, origin, url)}</head>`);
   if (meta.body) out = out.replace(/<main id="main">[\s\S]*?<\/main>/, `<main id="main">${meta.body}</main>`);
+  const ch = communityHtml();
+  out = out.replace('{{COMMUNITY}}', ch ? ` · ${ch}` : '');
   return { status: meta.status ?? 200, html: out };
 }
 
@@ -167,6 +192,20 @@ const CAT_INFO = {
   net: ['🌐', 'DNS、SSL 证书、网站测速、Ping、多节点检测、Whois', 'dns'],
 };
 const fmtInt = (n) => Number(n).toLocaleString('en-US');
+
+// 发布页里的用户群：页脚一行、底部按钮、常见问题一条；不显示群时全部为空
+function aboutCommunity() {
+  const c = community();
+  if (!c) return { COMMUNITY: '', COMMUNITY_BTN: '', COMMUNITY_FAQ: '' };
+  const qq = esc(c.qq);
+  return {
+    COMMUNITY: ` · ${communityHtml()}`,
+    COMMUNITY_BTN: c.link
+      ? `<a class="lp-btn" href="${esc(c.link)}" target="_blank" rel="noopener">加入 QQ 群 ${qq}</a>`
+      : `<button class="lp-btn" type="button" data-copy="${qq}" title="点击复制群号">QQ 群 ${qq}（点击复制）</button>`,
+    COMMUNITY_FAQ: `<details><summary>遇到问题去哪里反馈？</summary><p>欢迎加入用户 QQ 群${c.name ? `「${esc(c.name)}」` : ''} <b>${qq}</b>${c.link ? `（<a href="${esc(c.link)}" target="_blank" rel="noopener" style="color:var(--brand)">点击加群</a>）` : ''}，也可以到 <a href="https://github.com/bocmiao/api/issues" target="_blank" rel="noopener" style="color:var(--brand)">GitHub Issues</a> 提交问题和建议。</p></details>`,
+  };
+}
 
 export function renderAbout(html, origin) {
   const list = enabled();
@@ -200,6 +239,7 @@ export function renderAbout(html, origin) {
     ORIGIN: esc(origin), MODULES: String(list.length), ROUTES: String(routeCount(list)), CAT_COUNT: String(cats.length),
     ANON: fmtInt(config.limits.anonDaily), USER: fmtInt(config.limits.userDaily), VERSION: esc(RUNNING_VERSION),
     CATS: cats.join(''),
+    ...aboutCommunity(),
     JSONLD: `<script type="application/ld+json">${JSON.stringify(ld).replace(/</g, '\\u003c')}</script>`,
   };
   return html.replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => (k in vars ? vars[k] : m));

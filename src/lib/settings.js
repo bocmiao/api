@@ -12,6 +12,9 @@ export const SETTING_GROUPS = [
       { key: 'TRUST_PROXY', label: '信任反向代理', type: 'bool', default: '0', help: '部署在 Nginx / 1Panel / CDN 后面时必须开启，否则拿不到访客真实 IP' },
       { key: 'REGISTRATION_OPEN', label: '开放注册', type: 'bool', default: '1' },
       { key: 'ADMIN_EMAILS', label: '额外管理员邮箱', type: 'emails', placeholder: 'a@example.com, b@example.com', help: '这些邮箱登录后也拥有管理员权限；第一个注册的账号始终是管理员' },
+      { key: 'COMMUNITY_QQ', label: '用户 QQ 群号', type: 'text', default: '2639496', help: '显示在网站底部、产品介绍页和开发文档里；填 0 不显示' },
+      { key: 'COMMUNITY_QQ_NAME', label: 'QQ 群名称', type: 'text', placeholder: 'MiaoClub', help: '显示在群号前面；留空时默认群显示「MiaoClub」' },
+      { key: 'COMMUNITY_QQ_LINK', label: 'QQ 群加群链接', type: 'url', placeholder: 'https://qm.qq.com/q/vj3vttbYh', help: '在 QQ 群「设置 → 分享群 → 复制链接」得到，填写后群号可以直接点击加群；留空时默认群使用内置链接，换了群号请同时填写新链接' },
     ],
   },
   {
@@ -127,6 +130,7 @@ function validate(f, raw) {
     }
     default:
       if (/[\r\n]/.test(v)) throw new HttpError(400, `${f.label}不能包含换行`);
+      if (f.key === 'COMMUNITY_QQ' && v && !/^(0|[1-9]\d{4,11})$/.test(v)) throw new HttpError(400, 'QQ 群号须为 5~12 位数字，填 0 表示不显示');
       if (f.key === 'OUTBOUND_PROXY' && v) {
         let u;
         try { u = new URL(v); } catch { throw new HttpError(400, '代理地址格式不对，例如 http://127.0.0.1:7890'); }

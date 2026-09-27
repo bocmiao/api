@@ -893,6 +893,9 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
       <li>标记为「非官方」的接口数据来自第三方网页或未公开接口，可能随上游改版暂时失效。</li>
       <li>标记为「需配置」的接口需要站长在服务端配置对应的第三方密钥后才能使用。</li>
     </ul>
+
+    <h2>交流反馈</h2>
+    <p>${cat.community ? `欢迎加入用户 QQ 群${cat.community.name ? `「${esc(cat.community.name)}」` : ''} <b>${esc(cat.community.qq)}</b>${cat.community.link ? `（<a href="${esc(cat.community.link)}" target="_blank" rel="noopener">点击加群</a>）` : ''}，` : ''}遇到问题或想要新接口，也可以到 <a href="https://github.com/bocmiao/api/issues" target="_blank" rel="noopener">GitHub Issues</a> 提交。</p>
   </article></div>`;
 }
 

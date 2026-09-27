@@ -156,6 +156,7 @@
   .lp-foot { border-top: 1px solid var(--border); padding: 30px 0 40px; color: var(--text-3); font-size: 13.5px; }
   .lp-foot .lp-wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .lp-foot a:hover { color: var(--text); }
+  .lp-foot b, .lp-foot span a { color: var(--text-2); }
   .lp-foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
 
   .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
@@ -400,6 +401,7 @@ docker run -d --name miao-api --restart unless-stopped \
         <details><summary>可以用在商业项目里吗？</summary><p>可以调用在线站点的接口，也可以部署源码使用。项目以 GPL v3 协议开源：如果你分发修改后的版本，需要同样以 GPL v3 开源并保留版权声明。部分接口的数据来自第三方网站，请同时遵守相应网站的使用条款。</p></details>
         <details><summary>服务器在国内，境外接口连不上怎么办？</summary><p>在后台「系统设置 → 网络」填写一个 HTTP 代理（例如服务器上 Clash 的 <code>http://127.0.0.1:7890</code>），Steam、GitHub、V2EX 等境外数据源会自动走代理，其他请求照常直连。</p></details>
         <details><summary>如何新增自己的接口？</summary><p>在 <code>src/apis/&lt;分类&gt;/</code> 下按约定新建一个模块文件并注册，它会自动出现在接口目录、文档页和在线调试中。欢迎把通用的接口提交 PR 分享给大家。</p></details>
+        {{COMMUNITY_FAQ}}
       </div>
     </div>
   </section>
@@ -411,6 +413,7 @@ docker run -d --name miao-api --restart unless-stopped \
       <div class="ctas">
         <a class="lp-btn primary" href="/">浏览全部 {{MODULES}} 个接口</a>
         <a class="lp-btn" href="/docs">阅读开发文档</a>
+        {{COMMUNITY_BTN}}
       </div>
     </div>
   </section>
@@ -418,7 +421,7 @@ docker run -d --name miao-api --restart unless-stopped \
 
 <footer class="lp-foot">
   <div class="lp-wrap">
-    <span>© Miao API · 以 GPL-3.0 协议开源</span>
+    <span>© Miao API · 以 GPL-3.0 协议开源{{COMMUNITY}}</span>
     <nav aria-label="页脚导航"><a href="/">接口</a><a href="/docs">开发文档</a><a href="/status">运行状态</a><a href="https://github.com/bocmiao/api" target="_blank" rel="noopener">GitHub</a></nav>
   </div>
 </footer>

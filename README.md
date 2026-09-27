@@ -22,6 +22,11 @@
 - **管理后台**：全站调用统计，调整用户额度、停用用户，按模块开关接口，AI 分析接口失败原因，在线更新（增量下载、上传更新包、失败自动回滚）
 - **零依赖**：只需 Node.js 22.13+，不用 `npm install`，数据存在内置 SQLite
 
+## 交流反馈
+
+- 用户 QQ 群「MiaoClub」：**2639496**，[点击链接加入群聊](https://qm.qq.com/q/vj3vttbYh)
+- 问题与建议：[GitHub Issues](https://github.com/bocmiao/api/issues)
+
 ## 快速开始
 
 ```bash

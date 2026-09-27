@@ -132,6 +132,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
         html = t.html;
         status = t.status;
       }
+      html = html.replace(/\{\{COMMUNITY[A-Z_]*\}\}/g, ''); // 直接访问模板文件时去掉未填的占位符
       body = Buffer.from(html);
     }
     const etag = `"${createHash('sha1').update(body).digest('base64url').slice(0, 16)}"`;

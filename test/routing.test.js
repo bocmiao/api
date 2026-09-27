@@ -147,3 +147,36 @@ test('产品发布页 /about：填好接口数量等信息，不留模板占位�
   const img = await get('/img/playground.jpg');
   assert.equal(img.headers['content-type'], 'image/jpeg');
 });
+
+test('用户 QQ 群：默认显示群号；填了加群链接可点击；填 0 不显示', async () => {
+  const prevQ = process.env.COMMUNITY_QQ;
+  const prevL = process.env.COMMUNITY_QQ_LINK;
+  try {
+    delete process.env.COMMUNITY_QQ;
+    delete process.env.COMMUNITY_QQ_LINK;
+    const home = await get('/', nav);
+    assert.match(home.body, /用户 QQ 群「MiaoClub」：<a href="https:\/\/qm\.qq\.com\/q\/vj3vttbYh" target="_blank" rel="noopener">2639496（点击加群）<\/a>/);
+    const about = await get('/about', nav);
+    assert.match(about.body, /加入 QQ 群 2639496/);
+    assert.match(about.body, /遇到问题去哪里反馈/);
+    const cat = await (await fetch(`${base}/api`)).json();
+    assert.deepEqual(cat.data.community, { qq: '2639496', name: 'MiaoClub', link: 'https://qm.qq.com/q/vj3vttbYh' });
+
+    // 换了群号：不再使用默认的群名和链接，没填链接时显示群号、可复制
+    process.env.COMMUNITY_QQ = '12345678';
+    const other = await get('/docs', nav);
+    assert.match(other.body, /用户 QQ 群：<b>12345678<\/b>/);
+    assert.match((await get('/about', nav)).body, /data-copy="12345678"/);
+    process.env.COMMUNITY_QQ_LINK = 'https://qm.qq.com/q/abc123';
+    assert.match((await get('/docs', nav)).body, /<a href="https:\/\/qm\.qq\.com\/q\/abc123" target="_blank" rel="noopener">12345678（点击加群）<\/a>/);
+
+    process.env.COMMUNITY_QQ = '0';
+    const hidden = await get('/', nav);
+    assert.doesNotMatch(hidden.body, /QQ 群/);
+    assert.doesNotMatch(hidden.body, /\{\{COMMUNITY/);
+    assert.doesNotMatch((await get('/about', nav)).body, /QQ 群|\{\{COMMUNITY/);
+  } finally {
+    if (prevQ == null) delete process.env.COMMUNITY_QQ; else process.env.COMMUNITY_QQ = prevQ;
+    if (prevL == null) delete process.env.COMMUNITY_QQ_LINK; else process.env.COMMUNITY_QQ_LINK = prevL;
+  }
+});
