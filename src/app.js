@@ -15,6 +15,7 @@ import { applySettings } from './lib/settings.js';
 // 后台「系统设置」中保存的配置优先于环境变量
 applySettings();
 import { consume, logRequest } from './lib/limits.js';
+import { recordLimited } from './lib/stats.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const MIME = {
@@ -42,7 +43,9 @@ function send(res, status, body, headers = {}) {
     'cache-control': 'no-store',
     ...headers,
   });
-  res.end(isJson ? JSON.stringify(body) : body);
+  const payload = isJson ? JSON.stringify(body) : body;
+  res.end(payload);
+  return typeof payload === 'string' ? Buffer.byteLength(payload) : payload?.length ?? 0;
 }
 
 const envelope = (r) => ({
@@ -263,11 +266,13 @@ export async function handle(req, res) {
         if (/svg/i.test(headers['content-type'] ?? '')) {
           headers['content-security-policy'] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
         }
-        send(res, result.status ?? 200, result.body ?? '', headers);
+        log.bytes = send(res, result.status ?? 200, result.body ?? '', headers);
       } else {
-        send(res, 200, envelope(result), { ...CORS, ...rateHeaders });
+        log.bytes = send(res, 200, envelope(result), { ...CORS, ...rateHeaders });
       }
-      if (log.logged) logRequest({ ...log, ip, path, status: result.status ?? 200, ms: Date.now() - started });
+      // 缓存：0 未命中，1 命中，2 上游故障时返回的旧数据
+      log.cached = result?.stale ? 2 : result?.cached ? 1 : 0;
+      if (log.logged) logRequest({ ...log, ip, path, status: result.status ?? 200, ms: Date.now() - started, headers: req.headers });
       return;
     }
 
@@ -278,9 +283,11 @@ export async function handle(req, res) {
     // 代码错误打印完整堆栈；上游故障、服务不支持等预期内的 5xx 只记一行
     if (status >= 500) console.error(`[${req.method} ${path}]`, err instanceof HttpError ? `${status} ${err.message}` : err);
     // 被限流的请求不计入日志，避免刷量拖慢数据库
+    // 被限流的请求不写调用明细（避免刷量拖慢数据库），只在统计里计数
+    if (log.logged && status === 429) recordLimited({ subject: log.user ? `user:${log.user.id}` : `ip:${ip}`, path });
     if (log.logged && status !== 429) {
       const error = err instanceof HttpError ? err.message : `${err?.name ?? 'Error'}: ${err?.message ?? err}`;
-      logRequest({ ...log, ip, path, status, ms: Date.now() - started, error });
+      logRequest({ ...log, ip, path, status, ms: Date.now() - started, error, headers: req.headers });
     }
     if (res.headersSent) return res.end();
     send(res, status, { code: status, message: status === 500 ? '服务器内部错误' : err.message, data: null }, {

@@ -1,6 +1,7 @@
 import { sql } from '../db.js';
 import { config } from '../config.js';
 import { HttpError } from './http.js';
+import { recordCall, regionOf, refererHost, clientOf, pruneStats } from './stats.js';
 
 // 按北京时间计算"今天"，每天 0 点重置额度
 const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -71,17 +72,24 @@ export function quota({ user, ip }) {
 }
 
 // error：失败时的原因（只记我们自己的错误说明，不含请求参数），最多 300 字
-export function logRequest({ user, keyId, ip, path, status, ms, error = null }) {
-  sql('INSERT INTO request_log (ts, user_id, key_id, ip, path, status, ms, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(Date.now(), user?.id ?? null, keyId ?? null, ip, path, status, ms, error ? String(error).slice(0, 300) : null);
+export function logRequest({ user, keyId, ip, path, status, ms, error = null, cached = null, bytes = null, headers = {} }) {
+  const ts = Date.now();
+  const via = keyId ? 'apikey' : user ? 'session' : 'anon';
+  const { region, isp } = regionOf(ip);
+  sql(`INSERT INTO request_log (ts, user_id, key_id, ip, path, status, ms, error, cached, bytes, via, referer, client, region, isp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(ts, user?.id ?? null, keyId ?? null, ip, path, status, ms, error ? String(error).slice(0, 300) : null,
+      cached, bytes, via, refererHost(headers), clientOf(headers['user-agent']), region, isp);
   if (path.startsWith('/api/') && status !== 404) {
     sql('INSERT INTO api_calls (path, total) VALUES (?, 1) ON CONFLICT(path) DO UPDATE SET total = total + 1').run(path);
   }
+  recordCall({ ts, path, status, ms, cached: cached ?? 0, bytes: bytes ?? 0, via });
 }
 
 export function pruneLogs() {
   const cutoff = Date.now() - config.logRetentionDays * 86400_000;
   sql('DELETE FROM request_log WHERE ts < ?').run(cutoff);
+  pruneStats({ hourlyDays: config.statsHourlyDays, rawDays: config.logRetentionDays });
   sql('DELETE FROM usage_daily WHERE day < ?').run(today(new Date(cutoff)));
   sql('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
 }

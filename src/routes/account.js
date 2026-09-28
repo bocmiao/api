@@ -26,6 +26,8 @@ import { localVersion, RUNNING_VERSION } from '../lib/updater.js';
 import { cache } from '../lib/cache.js';
 import { isBlockedIP } from '../lib/netguard.js';
 import { loadIpInfo, normalizeIp } from '../apis/life/ip.js';
+import { parseRange, overview, endpoints, endpointDetail, audience, userGrowth, issues, statusData } from '../lib/analytics.js';
+import { healthStatus, runHealthCheck } from '../lib/health.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
@@ -612,38 +614,14 @@ r('GET', '/home/weather', async (ctx) => ({ data: await todayWeather(ctx).catch(
 const STARTED_AT = Date.now();
 
 // 各接口最近 24 小时的健康状况（运行状态页、首页接口卡片共用）
-function moduleHealth() {
-  const since = Date.now() - 86400_000;
-  const rows = sql(`SELECT path, COUNT(*) AS calls,
-                           SUM(CASE WHEN status >= 500 THEN 1 ELSE 0 END) AS errors,
-                           CAST(AVG(ms) AS INTEGER) AS avgMs,
-                           MAX(CASE WHEN status >= 500 THEN ts END) AS lastErrorAt
-                    FROM request_log WHERE ts >= ? GROUP BY path`).all(since);
-  const byModule = new Map();
-  for (const row of rows) {
-    const hit = apiRouter.match('GET', row.path) ?? apiRouter.match('POST', row.path);
-    const name = hit?.route?.module?.name;
-    if (!name) continue;
-    const m = byModule.get(name) ?? { calls: 0, errors: 0, msTotal: 0, lastErrorAt: null };
-    m.calls += row.calls;
-    m.errors += row.errors;
-    m.msTotal += row.avgMs * row.calls;
-    if (row.lastErrorAt && (!m.lastErrorAt || row.lastErrorAt > m.lastErrorAt)) m.lastErrorAt = row.lastErrorAt;
-    byModule.set(name, m);
-  }
-  return apiModules.filter((m) => isModuleEnabled(m.name)).map((m) => {
-    const st = byModule.get(m.name);
-    const errorRate = st?.calls ? st.errors / st.calls : 0;
-    return {
-      name: m.name, title: m.title, category: m.category,
-      calls: st?.calls ?? 0,
-      errorRate: Math.round(errorRate * 1000) / 10,
-      avgMs: st?.calls ? Math.round(st.msTotal / st.calls) : null,
-      lastErrorAt: st?.lastErrorAt ? new Date(st.lastErrorAt).toISOString() : null,
-      status: m.suspended ? 'suspended' : !st?.calls ? 'idle' : errorRate >= 0.5 ? 'down' : errorRate >= 0.1 ? 'degraded' : 'ok',
-    };
-  });
+// 运行状态：汇总表 + 自动检测，缓存 60 秒（首页卡片和运行状态页共用）
+let statusCache = null;
+function cachedStatus() {
+  if (statusCache && Date.now() - statusCache.at < 60_000) return statusCache.data;
+  statusCache = { at: Date.now(), data: statusData() };
+  return statusCache.data;
 }
+const moduleHealth = () => cachedStatus().modules;
 
 // 首页接口卡片：运行状态、累计调用、今日调用（公开，缓存 1 分钟）
 let cardStats = null;
@@ -665,14 +643,39 @@ r('GET', '/stats/modules', () => {
 });
 
 r('GET', '/status', () => {
-  const modules = moduleHealth();
+  const st = cachedStatus();
   return {
     data: {
       version: RUNNING_VERSION ?? localVersion(),
       diskVersion: localVersion(),
       uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
       categories: apiCategories,
-      modules,
+      ...st,
     },
   };
+});
+
+// ---------- 详细统计（仅管理员） ----------
+const analyticsRoute = (path, fn) => r('GET', `/admin/analytics/${path}`, (ctx) => {
+  requireAdmin(ctx);
+  return { data: fn(parseRange(ctx.query), ctx) };
+});
+analyticsRoute('overview', (range) => overview(range));
+analyticsRoute('endpoints', (range) => endpoints(range));
+analyticsRoute('endpoint', (range, ctx) => endpointDetail(range, String(ctx.query.get('path') ?? '')));
+analyticsRoute('audience', (range) => audience(range));
+analyticsRoute('users', (range) => userGrowth(range));
+analyticsRoute('issues', (range) => issues(range));
+
+r('GET', '/admin/health', (ctx) => {
+  requireAdmin(ctx);
+  const failed = sql(`SELECT h.ts, h.module, h.path, h.status, h.ms, h.error FROM health_checks h
+    WHERE h.ts = (SELECT MAX(ts) FROM health_checks) AND h.ok = 0 ORDER BY h.module`).all();
+  return { data: { ...healthStatus(), failed } };
+});
+r('POST', '/admin/health/run', (ctx) => {
+  requireAdmin(ctx);
+  if (healthStatus().running) throw new HttpError(409, '自动检测正在进行中');
+  runHealthCheck().then(() => { statusCache = null; }).catch((err) => console.error('[health]', err.message));
+  return { data: { started: true } };
 });

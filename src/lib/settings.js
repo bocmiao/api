@@ -89,7 +89,9 @@ export const SETTING_GROUPS = [
   {
     id: 'other', title: '其他',
     fields: [
-      { key: 'LOG_RETENTION_DAYS', label: '调用日志保留天数', type: 'int', default: '30', min: 1, max: 3650 },
+      { key: 'LOG_RETENTION_DAYS', label: '调用明细保留天数', type: 'int', default: '30', min: 1, max: 3650, help: '每次调用的明细（用户、IP、来源、错误原因），用于统计页的调用方、来源、地域分析' },
+      { key: 'STATS_HOURLY_DAYS', label: '按小时统计保留天数', type: 'int', default: '90', min: 7, max: 3650, help: '按小时汇总的调用统计；按天汇总的统计永久保留' },
+      { key: 'HEALTH_CHECK_INTERVAL_MIN', label: '接口自动检测间隔（分钟）', type: 'int', default: '30', min: 0, max: 1440, help: '定时用示例参数把接口调用一遍，结果显示在运行状态页；会消耗第三方额度的接口自动跳过。填 0 关闭' },
       { key: 'NOTIFY_INTERVAL_MIN', label: '推送检查间隔（分钟）', type: 'int', default: '15', min: 1, max: 1440, restart: true },
       { key: 'CRAWL_MAX_PAGES', label: '整站抓取单任务页面上限', type: 'int', default: '50', min: 1, max: 50, help: '登录用户每个抓取任务最多抓取的页面数；未登录用户另有 20 页的上限' },
     ],
