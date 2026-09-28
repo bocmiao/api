@@ -1360,7 +1360,7 @@ async function pageAdmin() {
         ['注册用户', t.users], ['API Key', t.keys], ['推送渠道', t.channels], ['订阅', t.subscriptions]]
         .map(([l, v]) => `<div class="card tile"><div class="label">${l}</div><div class="value">${typeof v === 'number' ? fmtNum(v) : esc(v ?? 0)}</div></div>`).join('')}
     </div>
-    <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>近 14 天调用量</h2></div><div style="height:10px"></div>${chart.html}</div>
+    <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>近 14 天调用量</h2><a class="btn sm" href="/admin/stats">查看详细统计 →</a></div><div style="height:10px"></div>${chart.html}</div>
     <div class="grid-2" style="margin-bottom:16px">
       <div class="card"><h2 class="card-title">接口调用排行（近 7 天）<span class="small faint" style="font-weight:400;margin-left:6px">共 ${s.endpoints.length} 个接口有调用</span></h2>
         <div style="padding:8px">${endpointsTable(s.endpoints, { pageSize: 10, diagnose: true })}</div></div>
@@ -1395,6 +1395,7 @@ async function pageAdmin() {
 
 const adminTabs = (active) => `<div class="seg">
   <a href="/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
+  <a href="/admin/stats" class="${active === 'stats' ? 'active' : ''}">统计</a>
   <a href="/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
   <a href="/admin/changelog" class="${active === 'changelog' ? 'active' : ''}">更新记录</a>
   <a href="/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
@@ -1936,31 +1937,7 @@ async function uploadUpdate(file) {
 }
 
 // ---------- 运行状态 ----------
-async function pageStatus() {
-  $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const st = await cachedGet('/status');
-  const LABEL = { ok: ['正常', 'ok'], degraded: ['部分失败', 'warn'], down: ['故障', 'danger'], idle: ['24 小时内无调用', ''], suspended: ['暂不可用（数据源已停止提供）', ''] };
-  const count = (k) => st.modules.filter((m) => m.status === k).length;
-  const up = st.uptimeSec;
-  const upText = up > 86400 ? `${Math.floor(up / 86400)} 天 ${Math.floor((up % 86400) / 3600)} 小时` : up > 3600 ? `${Math.floor(up / 3600)} 小时 ${Math.floor((up % 3600) / 60)} 分钟` : `${Math.floor(up / 60)} 分钟`;
-  const overall = count('down') ? ['部分接口故障', 'danger'] : count('degraded') ? ['部分接口不稳定', 'warn'] : ['所有接口运行正常', 'ok'];
-  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
-    <div class="page-head"><div><h1>运行状态</h1><p>根据最近 24 小时的真实调用统计；上游网站故障时对应接口会显示异常</p></div></div>
-    <div class="card card-pad status-hero ${overall[1]}"><span class="status-dot ${overall[1]}"></span><b>${overall[0]}</b>
-      <span class="faint small" style="margin-left:auto">版本 v${esc(st.version ?? '')} · 已连续运行 ${upText}</span></div>
-    <div class="tiles" style="margin:16px 0">
-      ${[['正常', count('ok')], ['部分失败', count('degraded')], ['故障', count('down')], ['无调用', count('idle')]].map(([l, v]) => `<div class="card tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join('')}
-    </div>
-    ${st.categories.map((c) => {
-      const list = st.modules.filter((m) => m.category === c.id);
-      if (!list.length) return '';
-      return `<div class="card card-pad" style="margin-bottom:14px"><h2 style="font-size:15px;margin-bottom:10px">${icon(c.icon)} ${esc(c.title)}</h2>
-        <div class="status-grid">${list.map((m) => `<a class="status-item" href="/docs/${encodeURIComponent(m.name)}" title="${esc(LABEL[m.status][0])}">
-          <span class="status-dot ${LABEL[m.status][1]}"></span><span class="grow">${esc(m.title)}</span>
-          <span class="small faint">${m.status === 'suspended' ? '暂不可用' : m.calls ? `${fmtNum(m.calls)} 次 · ${m.avgMs} ms${m.errorRate ? ` · 失败 ${m.errorRate}%` : ''}` : '—'}</span></a>`).join('')}</div></div>`;
-    }).join('')}
-  </div>`;
-}
+// 运行状态页（pageStatus）在 status-page.js；管理后台的统计页（pageAdminStats）在 admin-stats.js
 
 // ---------- Ctrl+K 快速搜索 ----------
 async function openSearch() {
@@ -2064,7 +2041,7 @@ async function router({ keepScroll = false } = {}) {
       case 'status': await pageStatus(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'changelog' ? pageAdminChangelog() : pageAdmin()); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {

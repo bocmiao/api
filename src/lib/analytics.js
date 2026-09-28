@@ -120,7 +120,7 @@ export function series(range, path = null) {
     const step = STEP['5m'];
     const start = Math.floor(range.from / step) * step;
     for (let t = start; t < range.to; t += step) keys.push(t);
-    for (const r of sql(`SELECT (ts / ${step}) * ${step} AS t, ${RAW_AGG} FROM request_log WHERE ts >= ? AND ts < ? ${pathCond} GROUP BY 1`)
+    for (const r of sql(`SELECT CAST(ts / ${step} AS INTEGER) * ${step} AS t, ${RAW_AGG} FROM request_log WHERE ts >= ? AND ts < ? ${pathCond} GROUP BY 1`)
       .all(range.from, range.to, ...args)) points.set(r.t, r);
   } else if (range.gran === 'hour') {
     const start = Math.floor(range.from / HOUR) * HOUR;
@@ -451,7 +451,8 @@ export function statusData() {
     });
     let status;
     if (m.suspended) status = 'suspended';
-    else if (open.has(m.name) || (last.length && lastFailed === last.length)) status = 'down';
+    // 故障：已记录的故障未结束（连续两次检测失败或调用大面积失败才会记录）；只失败一次先算部分失败，避免偶发抖动
+    else if (open.has(m.name)) status = 'down';
     else if (lastFailed > 0 || (mt.calls >= 10 && mt.errorRate >= 10)) status = 'degraded';
     else if (!mt.calls && !last.length) status = 'idle';
     else status = 'ok';

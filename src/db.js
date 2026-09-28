@@ -156,7 +156,7 @@ if (newStats) {
     SUM(CASE WHEN user_id IS NULL THEN 1 ELSE 0 END) AS anon, SUM(CASE WHEN user_id IS NOT NULL AND key_id IS NULL THEN 1 ELSE 0 END) AS session,
     SUM(CASE WHEN key_id IS NOT NULL THEN 1 ELSE 0 END) AS apikey,
     ${edges.slice(0, 10).map((lo, i) => bucket(i, lo, edges[i + 1])).join(', ')}`;
-  db.exec(`INSERT INTO stats_hourly (hour, path, ${STAT_COLS.join(', ')}) SELECT (ts / 3600000) * 3600000, path, ${agg} FROM request_log GROUP BY 1, 2`);
+  db.exec(`INSERT INTO stats_hourly (hour, path, ${STAT_COLS.join(', ')}) SELECT CAST(ts / 3600000 AS INTEGER) * 3600000, path, ${agg} FROM request_log GROUP BY 1, 2`);
   db.exec(`INSERT INTO stats_daily (day, path, ${STAT_COLS.join(', ')}) SELECT date(ts / 1000 + 28800, 'unixepoch'), path, ${agg} FROM request_log GROUP BY 1, 2`);
   db.exec(`INSERT INTO stats_day_meta (day, ips, users) SELECT date(ts / 1000 + 28800, 'unixepoch'), COUNT(DISTINCT ip), COUNT(DISTINCT user_id) FROM request_log GROUP BY 1`);
 }

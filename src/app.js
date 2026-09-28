@@ -124,7 +124,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
     // 页面里引用的脚本和样式加上内容指纹，文件一变地址就变，旧缓存自动失效
     if (file.endsWith('.html')) {
       let html = body.toString('utf8');
-      for (const asset of ['app.js', 'styles.css']) {
+      for (const asset of ['app.js', 'admin-stats.js', 'status-page.js', 'styles.css']) {
         try {
           const h = createHash('sha1').update(await readFile(join(PUBLIC_DIR, asset))).digest('base64url').slice(0, 10);
           html = html.replaceAll(`"/${asset}"`, `"/${asset}?v=${h}"`);
