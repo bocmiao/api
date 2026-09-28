@@ -6,7 +6,7 @@ import { HttpError } from './http.js';
 const ID_RE = /^[A-Za-z0-9_-]{6,64}$/;
 const FLAGS = ['autoTrack', 'hashMode', 'screenRecord'];
 
-// 接受整段统计代码、LA.init({...}) 或只有统计 ID；返回规范化后的 LA.init({...}) 文本，清空时返回 ''
+// 接受整段统计代码、LA.init({...})、其中的参数或只有统计 ID；返回规范化后的参数文本，清空时返回 ''
 export function normalizeLa51(raw) {
   const text = String(raw ?? '').trim();
   if (!text) return '';
@@ -22,7 +22,8 @@ export function normalizeLa51(raw) {
   return la51Text({ id, ck, ...Object.fromEntries(FLAGS.map((k) => [k, flag(k)])) });
 }
 
-const la51Text = (c) => `LA.init({id:"${c.id}",ck:"${c.ck}",${FLAGS.map((k) => `${k}:${Boolean(c[k])}`).join(',')}})`;
+// 保存和显示用的格式：只有参数，不含 <script> 和 LA.init，避免再次保存时被 CDN 的防护拦截
+const la51Text = (c) => `id:"${c.id}",ck:"${c.ck}",${FLAGS.map((k) => `${k}:${Boolean(c[k])}`).join(',')}`;
 
 // 读取当前设置；没有填写或格式不对时返回 null
 export function la51Config(env = process.env) {

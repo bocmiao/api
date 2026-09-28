@@ -185,7 +185,9 @@ test('51.la 统计：粘贴整段代码只提取参数；启用后页面加载 S
   const { normalizeLa51, la51Config } = await import('../src/lib/la51.js');
   const snippet = `<script charset="UTF-8" id="LA_COLLECT" src="//sdk.51.la/js-sdk-pro.min.js"></script>
 <script>LA.init({id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:true,screenRecord:true})</script>`;
-  assert.equal(normalizeLa51(snippet), 'LA.init({id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:true,screenRecord:true})');
+  assert.equal(normalizeLa51(snippet), 'id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:true,screenRecord:true');
+  assert.equal(normalizeLa51(normalizeLa51(snippet)), normalizeLa51(snippet), '保存后的格式再保存不变');
+  assert.equal(normalizeLa51('id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:true,screenRecord:true'), normalizeLa51(snippet), '浏览器先提取的参数');
   assert.equal(normalizeLa51(snippet.replace(/\n/g, ' ')), normalizeLa51(snippet), '单行输入框粘贴时换行变空格');
   assert.match(normalizeLa51('LKkIIfAINJuOlf16'), /id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:false,screenRecord:false/);
   assert.equal(normalizeLa51(''), '');

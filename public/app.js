@@ -1538,6 +1538,13 @@ async function pageAdminSettings(focusGroup, focusKeys) {
     $('.set-field.focus [data-key]')?.focus({ preventScroll: true });
   }
 
+  // 51.la 统计代码：在浏览器里先提取出参数再提交。原样提交 <script> 代码会被 CDN（如 EdgeOne）的防护当成攻击拦截（HTTP 403）
+  const la51Params = (v) => {
+    const t = v.trim();
+    const m = /LA\.init\(\s*\{([\s\S]*?)\}\s*\)/.exec(t);
+    if (m) return m[1].replace(/\s+/g, ' ').trim();
+    return t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  };
   const collect = (form) => {
     const changes = {};
     for (const el of $$('[data-key]', form)) {
@@ -1548,7 +1555,7 @@ async function pageAdminSettings(focusGroup, focusKeys) {
       } else if (el.dataset.type === 'secret') {
         if (el.value.trim()) changes[k] = el.value.trim();
       } else if (el.value.trim() !== el.dataset.orig) {
-        changes[k] = el.value.trim() || null;
+        changes[k] = (k === 'LA51_CODE' ? la51Params(el.value) : el.value.trim()) || null;
       }
     }
     return changes;
