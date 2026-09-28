@@ -180,3 +180,36 @@ test('用户 QQ 群：默认显示群号；填了加群链接可点击；填 0 �
     if (prevL == null) delete process.env.COMMUNITY_QQ_LINK; else process.env.COMMUNITY_QQ_LINK = prevL;
   }
 });
+
+test('51.la 统计：粘贴整段代码只提取参数；启用后页面加载 SDK，安全策略只额外放行 51.la', async () => {
+  const { normalizeLa51, la51Config } = await import('../src/lib/la51.js');
+  const snippet = `<script charset="UTF-8" id="LA_COLLECT" src="//sdk.51.la/js-sdk-pro.min.js"></script>
+<script>LA.init({id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:true,screenRecord:true})</script>`;
+  assert.equal(normalizeLa51(snippet), 'LA.init({id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:true,screenRecord:true})');
+  assert.equal(normalizeLa51(snippet.replace(/\n/g, ' ')), normalizeLa51(snippet), '单行输入框粘贴时换行变空格');
+  assert.match(normalizeLa51('LKkIIfAINJuOlf16'), /id:"LKkIIfAINJuOlf16",ck:"LKkIIfAINJuOlf16",autoTrack:true,hashMode:false,screenRecord:false/);
+  assert.equal(normalizeLa51(''), '');
+  assert.throws(() => normalizeLa51('<script>alert(1)</script>'), { status: 400 });
+  assert.throws(() => normalizeLa51('LA.init({id:"a\\"><script>"})'), { status: 400 });
+  assert.equal(la51Config({ LA51_CODE: 'garbage <>' }), null);
+
+  const prev = process.env.LA51_CODE;
+  try {
+    delete process.env.LA51_CODE;
+    const off = await get('/', nav);
+    assert.doesNotMatch(off.body, /51\.la/);
+    assert.doesNotMatch(off.headers['content-security-policy'], /51\.la/);
+    process.env.LA51_CODE = normalizeLa51(snippet);
+    for (const p of ['/', '/docs/epic', '/about']) {
+      const on = await get(p, nav);
+      assert.match(on.body, /<script charset="UTF-8" id="LA_COLLECT" src="https:\/\/sdk\.51\.la\/js-sdk-pro\.min\.js"><\/script>/, p);
+      assert.match(on.body, /<script src="\/la51\.js" data-config="\{&quot;id&quot;:&quot;LKkIIfAINJuOlf16&quot;/, p);
+      assert.match(on.headers['content-security-policy'], /script-src 'self' https:\/\/\*\.51\.la;/, p);
+      assert.doesNotMatch(on.headers['content-security-policy'], /unsafe-eval|script-src[^;]*unsafe-inline/, '不放开内联脚本');
+    }
+    const js = await get('/la51.js');
+    assert.match(js.body, /LA\.init\(c\)/);
+  } finally {
+    if (prev == null) delete process.env.LA51_CODE; else process.env.LA51_CODE = prev;
+  }
+});

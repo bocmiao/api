@@ -8,6 +8,7 @@ import { apiRouter, catalog } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import { HttpError } from './lib/http.js';
 import { renderPage, renderAbout, siteOrigin, sitemap, robots } from './lib/seo.js';
+import { la51Tags, pageCsp } from './lib/la51.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled } from './lib/modules.js';
 import { applySettings } from './lib/settings.js';
@@ -136,6 +137,9 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
         status = t.status;
       }
       html = html.replace(/\{\{COMMUNITY[A-Z_]*\}\}/g, ''); // 直接访问模板文件时去掉未填的占位符
+      // 第三方统计（51.la）：后台填写了统计代码时插入页面
+      const la = la51Tags();
+      if (la) html = html.replace('</body>', `${la}</body>`);
       body = Buffer.from(html);
     }
     const etag = `"${createHash('sha1').update(body).digest('base64url').slice(0, 16)}"`;
@@ -147,7 +151,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
       'cache-control': versioned ? 'public, max-age=31536000, immutable' : page ? 'private, no-cache' : 'no-cache',
       ...(page ? { vary: 'Sec-Fetch-Mode, Accept' } : {}),
       etag,
-      ...(file.endsWith('.html') ? PAGE_HEADERS : {}),
+      ...(file.endsWith('.html') ? { ...PAGE_HEADERS, 'content-security-policy': pageCsp() } : {}),
     };
     if (status === 200 && req.headers['if-none-match'] === etag) {
       res.writeHead(304, headers);

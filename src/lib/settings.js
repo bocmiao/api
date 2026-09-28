@@ -1,5 +1,6 @@
 // 后台「系统设置」：保存在数据库，启动时及保存后写入 process.env，优先级高于环境变量。
 import { DEFAULT_PROXY_HOSTS } from './proxy.js';
+import { normalizeLa51 } from './la51.js';
 import { sql } from '../db.js';
 import { HttpError } from './http.js';
 
@@ -87,6 +88,12 @@ export const SETTING_GROUPS = [
     ],
   },
   {
+    id: 'analytics', title: '第三方统计',
+    fields: [
+      { key: 'LA51_CODE', label: '51.la 统计代码', type: 'text', placeholder: '把 51.la 后台给出的统计代码整段粘贴到这里，或只填统计 ID', help: '粘贴后会自动提取统计 ID 和 autoTrack / hashMode / screenRecord 开关，只保存这些参数。填写后网站所有页面都会加载 51.la 统计；清空即关闭。开启 screenRecord（录屏）时，访客在页面上的操作会被 51.la 录制，请在网站上告知访客' },
+    ],
+  },
+  {
     id: 'other', title: '其他',
     fields: [
       { key: 'LOG_RETENTION_DAYS', label: '调用明细保留天数', type: 'int', default: '30', min: 1, max: 3650, help: '每次调用的明细（用户、IP、来源、错误原因），用于统计页的调用方、来源、地域分析' },
@@ -108,6 +115,7 @@ export function applySettings() {
 }
 
 function validate(f, raw) {
+  if (f.key === 'LA51_CODE') return normalizeLa51(raw);
   const v = String(raw).trim();
   if (v.length > 2000) throw new HttpError(400, `${f.label}过长`);
   switch (f.type) {
