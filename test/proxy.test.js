@@ -74,7 +74,7 @@ test('没配代理时照常直连', async () => {
   }
 });
 
-test('网络错误说明具体原因，境外数据源提示配置代理', () => {
+test('网络错误说明具体原因，需要代理的数据源提示站长配置出站代理', () => {
   const dns = upstreamError(new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } }), 'https://box.maoyan.com/x');
   assert.equal(dns.status, 502);
   assert.equal(dns.message, '无法连接上游服务（box.maoyan.com：域名解析失败）');
@@ -82,5 +82,5 @@ test('网络错误说明具体原因，境外数据源提示配置代理', () =>
   assert.match(reset.message, /www\.v2ex\.com：连接被重置.*系统设置 → 网络/);
   const timeout = upstreamError(Object.assign(new Error('t'), { name: 'TimeoutError' }), 'https://store.steampowered.com/api');
   assert.equal(timeout.status, 504);
-  assert.match(timeout.message, /响应超时（store\.steampowered\.com）.*配置代理/);
+  assert.match(timeout.message, /响应超时（store\.steampowered\.com）.*配置出站代理/);
 });

@@ -108,8 +108,8 @@ document.documentElement.classList.add('js');
     ['/img/playground.jpg', 'Miao API 在线调试：返回结果带中文字段注释和示例代码', '每个接口都能在线调试，返回结果旁边直接显示字段的中文说明，下方附 cURL、JavaScript、Python 示例代码。'],
     ['/img/status.jpg', 'Miao API 运行状态页：各接口 24 小时调用量与失败率', '公开的运行状态页，按真实调用统计每个接口最近 24 小时的调用量、平均耗时和失败率。'],
     ['/img/console.jpg', '用户控制台：API Key 管理与调用量统计', '注册后在控制台管理 API Key，查看每天的用量、常用接口和最近的调用记录。'],
-    ['/img/admin.jpg', 'Miao API 管理后台：调用统计、接口排行、AI 故障分析', '自己部署后拥有完整的管理后台：全站统计、接口排行、失败记录，一键巡检和 AI 分析故障原因。'],
-    ['/img/settings.jpg', 'Miao API 管理后台系统设置：额度、注册、第三方密钥', '额度、注册开关、邮件、第三方密钥、境外代理都在网页里配置，保存后立即生效。'],
+    ['/img/admin.jpg', 'Miao API 管理后台：调用统计、接口排行、故障诊断', '自己部署后拥有完整的管理后台：全站统计、接口排行、失败记录，一键巡检和故障诊断。'],
+    ['/img/settings.jpg', 'Miao API 管理后台系统设置：额度、注册、第三方密钥', '额度、注册开关、邮件、第三方密钥都在网页里配置，保存后立即生效。'],
   ];
   $$('[data-shot]').forEach((b) => b.addEventListener('click', () => {
     const [src, alt, cap] = SHOTS[Number(b.dataset.shot)];

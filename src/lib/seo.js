@@ -21,7 +21,7 @@ function homeBody(list) {
   const total = list.length;
   return `<div class="wrap seo-pre" style="padding:40px 20px">
 <h1>${SITE}：免费聚合 API 接口平台</h1>
-<p>一个 Key 调用 ${total} 个常用接口（${routeCount(list)} 个调用地址）：游戏限免、全网热榜、天气节假日、金融行情、诗词壁纸、开发工具、网络检测与 AI。统一 JSON 格式，每个返回字段都有中文说明，支持跨域，免注册每天可免费调用。</p>
+<p>一个 Key 调用 ${total} 个常用接口（${routeCount(list)} 个调用地址），涵盖${categories.filter((c) => list.some((m) => m.category === c.id)).map((c) => c.title).join('、')}等分类。统一 JSON 格式，每个返回字段都有中文说明，支持跨域，免注册每天可免费调用。</p>
 ${categories.map((c) => {
     const ms = list.filter((m) => m.category === c.id);
     if (!ms.length) return '';

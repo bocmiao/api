@@ -1,4 +1,8 @@
 import { HttpError, param } from '../../lib/http.js';
+import { isModuleEnabled } from '../../lib/modules.js';
+
+// 单个来源对应的热榜模块被关闭（或备案合规模式下线）时，合集里也不提供
+const sourceOn = (id) => isModuleEnabled(`hot-${id}`);
 import { GITHUB_LANG_RE, GITHUB_SINCE, NEWS_FEEDS, SOURCES, SOURCE_IDS, getHot, limitItems } from './sources.js';
 import { SOURCES_FIELDS, allFields, sourceFields } from './fields.js';
 
@@ -117,6 +121,8 @@ modules.push({
         const ids = [...new Set(raw.split(',').map((s) => s.trim()).filter(Boolean))];
         const unknown = ids.filter((s) => !SOURCES[s]);
         if (unknown.length) throw new HttpError(400, `未知来源：${unknown.join(', ')}`);
+        const off = ids.filter((s) => !sourceOn(s));
+        if (off.length) throw new HttpError(403, `来源已关闭：${off.map((s) => SOURCES[s].title).join('、')}`);
         if (!ids.length) throw new HttpError(400, 'sources 不能为空');
         const limit = param(query, 'limit', { default: 10, int: true, min: 1, max: 50 });
 
@@ -148,7 +154,7 @@ modules.push({
       params: [],
       fields: SOURCES_FIELDS,
       async handler() {
-        return { data: SOURCE_IDS.map((id) => ({ id, title: SOURCES[id].title })) };
+        return { data: SOURCE_IDS.filter(sourceOn).map((id) => ({ id, title: SOURCES[id].title })) };
       },
     },
   ],

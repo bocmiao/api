@@ -12,6 +12,7 @@ export const SETTING_GROUPS = [
       { key: 'PUBLIC_URL', label: '站点地址', type: 'url', placeholder: 'https://api.miao.club', help: '用于生成短链接等完整网址，以及判断是否启用安全 Cookie' },
       { key: 'TRUST_PROXY', label: '信任反向代理', type: 'bool', default: '0', help: '部署在 Nginx / 1Panel / CDN 后面时必须开启，否则拿不到访客真实 IP' },
       { key: 'REGISTRATION_OPEN', label: '开放注册', type: 'bool', default: '1' },
+      { key: 'COMPLIANCE_MODE', label: '备案合规模式', type: 'bool', default: '0', help: '网站备案审核期间打开：AI 助手、加密货币、运势吉凶、答案之书、短链接、整站抓取、邮箱有效性检测、V2EX 热门会下线，首页、文档、产品介绍页、站点地图都不再展示，调用返回 403。备案完成后关闭即可恢复，代码和数据都不删除' },
       { key: 'ADMIN_EMAILS', label: '额外管理员邮箱', type: 'emails', placeholder: 'a@example.com, b@example.com', help: '这些邮箱登录后也拥有管理员权限；第一个注册的账号始终是管理员' },
       { key: 'COMMUNITY_QQ', label: '用户 QQ 群号', type: 'text', default: '2639496', help: '显示在网站底部、产品介绍页和开发文档里；填 0 不显示' },
       { key: 'COMMUNITY_QQ_NAME', label: 'QQ 群名称', type: 'text', placeholder: 'MiaoClub', help: '显示在群号前面；留空时默认群显示「MiaoClub」' },
@@ -83,7 +84,7 @@ export const SETTING_GROUPS = [
   {
     id: 'network', title: '网络',
     fields: [
-      { key: 'OUTBOUND_PROXY', label: '境外数据源代理', type: 'secret', placeholder: 'http://127.0.0.1:7890', help: '服务器在大陆时，Steam、V2EX、加密货币等境外数据源通常连不上。填写一个 HTTP 代理（例如服务器上 Clash 的 http://127.0.0.1:7890，需要账号密码时写成 http://用户名:密码@地址:端口），下面列表里的网站会通过代理访问，其余照常直连。服务器本身在境外时不用填' },
+      { key: 'OUTBOUND_PROXY', label: '出站 HTTP 代理', type: 'secret', placeholder: 'http://127.0.0.1:8080', help: '部分数据源在服务器所在网络下无法直接访问时，可填写一个 HTTP 代理地址（需要账号密码时写成 http://用户名:密码@地址:端口）。只有下面列表里的网站通过代理访问，其余照常直连；不需要时留空' },
       { key: 'OUTBOUND_PROXY_HOSTS', label: '走代理的网站', type: 'text', default: DEFAULT_PROXY_HOSTS, help: '域名用逗号分隔，子域名自动包含（填 steampowered.com 即包含 store.steampowered.com）。填 * 表示所有外部请求都走代理' },
     ],
   },
@@ -144,7 +145,7 @@ function validate(f, raw) {
       if (f.key === 'OUTBOUND_PROXY' && v) {
         let u;
         try { u = new URL(v); } catch { throw new HttpError(400, '代理地址格式不对，例如 http://127.0.0.1:7890'); }
-        if (u.protocol !== 'http:') throw new HttpError(400, '目前只支持 HTTP 代理，地址须以 http:// 开头（Clash、V2Ray 等的 HTTP 端口或混合端口都可以）');
+        if (u.protocol !== 'http:') throw new HttpError(400, '目前只支持 HTTP 代理，地址须以 http:// 开头');
       }
       return v;
   }

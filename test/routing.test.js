@@ -215,3 +215,46 @@ test('51.la 统计：粘贴整段代码只提取参数；启用后页面加载 S
     if (prev == null) delete process.env.LA51_CODE; else process.env.LA51_CODE = prev;
   }
 });
+
+test('备案合规模式：高风险接口下线且不在公开页面出现，关闭后恢复', async () => {
+  const { COMPLIANCE_MODULES } = await import('../src/lib/compliance.js');
+  const { isModuleEnabled } = await import('../src/lib/modules.js');
+  const { upstreamError } = await import('../src/lib/http.js');
+  const prev = process.env.COMPLIANCE_MODE;
+  try {
+    process.env.COMPLIANCE_MODE = '1';
+    for (const name of Object.keys(COMPLIANCE_MODULES)) assert.equal(isModuleEnabled(name), false, name);
+    assert.equal(isModuleEnabled('epic'), true);
+    const cat = await (await fetch(`${base}/api`)).json();
+    const names = cat.data.modules.map((m) => m.name);
+    for (const name of Object.keys(COMPLIANCE_MODULES)) assert.ok(!names.includes(name), `${name} 不在接口目录`);
+    assert.equal(cat.data.categories.find((c) => c.id === 'ai').count, 0);
+    assert.equal((await fetch(`${base}/api/crypto/price`)).status, 403);
+    assert.equal((await fetch(`${base}/api/hot/all?sources=weibo,v2ex`)).status, 403, '热榜合集也不能取 V2EX');
+    const src = await (await fetch(`${base}/api/hot/sources`)).json();
+    assert.ok(!src.data.some((s) => s.id === 'v2ex'));
+    const home = await get('/', nav);
+    assert.doesNotMatch(home.body, /AI 助手|加密货币|今日运势|号码吉凶|答案之书|href="\/docs\/ai"/);
+    const about = await get('/about', nav);
+    assert.doesNotMatch(about.body, /文本摘要、情感分析|Clash|V2Ray|境外/);
+    assert.equal((await get('/docs/ai', nav)).status, 404);
+    const sm = await get('/sitemap.xml');
+    assert.doesNotMatch(sm.body, /\/docs\/(ai|crypto|fortune|numerology|answer|shorturl|crawl|email-check|hot-v2ex)</);
+    const err = upstreamError(Object.assign(new Error('t'), { name: 'TimeoutError' }), 'https://www.v2ex.com/api');
+    assert.doesNotMatch(err.message, /代理/, '合规模式下错误信息不提代理');
+
+    process.env.COMPLIANCE_MODE = '0';
+    assert.equal(isModuleEnabled('ai'), true, '关闭后恢复');
+    assert.equal((await get('/docs/ai', nav)).status, 200);
+  } finally {
+    if (prev == null) delete process.env.COMPLIANCE_MODE; else process.env.COMPLIANCE_MODE = prev;
+  }
+});
+
+test('公开页面和 README 不出现翻墙工具相关字样', async () => {
+  const { readFile } = await import('node:fs/promises');
+  for (const f of ['public/index.html', 'public/about.html', 'public/about.js', 'public/app.js', 'README.md', 'src/lib/settings.js', 'src/lib/http.js', 'src/lib/seo.js']) {
+    const text = await readFile(new URL(`../${f}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(text, /Clash|V2Ray|mihomo|翻墙|科学上网|梯子/, f);
+  }
+});

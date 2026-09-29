@@ -35,7 +35,7 @@ const form = (obj) => ({
 // 每个服务：keys 是它用到的设置项（按钮放在第一项旁边），required 为没有填写时是否直接判定未配置
 export const SERVICES = [
   {
-    id: 'proxy', title: '境外数据源代理', keys: ['OUTBOUND_PROXY'], required: ['OUTBOUND_PROXY'],
+    id: 'proxy', title: '出站 HTTP 代理', keys: ['OUTBOUND_PROXY'], required: ['OUTBOUND_PROXY'],
     async test() {
       const cfg = proxyConfig();
       if (!cfg) return fail('代理地址格式不对，须以 http:// 开头，例如 http://127.0.0.1:7890');

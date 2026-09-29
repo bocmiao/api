@@ -17,7 +17,8 @@ import { startInspect, stopInspect, inspectStatus, COSTLY } from '../lib/inspect
 import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
-import { isModuleEnabled, setModulesEnabled } from '../lib/modules.js';
+import { isModuleEnabled, isModuleSwitchedOn, setModulesEnabled } from '../lib/modules.js';
+import { complianceBlocks, COMPLIANCE_MODULES } from '../lib/compliance.js';
 import { listSettings, saveSettings, SETTING_GROUPS } from '../lib/settings.js';
 import { testService, serviceOfKey, linkOfKey } from '../lib/keytest.js';
 import { sendMail } from '../notify/smtp.js';
@@ -464,7 +465,9 @@ r('GET', '/admin/modules', (ctx) => {
         name: m.name,
         title: m.title,
         category: m.category,
-        enabled: isModuleEnabled(m.name),
+        enabled: isModuleSwitchedOn(m.name),
+        // 备案合规模式下线的原因；不为空时无论开关如何都不对外提供
+        compliance: complianceBlocks(m.name) ? COMPLIANCE_MODULES[m.name] : null,
         routes: m.routes.map((x) => x.path),
         calls7d: m.routes.reduce((n, x) => n + (calls.get(x.path) ?? 0), 0),
         keys: moduleKeys(m),

@@ -6,6 +6,7 @@ export class HttpError extends Error {
 }
 
 import { outboundFetch, proxyConfig, shouldProxy, DEFAULT_PROXY_HOSTS } from './proxy.js';
+import { complianceOn } from './compliance.js';
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
 
@@ -22,11 +23,11 @@ export function networkReason(err) {
   return NET_REASONS.find(([re]) => re.test(code))?.[1] ?? (err?.proxy ? err.message : '');
 }
 
-// 境外数据源没走代理时，提示可以配置代理
+// 需要代理才能访问的数据源没走代理时，提示站长可以配置出站代理（备案合规模式下不提示）
 export function overseasHint(url) {
   if (proxyConfig() && shouldProxy(url)) return '（已通过代理访问，请检查代理是否可用）';
   const known = shouldProxy(url, { hosts: DEFAULT_PROXY_HOSTS.split(',') });
-  return known ? '。该数据源在境外，服务器在大陆时通常无法直连，可在「系统设置 → 网络」配置代理' : '';
+  return known && !complianceOn() ? '。该数据源在服务器所在网络下可能无法直接访问，站长可在「系统设置 → 网络」配置出站代理' : '';
 }
 
 export function upstreamError(err, url, what = '上游服务') {

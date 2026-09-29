@@ -309,7 +309,7 @@ async function pageHome() {
       </div>
       <div class="cat-tabs" id="cats">
         <button class="chip" data-cat="all">全部 <span class="n">${cat.modules.length}</span></button>
-        ${cat.categories.map((c) => `<button class="chip" data-cat="${c.id}">${icon(c.icon)}${esc(c.title)} <span class="n">${c.count}</span></button>`).join('')}
+        ${cat.categories.filter((c) => c.count > 0).map((c) => `<button class="chip" data-cat="${c.id}">${icon(c.icon)}${esc(c.title)} <span class="n">${c.count}</span></button>`).join('')}
       </div>
       <div class="api-grid" id="grid"></div>
     </section>
@@ -755,7 +755,7 @@ async function pageDocs() {
     <p>参数里有中文、空格或 <code>&amp;</code> 等特殊字符时需要编码。浏览器地址栏会自动处理；写代码时用 <code>URLSearchParams</code>（JavaScript）或 <code>params=</code>（Python）会自动编码，不要自己拼字符串。</p>
 
     <h3>POST：参数放在请求体里（少数接口）</h3>
-    <p>短链接生成、AI 这类会「创建内容」或内容较长的接口使用 POST。参数写成 JSON 放在请求体里，并加上请求头 <code>Content-Type: application/json</code>。POST 接口不能直接在浏览器地址栏打开，可以用接口详情页的「在线调试」测试。</p>
+    <p>文本对比、格式转换这类内容较长的接口使用 POST。参数写成 JSON 放在请求体里，并加上请求头 <code>Content-Type: application/json</code>。POST 接口不能直接在浏览器地址栏打开，可以用接口详情页的「在线调试」测试。</p>
 
     <h3>怎么看参数写在哪里</h3>
     <p>接口详情页的参数表有一列「位置」：</p>
@@ -1637,9 +1637,9 @@ async function loadModuleSwitches() {
         <div class="mod-group-head"><b>${icon(c.icon)}${esc(c.title)}</b>
           <span class="row"><button class="btn sm ghost" data-bulk="${c.id}" data-on="1">全部开启</button><button class="btn sm ghost" data-bulk="${c.id}" data-on="0">全部关闭</button></span></div>
         <div class="mod-grid">${list.map((m) => `
-          <label class="mod-item ${m.enabled ? '' : 'off'}" title="${esc(m.routes.join('\n'))}">
+          <label class="mod-item ${m.enabled && !m.compliance ? '' : 'off'}" title="${esc(m.compliance ? `备案合规模式已下线：${m.compliance}` : m.routes.join('\n'))}">
             <span class="switch"><input type="checkbox" data-mod="${esc(m.name)}" ${m.enabled ? 'checked' : ''}><span></span></span>
-            <span class="grow"><span class="mod-title">${esc(m.title)}${keyBadge(m.keys)}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
+            <span class="grow"><span class="mod-title">${esc(m.title)}${keyBadge(m.keys)}${m.compliance ? ' <span class="badge warn">合规模式下线</span>' : ''}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
             <span class="small faint" title="近 7 天调用">${fmtNum(m.calls7d)}</span>
           </label>`).join('')}</div></div>`;
     }).join('') || '<div class="empty">没有匹配的接口</div>';

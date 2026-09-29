@@ -289,7 +289,7 @@
         <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
           <h3>运行状态公开透明</h3><p>公开的状态页按真实调用统计每个接口 24 小时的调用量、耗时和失败率，数据源失效的接口会明确标出原因。</p></div>
         <div class="feat reveal"><div class="fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg></div>
-          <h3>零依赖，拷过去就能跑</h3><p>只用 Node.js 自带能力和内置 SQLite，没有任何 npm 依赖；自带管理后台、一键巡检、AI 故障分析和在线更新。</p></div>
+          <h3>零依赖，拷过去就能跑</h3><p>只用 Node.js 自带能力和内置 SQLite，没有任何 npm 依赖；自带管理后台、一键巡检、故障诊断和在线更新。</p></div>
       </div>
     </div>
   </section>
@@ -399,7 +399,6 @@ docker run -d --name miao-api --restart unless-stopped \
         <details open><summary>Miao API 是免费的吗？</summary><p>是的。在线站点不注册每天可免费调用 {{ANON}} 次，免费注册后每天 {{USER}} 次；自己部署则没有任何限制。</p></details>
         <details><summary>调用需要 API Key 吗？</summary><p>不需要。大多数接口直接请求就能用；注册后在控制台创建 API Key，通过请求头 <code>X-API-Key</code> 传入可获得更高额度。在公开网页里调用时建议不带 Key。</p></details>
         <details><summary>可以用在商业项目里吗？</summary><p>可以调用在线站点的接口，也可以部署源码使用。项目以 GPL v3 协议开源：如果你分发修改后的版本，需要同样以 GPL v3 开源并保留版权声明。部分接口的数据来自第三方网站，请同时遵守相应网站的使用条款。</p></details>
-        <details><summary>服务器在国内，境外接口连不上怎么办？</summary><p>在后台「系统设置 → 网络」填写一个 HTTP 代理（例如服务器上 Clash 的 <code>http://127.0.0.1:7890</code>），Steam、GitHub、V2EX 等境外数据源会自动走代理，其他请求照常直连。</p></details>
         <details><summary>如何新增自己的接口？</summary><p>在 <code>src/apis/&lt;分类&gt;/</code> 下按约定新建一个模块文件并注册，它会自动出现在接口目录、文档页和在线调试中。欢迎把通用的接口提交 PR 分享给大家。</p></details>
         {{COMMUNITY_FAQ}}
       </div>
