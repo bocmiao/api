@@ -159,6 +159,8 @@ textarea.input { height: auto; min-height: 80px; padding: 10px 12px; resize: ver
 .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--brand); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading { display: flex; justify-content: center; padding: 60px 0; }
+/* 服务端预渲染的正文：搜索引擎能读到，浏览器里不显示（页面脚本渲染完会整体替换）；不执行 JS 时由 <noscript> 样式显示出来 */
+.seo-pre { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .section { padding: 40px 0; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .section-title h2 { font-size: 20px; white-space: nowrap; }

@@ -146,6 +146,8 @@ function jsonLd(meta, origin, url) {
 }
 
 // 把页面信息写进 index.html
+const NOSCRIPT_STYLE = '<noscript><style>.seo-pre{position:static!important;width:auto!important;height:auto!important;overflow:visible!important;clip:auto!important;white-space:normal!important}main>.loading{display:none!important}</style></noscript>\n';
+
 export function renderPage(html, path, origin) {
   const meta = pageMeta(path);
   const url = `${origin}${path === '/' ? '/' : path}`;
@@ -169,7 +171,11 @@ export function renderPage(html, path, origin) {
     .replace(/<title>[^<]*<\/title>/, head)
     .replace(/<meta name="description"[^>]*>\n?/, '');
   out = out.replace('</head>', `${jsonLd(meta, origin, url)}</head>`);
-  if (meta.body) out = out.replace(/<main id="main">[\s\S]*?<\/main>/, `<main id="main">${meta.body}</main>`);
+  // 预渲染的正文给搜索引擎和不执行 JavaScript 的访客看；普通浏览器先显示加载动画，等页面脚本渲染好再替换，避免闪一下纯文字版
+  if (meta.body) {
+    out = out.replace(/<main id="main">[\s\S]*?<\/main>/, `<main id="main"><div class="loading"><span class="spinner"></span></div>${meta.body}</main>`);
+    out = out.replace('</head>', `${NOSCRIPT_STYLE}</head>`);
+  }
   const ch = communityHtml();
   out = out.replace('{{COMMUNITY}}', ch ? ` · ${ch}` : '');
   return { status: meta.status ?? 200, html: out };
