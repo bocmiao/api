@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { config } from './config.js';
 import { handle } from './app.js';
 import { pruneLogs } from './lib/limits.js';
+import { pruneLoginLog } from './lib/audit.js';
 import { pruneEmailCodes } from './lib/emailcode.js';
 import { startScheduler } from './notify/scheduler.js';
 import { clearPending, readPending } from './lib/swap.js';
@@ -10,7 +11,7 @@ import { startPrewarm } from './lib/prewarm.js';
 import { startStats, flushStats } from './lib/stats.js';
 import { startHealthChecks, pruneHealth } from './lib/health.js';
 
-const prune = () => { pruneLogs(); pruneEmailCodes(); pruneHealth(); };
+const prune = () => { pruneLogs(); pruneEmailCodes(); pruneHealth(); pruneLoginLog(); };
 prune();
 setInterval(prune, 6 * 3600_000).unref();
 startScheduler();

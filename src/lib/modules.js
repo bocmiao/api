@@ -20,3 +20,28 @@ export function setModulesEnabled(names, enabled) {
   for (const n of names) stmt.run(n, enabled ? 1 : 0);
   disabled = null;
 }
+
+// ---------- 接口运行参数（后台可改）：置顶、推荐、缓存时长、每分钟限流 ----------
+let options = null;
+const loadOptions = () => (options ??= new Map(sql('SELECT * FROM module_options').all().map((r) => [r.name, {
+  pinned: Boolean(r.pinned), featured: Boolean(r.featured), cacheTtlMs: r.cache_ttl_ms, minuteLimit: r.minute_limit,
+}])));
+const EMPTY = Object.freeze({ pinned: false, featured: false, cacheTtlMs: null, minuteLimit: null });
+export const moduleOptions = (name) => loadOptions().get(name) ?? EMPTY;
+export const allModuleOptions = () => Object.fromEntries(loadOptions());
+
+export function setModuleOptions(name, { pinned, featured, cacheTtlMs, minuteLimit }) {
+  const cur = moduleOptions(name);
+  const v = {
+    pinned: pinned === undefined ? cur.pinned : Boolean(pinned),
+    featured: featured === undefined ? cur.featured : Boolean(featured),
+    cacheTtlMs: cacheTtlMs === undefined ? cur.cacheTtlMs : cacheTtlMs,
+    minuteLimit: minuteLimit === undefined ? cur.minuteLimit : minuteLimit,
+  };
+  sql(`INSERT INTO module_options (name, pinned, featured, cache_ttl_ms, minute_limit, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(name) DO UPDATE SET pinned = excluded.pinned, featured = excluded.featured, cache_ttl_ms = excluded.cache_ttl_ms,
+       minute_limit = excluded.minute_limit, updated_at = excluded.updated_at`)
+    .run(name, Number(v.pinned), Number(v.featured), v.cacheTtlMs, v.minuteLimit, Date.now());
+  options = null;
+  return moduleOptions(name);
+}

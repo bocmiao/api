@@ -1,21 +1,25 @@
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { extname, join, normalize } from 'node:path';
 import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
-import { HttpError } from './lib/http.js';
+import './routes/site.js';
+import { HttpError, errorCode } from './lib/http.js';
 import { renderPage, renderAbout, siteOrigin, sitemap, robots } from './lib/seo.js';
 import { la51Tags, pageCsp } from './lib/la51.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
-import { isModuleEnabled } from './lib/modules.js';
+import { isModuleEnabled, moduleOptions } from './lib/modules.js';
+import { checkKeySource } from './lib/keysource.js';
+import { cacheScope, noteRouteKeys } from './lib/cache.js';
+import { noteRouteTtl } from './lib/routecache.js';
 import { applySettings } from './lib/settings.js';
 
 // 后台「系统设置」中保存的配置优先于环境变量
 applySettings();
-import { consume, logRequest } from './lib/limits.js';
+import { consume, logRequest, refund } from './lib/limits.js';
 import { recordLimited } from './lib/stats.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
@@ -27,7 +31,7 @@ const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
   'access-control-allow-headers': 'Content-Type, Authorization, X-API-Key',
-  'access-control-expose-headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset',
+  'access-control-expose-headers': 'X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Request-Id, X-Cache',
 };
 const PAGE_HEADERS = {
   'x-content-type-options': 'nosniff',
@@ -56,6 +60,9 @@ const envelope = (r) => ({
   ...(r?.updatedAt ? { updatedAt: r.updatedAt } : {}),
   data: r?.data ?? null,
 });
+
+// 请求 ID：时间（36 进制）+ 随机数，按时间大致有序，便于在日志里查找
+export const newRequestId = () => `${Date.now().toString(36)}-${randomBytes(5).toString('hex')}`;
 
 function clientIp(req) {
   if (config.trustProxy) {
@@ -125,7 +132,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
     // 页面里引用的脚本和样式加上内容指纹，文件一变地址就变，旧缓存自动失效
     if (file.endsWith('.html')) {
       let html = body.toString('utf8');
-      for (const asset of ['app.js', 'admin-stats.js', 'status-page.js', 'styles.css']) {
+      for (const asset of ['app.js', 'admin-stats.js', 'status-page.js', 'styles.css', 'theme-init.js', 'about.js', 'site.js']) {
         try {
           const h = createHash('sha1').update(await readFile(join(PUBLIC_DIR, asset))).digest('base64url').slice(0, 10);
           html = html.replaceAll(`"/${asset}"`, `"/${asset}?v=${h}"`);
@@ -168,7 +175,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
 // 网页的页面地址（/docs/epic、/console/keys、/admin/users……）返回页面。
 // 只有同时也是 JSON 地址的（如 /status、/admin/users）才按请求类型区分：浏览器直接打开或搜索引擎爬虫返回页面，
 // 网页程序内部用 fetch 取数据时照常返回 JSON。/api/ 开头的接口和 /s/ 短链接不受影响
-const PAGE_ROOTS = new Set(['', 'docs', 'status', 'login', 'register', 'reset', 'console', 'admin']);
+const PAGE_ROOTS = new Set(['', 'docs', 'status', 'links', 'login', 'register', 'reset', 'console', 'admin']);
 const BOT_RE = /bot|spider|crawl|slurp|bingpreview|facebookexternalhit|embedly|quora link preview|whatsapp|telegram|skype|lark|dingtalk/i;
 export function pageNavigation(req, path) {
   if (req.method !== 'GET' || path === '/api' || /^\/(api|s)\//.test(path) || /\.[a-z0-9]+$/i.test(path)) return null;
@@ -188,7 +195,10 @@ export async function handle(req, res) {
   const ip = clientIp(req);
   const cookies = parseCookies(req.headers.cookie);
   const isApi = path === '/api' || path.startsWith('/api/');
-  const log = { user: null, keyId: null, logged: false };
+  const log = { user: null, keyId: null, logged: false, charges: [] };
+  const rid = newRequestId();
+  log.rid = rid;
+  res.setHeader('x-request-id', rid);
 
   try {
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
@@ -245,24 +255,38 @@ export async function handle(req, res) {
       let user = null;
       if (key) {
         user = userFromApiKey(key);
-        if (!user) throw new HttpError(401, 'API Key 无效或已删除');
+        if (!user) throw new HttpError(401, 'API Key 无效或已删除', 'INVALID_API_KEY');
         log.keyId = user.key_id;
+        log.user = user;
+        log.logged = !route.public;
+        if (user.key_disabled) throw new HttpError(403, '该 API Key 已停用，可在控制台重新启用', 'KEY_DISABLED');
+        checkKeySource(user.key_allow, { ip, headers: req.headers });
+        if (user.key_scopes && !user.key_scopes.split('\n').includes(hit.route.module.name)) {
+          throw new HttpError(403, '该 API Key 没有调用这个接口的权限，可在控制台修改 Key 的接口范围', 'KEY_SCOPE_DENIED');
+        }
       } else {
         user = userFromSession(cookies.sid);
       }
       log.user = user;
       log.logged = !route.public;
       // 被管理员关闭的模块对所有人（包括管理员）返回 403，已生成的短链接也随之失效
-      if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, '该接口已被管理员关闭');
+      if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, '该接口已被管理员关闭', 'API_DISABLED');
       // 数据源已失效、暂停服务的接口：直接说明原因，不再请求上游，也不计入额度
-      if (hit.route.module.suspended) { log.logged = false; throw new HttpError(503, `该接口暂不可用：${hit.route.module.suspended}`); }
+      if (hit.route.module.suspended) { log.logged = false; throw new HttpError(503, `该接口暂不可用：${hit.route.module.suspended}`, 'API_SUSPENDED'); }
 
-      const rateHeaders = route.public ? {} : consume({ user, ip });
+      const opts = moduleOptions(hit.route.module.name);
+      const charge = { charges: log.charges, module: hit.route.module.name, moduleMinute: opts.minuteLimit };
+      const rateHeaders = route.public ? {} : consume({ user, ip }, 1, charge);
       const body = await readBody(req);
       const ctx = { req, ip, params: hit.params, query: url.searchParams, body, user: user && { id: user.id, email: user.email } };
       // 批量接口按目标数计费：入口已计 1 次，handler 调用 ctx.charge(n) 再多计 n 次（额度不足时抛 429）
-      ctx.charge = (n) => { if (!route.public && n > 0) Object.assign(rateHeaders, consume({ user, ip }, n)); };
-      const result = await route.handler(ctx);
+      ctx.charge = (n) => { if (!route.public && n > 0) Object.assign(rateHeaders, consume({ user, ip }, n, { charges: log.charges })); };
+      const scope = { ttlOverride: opts.cacheTtlMs, keys: new Set() };
+      const result = await cacheScope.run(scope, () => route.handler(ctx));
+      noteRouteKeys(hit.route.module.name, scope.keys);
+      if ((result?.status ?? 200) < 400) noteRouteTtl(route.path, scope.ttl ?? 0);
+      // 返回图片等原始内容的接口自己给出状态码：服务端失败时同样退回额度
+      if ((result?.status ?? 200) >= 500) refund(log.charges);
 
       if (route.raw) {
         const headers = { ...CORS, ...rateHeaders, ...result.headers };
@@ -272,7 +296,8 @@ export async function handle(req, res) {
         }
         log.bytes = send(res, result.status ?? 200, result.body ?? '', headers);
       } else {
-        log.bytes = send(res, 200, envelope(result), { ...CORS, ...rateHeaders });
+        const xc = result?.stale ? 'STALE' : result?.cached ? 'HIT' : result?.cached === false ? 'MISS' : null;
+        log.bytes = send(res, 200, { ...envelope(result), requestId: rid }, { ...CORS, ...rateHeaders, ...(xc ? { 'x-cache': xc } : {}) });
       }
       // 缓存：0 未命中，1 命中，2 上游故障时返回的旧数据
       log.cached = result?.stale ? 2 : result?.cached ? 1 : 0;
@@ -284,6 +309,8 @@ export async function handle(req, res) {
     throw new HttpError(404, isApi ? '接口不存在，访问 /api 查看全部接口' : '页面不存在');
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
+    // 服务端或上游的问题不算调用方的额度
+    if (status >= 500) refund(log.charges);
     // 代码错误打印完整堆栈；上游故障、服务不支持等预期内的 5xx 只记一行
     if (status >= 500) console.error(`[${req.method} ${path}]`, err instanceof HttpError ? `${status} ${err.message}` : err);
     // 被限流的请求不计入日志，避免刷量拖慢数据库
@@ -294,7 +321,7 @@ export async function handle(req, res) {
       logRequest({ ...log, ip, path, status, ms: Date.now() - started, error, headers: req.headers });
     }
     if (res.headersSent) return res.end();
-    send(res, status, { code: status, message: status === 500 ? '服务器内部错误' : err.message, data: null }, {
+    send(res, status, { code: status, message: status === 500 ? '服务器内部错误' : err.message, errorCode: errorCode(status, err), requestId: rid, data: null }, {
       ...(isApi ? CORS : {}), ...(err.headers ?? {}),
     });
   }

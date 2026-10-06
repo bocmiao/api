@@ -29,15 +29,19 @@ import { isBlockedIP } from '../lib/netguard.js';
 import { loadIpInfo, normalizeIp } from '../apis/life/ip.js';
 import { parseRange, overview, endpoints, endpointDetail, audience, userGrowth, issues, statusData } from '../lib/analytics.js';
 import { healthStatus, runHealthCheck } from '../lib/health.js';
+import { normalizeRules } from '../lib/keysource.js';
+import { audit, requireReason, recordLogin } from '../lib/audit.js';
+import { moduleOptions, setModuleOptions } from '../lib/modules.js';
+import { clearModuleCache } from '../lib/cache.js';
 
 export const accountRouter = new Router();
 const r = (method, path, handler, opts = {}) => accountRouter.add(method, path, handler, opts);
 
-function requireUser(ctx) {
-  if (!ctx.user) throw new HttpError(401, '请先登录');
+export function requireUser(ctx) {
+  if (!ctx.user) throw new HttpError(401, '请先登录', 'LOGIN_REQUIRED');
   return ctx.user;
 }
-function requireAdmin(ctx) {
+export function requireAdmin(ctx) {
   const user = requireUser(ctx);
   if (!publicUser(user).isAdmin) throw new HttpError(403, '需要管理员权限');
   return user;
@@ -97,7 +101,9 @@ r('POST', '/auth/register', async (ctx) => {
   const { lastInsertRowid } = sql('INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, ?)')
     .run(email, await hashPassword(ctx.body.password), isFirst ? 1 : 0);
   ctx.setCookie(sessionCookie(createSession(Number(lastInsertRowid)), ctx.req));
-  return { data: publicUser(sql('SELECT * FROM users WHERE id = ?').get(lastInsertRowid)) };
+  const created = sql('SELECT * FROM users WHERE id = ?').get(lastInsertRowid);
+  recordLogin(ctx, { user: created, ok: true, reason: '注册' });
+  return { data: publicUser(created) };
 });
 
 r('POST', '/auth/login', async (ctx) => {
@@ -107,10 +113,15 @@ r('POST', '/auth/login', async (ctx) => {
   const ok = user && (await verifyPassword(String(ctx.body?.password ?? ''), user.password_hash));
   if (!ok) {
     recordLoginFail(ctx.ip);
+    recordLogin(ctx, { user, email, ok: false, reason: user ? '密码错误' : '账号不存在' });
     throw new HttpError(401, '邮箱或密码错误');
   }
-  if (user.disabled) throw new HttpError(403, '账号已被停用');
+  if (user.disabled) {
+    recordLogin(ctx, { user, ok: false, reason: '账号已停用' });
+    throw new HttpError(403, '账号已被停用');
+  }
   loginFails.delete(ctx.ip);
+  recordLogin(ctx, { user, ok: true });
   ctx.setCookie(sessionCookie(createSession(user.id), ctx.req));
   return { data: publicUser(user) };
 });
@@ -143,23 +154,70 @@ r('DELETE', '/account', async (ctx) => {
 });
 
 // ---------- API Key ----------
+const keyRow = (k) => ({
+  id: k.id, name: k.name, prefix: k.prefix, disabled: Boolean(k.disabled),
+  allow: k.allow ? k.allow.split('\n') : [], scopes: k.scopes ? k.scopes.split('\n') : [],
+  createdAt: k.created_at, lastUsedAt: k.last_used_at,
+});
+function ownKey(user, id) {
+  const key = sql('SELECT * FROM api_keys WHERE id = ? AND user_id = ?').get(Number(id), user.id);
+  if (!key) throw new HttpError(404, 'Key 不存在');
+  return key;
+}
+function keyName(raw) {
+  const name = String(raw ?? '').trim() || '默认';
+  if (name.length > 40) throw new HttpError(400, '名称最多 40 个字符');
+  return name;
+}
+// 接口范围：模块名列表，返回每行一个的文本；为空返回 null（不限制）
+function normalizeScopes(input) {
+  const list = [...new Set((Array.isArray(input) ? input : String(input ?? '').split(/[\s,，]+/)).map((x) => String(x).trim()).filter(Boolean))];
+  const known = new Set(apiModules.map((m) => m.name));
+  const bad = list.find((n) => !known.has(n));
+  if (bad) throw new HttpError(400, `接口「${bad.slice(0, 40)}」不存在`);
+  return list.length ? list.join('\n') : null;
+}
 
 r('GET', '/account/keys', (ctx) => {
   const user = requireUser(ctx);
-  const keys = sql('SELECT id, name, prefix, created_at, last_used_at FROM api_keys WHERE user_id = ? ORDER BY id DESC').all(user.id);
-  return { data: keys.map((k) => ({ id: k.id, name: k.name, prefix: k.prefix, createdAt: k.created_at, lastUsedAt: k.last_used_at })) };
+  const keys = sql('SELECT * FROM api_keys WHERE user_id = ? ORDER BY id DESC').all(user.id);
+  return { data: keys.map(keyRow) };
 });
 
 r('POST', '/account/keys', (ctx) => {
   const user = requireUser(ctx);
-  const name = String(ctx.body?.name ?? '').trim() || '默认';
-  if (name.length > 40) throw new HttpError(400, '名称最多 40 个字符');
+  const name = keyName(ctx.body?.name);
+  const allow = normalizeRules(ctx.body?.allow);
+  const scopes = normalizeScopes(ctx.body?.scopes);
   const count = sql('SELECT COUNT(*) AS n FROM api_keys WHERE user_id = ?').get(user.id).n;
   if (count >= config.limits.maxKeys) throw new HttpError(400, `每个账号最多创建 ${config.limits.maxKeys} 个 Key`);
   const { key, prefix, hash } = generateApiKey();
-  const { lastInsertRowid } = sql('INSERT INTO api_keys (user_id, name, prefix, key_hash) VALUES (?, ?, ?, ?)').run(user.id, name, prefix, hash);
+  const { lastInsertRowid } = sql('INSERT INTO api_keys (user_id, name, prefix, key_hash, allow, scopes) VALUES (?, ?, ?, ?, ?, ?)').run(user.id, name, prefix, hash, allow, scopes);
   // 完整 Key 只在创建时返回一次
-  return { data: { id: Number(lastInsertRowid), name, prefix, key } };
+  return { data: { ...keyRow(sql('SELECT * FROM api_keys WHERE id = ?').get(lastInsertRowid)), key } };
+});
+
+// 修改名称、启用 / 停用、来源限制、可调用的接口范围：
+// body { name?, disabled?, allow?: ['example.com', '1.2.3.4'] | '每行一条', scopes?: ['weather', 'epic'] }（allow / scopes 为空表示不限制）
+r('PATCH', '/account/keys/:id', (ctx) => {
+  const user = requireUser(ctx);
+  const key = ownKey(user, ctx.params.id);
+  const b = ctx.body ?? {};
+  const name = b.name === undefined ? key.name : keyName(b.name);
+  const allow = b.allow === undefined ? key.allow : normalizeRules(b.allow);
+  const scopes = b.scopes === undefined ? key.scopes : normalizeScopes(b.scopes);
+  const disabled = b.disabled === undefined ? key.disabled : Number(Boolean(b.disabled));
+  sql('UPDATE api_keys SET name = ?, allow = ?, scopes = ?, disabled = ? WHERE id = ?').run(name, allow, scopes, disabled, key.id);
+  return { data: keyRow(sql('SELECT * FROM api_keys WHERE id = ?').get(key.id)) };
+});
+
+// 重置：换一个新的 Key，名称和各项限制保留，旧 Key 立即失效；新 Key 只返回这一次
+r('POST', '/account/keys/:id/reset', (ctx) => {
+  const user = requireUser(ctx);
+  const key = ownKey(user, ctx.params.id);
+  const { key: fresh, prefix, hash } = generateApiKey();
+  sql('UPDATE api_keys SET prefix = ?, key_hash = ?, last_used_at = NULL WHERE id = ?').run(prefix, hash, key.id);
+  return { data: { ...keyRow(sql('SELECT * FROM api_keys WHERE id = ?').get(key.id)), key: fresh } };
 });
 
 r('DELETE', '/account/keys/:id', (ctx) => {
@@ -194,7 +252,7 @@ r('GET', '/account/usage', (ctx) => {
       quota: quota({ user, ip: ctx.ip }),
       daily: days.map((day) => ({ day, count: map[day] ?? 0 })),
       endpoints: endpointStats('AND user_id = ?', [user.id], since),
-      recent: sql(`SELECT l.ts, l.path, l.status, l.ms, k.name AS keyName FROM request_log l
+      recent: sql(`SELECT l.ts, l.path, l.status, l.ms, l.rid, l.error, k.name AS keyName FROM request_log l
                    LEFT JOIN api_keys k ON k.id = l.key_id WHERE l.user_id = ? ORDER BY l.id DESC LIMIT 20`).all(user.id),
     },
   };
@@ -337,6 +395,8 @@ r('PATCH', '/admin/users/:id', (ctx) => {
   const target = sql('SELECT * FROM users WHERE id = ?').get(id);
   if (!target) throw new HttpError(404, '用户不存在');
   const { dailyLimit, disabled } = ctx.body ?? {};
+  // 调整额度、停用 / 启用账号都要填原因，记入操作日志
+  const reason = requireReason(ctx.body);
   db.exec('BEGIN');
   try {
     if (dailyLimit !== undefined) {
@@ -353,6 +413,10 @@ r('PATCH', '/admin/users/:id', (ctx) => {
     db.exec('ROLLBACK');
     throw e;
   }
+  const changes = {};
+  if (dailyLimit !== undefined) changes.dailyLimit = { from: target.daily_limit, to: dailyLimit };
+  if (disabled !== undefined) changes.disabled = { from: Boolean(target.disabled), to: Boolean(disabled) };
+  audit(ctx, dailyLimit !== undefined ? 'user.limit' : 'user.disable', { target: `${target.email}（#${id}）`, detail: changes, reason });
   return { data: null };
 });
 
@@ -466,6 +530,7 @@ r('GET', '/admin/modules', (ctx) => {
         title: m.title,
         category: m.category,
         enabled: isModuleSwitchedOn(m.name),
+        options: moduleOptions(m.name),
         // 备案合规模式下线的原因；不为空时无论开关如何都不对外提供
         compliance: complianceBlocks(m.name) ? COMPLIANCE_MODULES[m.name] : null,
         routes: m.routes.map((x) => x.path),
@@ -501,6 +566,7 @@ r('PUT', '/admin/modules', (ctx) => {
   if (!Array.isArray(names) || !names.length || names.some((n) => !known.has(n))) throw new HttpError(400, '模块名无效');
   if (typeof enabled !== 'boolean') throw new HttpError(400, 'enabled 须为 true 或 false');
   setModulesEnabled(names, enabled);
+  audit(ctx, enabled ? 'module.enable' : 'module.disable', { target: names.join(', ') });
   return { data: { names, enabled } };
 });
 
@@ -525,7 +591,10 @@ r('POST', '/admin/settings/test-key', async (ctx) => {
 // body: { KEY: 'value' | null }
 r('PUT', '/admin/settings', (ctx) => {
   requireAdmin(ctx);
-  return { data: { saved: saveSettings(ctx.body) } };
+  const saved = saveSettings(ctx.body);
+  // 只记录改了哪些设置项，不记录值（可能是密钥）
+  audit(ctx, 'settings.save', { target: saved.join(', ') });
+  return { data: { saved } };
 });
 
 r('POST', '/admin/settings/test-mail', async (ctx) => {
@@ -682,3 +751,165 @@ r('POST', '/admin/health/run', (ctx) => {
   runHealthCheck().then(() => { statusCache = null; }).catch((err) => console.error('[health]', err.message));
   return { data: { started: true } };
 });
+
+// ---------- 接口运行参数 ----------
+// body { pinned?, featured?, cacheTtlSec?: 秒数 | null（恢复接口自带）, minuteLimit?: 次数 | null（不单独限制） }
+r('PUT', '/admin/modules/:name/options', (ctx) => {
+  requireAdmin(ctx);
+  const m = apiModules.find((x) => x.name === ctx.params.name);
+  if (!m) throw new HttpError(404, '接口不存在');
+  const b = ctx.body ?? {};
+  const num = (v, label, min, max) => {
+    if (v === undefined) return undefined;
+    if (v === null || v === '') return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < min || n > max) throw new HttpError(400, `${label}须为 ${min}~${max} 的整数，留空表示使用默认`);
+    return n;
+  };
+  const cacheSec = num(b.cacheTtlSec, '缓存时长（秒）', 0, 7 * 86400);
+  const before = moduleOptions(m.name);
+  const after = setModuleOptions(m.name, {
+    pinned: b.pinned, featured: b.featured,
+    cacheTtlMs: cacheSec === undefined ? undefined : cacheSec === null ? null : cacheSec * 1000,
+    minuteLimit: num(b.minuteLimit, '每分钟上限', 1, 100000),
+  });
+  if (before.cacheTtlMs !== after.cacheTtlMs) clearModuleCache(m.name);
+  audit(ctx, 'module.options', { target: m.name, detail: { from: before, to: after } });
+  return { data: after };
+});
+
+r('POST', '/admin/modules/:name/cache/clear', (ctx) => {
+  requireAdmin(ctx);
+  const m = apiModules.find((x) => x.name === ctx.params.name);
+  if (!m) throw new HttpError(404, '接口不存在');
+  const cleared = clearModuleCache(m.name);
+  audit(ctx, 'module.cache.clear', { target: m.name, detail: { cleared } });
+  return { data: { cleared } };
+});
+
+// ---------- 操作日志、登录记录 ----------
+const pageArgs = (q) => ({
+  page: Math.max(1, Math.min(10_000, Number.parseInt(q.get('page') ?? '1', 10) || 1)),
+  size: [20, 50, 100].includes(Number(q.get('size'))) ? Number(q.get('size')) : 20,
+});
+
+r('GET', '/admin/audit', (ctx) => {
+  requireAdmin(ctx);
+  const { page, size } = pageArgs(ctx.query);
+  return {
+    data: {
+      page, size, total: sql('SELECT COUNT(*) AS n FROM audit_log').get().n,
+      items: sql('SELECT * FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?').all(size, (page - 1) * size).map((a) => ({
+        id: a.id, at: new Date(a.ts).toISOString(), admin: a.admin_email, action: a.action, target: a.target, detail: a.detail, reason: a.reason, ip: a.ip,
+      })),
+    },
+  };
+});
+
+const loginRow = (l) => ({ at: new Date(l.ts).toISOString(), email: l.email, ip: l.ip, region: l.region, client: l.client, ok: Boolean(l.ok), reason: l.reason });
+
+r('GET', '/admin/logins', (ctx) => {
+  requireAdmin(ctx);
+  const { page, size } = pageArgs(ctx.query);
+  const failedOnly = ctx.query.get('failed') === '1';
+  const where = failedOnly ? 'WHERE ok = 0' : '';
+  return {
+    data: {
+      page, size, total: sql(`SELECT COUNT(*) AS n FROM login_log ${where}`).get().n,
+      items: sql(`SELECT * FROM login_log ${where} ORDER BY id DESC LIMIT ? OFFSET ?`).all(size, (page - 1) * size).map(loginRow),
+    },
+  };
+});
+
+// 自己最近的登录记录（发现异地登录可以及时改密码）
+r('GET', '/account/logins', (ctx) => {
+  const user = requireUser(ctx);
+  return { data: sql('SELECT * FROM login_log WHERE user_id = ? ORDER BY id DESC LIMIT 20').all(user.id).map(loginRow) };
+});
+
+// ---------- 兑换码 ----------
+// 兑换后给账号加「额外次数」：当天额度用完后从这里扣，用完为止，不会过期
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => {
+  const bytes = randomBytes(16);
+  let s = '';
+  for (let i = 0; i < 16; i++) s += CODE_CHARS[bytes[i] % CODE_CHARS.length];
+  return s.match(/.{4}/g).join('-');
+};
+const redeemFails = new Map();
+
+r('GET', '/admin/redeem', (ctx) => {
+  requireAdmin(ctx);
+  return {
+    data: sql('SELECT * FROM redeem_codes ORDER BY created_at DESC, code LIMIT 500').all().map((c) => ({
+      code: c.code, calls: c.calls, maxUses: c.max_uses, used: c.used, note: c.note,
+      expiresAt: c.expires_at ? new Date(c.expires_at).toISOString() : null, createdAt: new Date(c.created_at).toISOString(),
+    })),
+  };
+});
+
+// body { calls, count, maxUses, expiresAt?, note? }
+r('POST', '/admin/redeem', (ctx) => {
+  requireAdmin(ctx);
+  const b = ctx.body ?? {};
+  const int = (v, label, min, max, def) => {
+    const n = v === undefined || v === '' ? def : Number(v);
+    if (!Number.isInteger(n) || n < min || n > max) throw new HttpError(400, `${label}须为 ${min}~${max} 的整数`);
+    return n;
+  };
+  const calls = int(b.calls, '每个兑换码的次数', 1, 10_000_000);
+  const count = int(b.count, '生成数量', 1, 200, 1);
+  const maxUses = int(b.maxUses, '每个兑换码可兑换人数', 1, 100_000, 1);
+  const expiresAt = b.expiresAt ? Date.parse(b.expiresAt) : null;
+  if (b.expiresAt && !(expiresAt > Date.now())) throw new HttpError(400, '过期时间须晚于现在');
+  const note = String(b.note ?? '').trim().slice(0, 60) || null;
+  const codes = [];
+  const now = Date.now();
+  for (let i = 0; i < count; i++) {
+    const code = newCode();
+    sql('INSERT INTO redeem_codes (code, calls, max_uses, expires_at, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(code, calls, maxUses, expiresAt, note, ctx.user.id, now);
+    codes.push(code);
+  }
+  audit(ctx, 'redeem.create', { target: note ?? `${count} 个`, detail: { count, calls, maxUses } });
+  return { data: { codes } };
+});
+
+r('DELETE', '/admin/redeem/:code', (ctx) => {
+  requireAdmin(ctx);
+  const { changes } = sql('DELETE FROM redeem_codes WHERE code = ?').run(String(ctx.params.code).toUpperCase());
+  if (!changes) throw new HttpError(404, '兑换码不存在');
+  audit(ctx, 'redeem.delete', { target: ctx.params.code });
+  return { data: null };
+});
+
+r('POST', '/account/redeem', (ctx) => {
+  const user = requireUser(ctx);
+  // 防止穷举：每个账号 10 分钟内最多输错 10 次
+  const fails = redeemFails.get(user.id);
+  if (fails && fails.until > Date.now() && fails.n >= 10) throw new HttpError(429, '兑换码输错次数过多，请 10 分钟后再试', 'RATE_LIMITED');
+  const code = String(ctx.body?.code ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/(.{4})(?=.)/g, '$1-');
+  const row = sql('SELECT * FROM redeem_codes WHERE code = ?').get(code);
+  const fail = (msg) => {
+    const f = redeemFails.get(user.id);
+    redeemFails.set(user.id, f && f.until > Date.now() ? { n: f.n + 1, until: f.until } : { n: 1, until: Date.now() + 10 * 60_000 });
+    throw new HttpError(400, msg);
+  };
+  if (!row) fail('兑换码不存在');
+  if (row.expires_at && row.expires_at <= Date.now()) fail('兑换码已过期');
+  if (sql('SELECT 1 FROM redemptions WHERE code = ? AND user_id = ?').get(code, user.id)) fail('你已经兑换过这个兑换码');
+  if (row.used >= row.max_uses) fail('兑换码已被用完');
+  db.exec('BEGIN');
+  try {
+    const { changes } = sql('UPDATE redeem_codes SET used = used + 1 WHERE code = ? AND used < max_uses').run(code);
+    if (!changes) throw new HttpError(400, '兑换码已被用完');
+    sql('INSERT INTO redemptions (code, user_id, calls, ts) VALUES (?, ?, ?, ?)').run(code, user.id, row.calls, Date.now());
+    sql('UPDATE users SET bonus_calls = bonus_calls + ? WHERE id = ?').run(row.calls, user.id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return { data: { calls: row.calls, bonus: sql('SELECT bonus_calls FROM users WHERE id = ?').get(user.id).bonus_calls } };
+});
+

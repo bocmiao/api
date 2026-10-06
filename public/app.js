@@ -39,6 +39,11 @@ const ICONS = {
   play: '<path d="M6 4l14 8-14 8z"/>',
   external: '<path d="M14 3h7v7M10 14L21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  github: '<path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/>',
+  megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a3 3 0 0 1 0 6M19 6a7 7 0 0 1 0 12"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  x: '<path d="M18 6L6 18M6 6l12 12"/>',
 };
 const icon = (name, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
@@ -54,6 +59,8 @@ async function api(method, path, body) {
   if (!res.ok || json.code !== 200) {
     const err = new Error(json.message || `HTTP ${res.status}`);
     err.status = res.status;
+    err.code = json.errorCode;
+    err.requestId = json.requestId ?? res.headers.get('x-request-id');
     throw err;
   }
   if (method !== 'GET') pageCache.clear(); // 改动过数据后，页面缓存全部作废
@@ -142,6 +149,19 @@ function confirmDialog(title, text, { danger = true, okText = '确定' } = {}) {
   });
 }
 
+// 需要填写一段文字的确认框（如管理操作的原因）；取消返回 null
+function promptDialog(title, text, { label = '原因', placeholder = '', okText = '确定', danger = false, required = true } = {}) {
+  return new Promise((resolve) => {
+    modal(`<h2>${esc(title)}</h2>${text ? `<p class="muted small">${esc(text)}</p>` : ''}
+      <form id="pd"><div class="field"><label for="pd-v">${esc(label)}</label><input class="input" id="pd-v" name="v" maxlength="200" placeholder="${esc(placeholder)}" ${required ? 'required minlength="2"' : ''}></div>
+      <div class="actions"><button class="btn" type="button" data-no>取消</button><button class="btn ${danger ? 'danger' : 'primary'}" type="submit">${esc(okText)}</button></div></form>`,
+    (root, close) => {
+      $('[data-no]', root).onclick = () => { close(); resolve(null); };
+      $('#pd', root).onsubmit = (e) => { e.preventDefault(); const v = $('#pd-v', root).value.trim(); close(); resolve(v); };
+    });
+  });
+}
+
 // 表单提交辅助：禁用按钮、显示错误
 function bindForm(form, handler) {
   form.addEventListener('submit', async (e) => {
@@ -223,6 +243,7 @@ async function loadMe() {
     state.catalog = null;
     pageCache.clear();
     prefetched = false;
+    if (state.noticesLoaded) globalThis.initNotices?.(); // 登录 / 退出后可见的公告不同
   }
 }
 
@@ -236,6 +257,7 @@ const catOf = (id) => state.catalog?.categories.find((c) => c.id === id) ?? { ti
 // ---------- 首页 ----------
 function moduleBadges(m, { card = false } = {}) {
   return [
+    m.featured ? '<span class="badge brand" title="站长推荐">推荐</span>' : '',
     m.enabled === false ? '<span class="badge danger" title="已被管理员关闭，仅管理员可见和调用">已关闭</span>' : '',
     m.suspended && !card ? `<span class="badge danger" title="${esc(m.suspended)}">暂不可用</span>` : '', // 卡片的状态行已经显示
     m.unofficial ? '<span class="badge warn" title="数据来自非官方接口或网页，可能随上游改版失效">非官方</span>' : '',
@@ -287,6 +309,7 @@ async function pageHome() {
         <div class="row">
           <a class="btn primary lg" href="#catalog" id="browse">浏览接口</a>
           ${state.user ? '<a class="btn lg" href="/console/keys">获取 API Key</a>' : '<a class="btn lg" href="/register">免费注册</a>'}
+          <a class="btn lg ghost" href="${REPO_URL}" target="_blank" rel="noopener" title="GPL v3 开源，可以部署到自己的服务器">${icon('github')}开源 · 自己部署</a>
         </div>
         <div class="hero-stats">
           <div title="部分接口包含多个调用地址，例如 Steam 限免与特惠"><b>${routeCount}</b><span>个调用地址</span></div>
@@ -296,6 +319,8 @@ async function pageHome() {
       </div>
       <div class="code-window"><div class="bar"><i></i><i></i><i></i></div><pre>${sample}</pre></div>
     </section>
+
+    <section class="section" id="platform" hidden></section>
 
     <section class="section" id="today" style="padding-top:8px">
       <div class="section-title"><h2>今日</h2><span class="small faint" id="today-note"></span></div>
@@ -324,6 +349,9 @@ async function pageHome() {
         ].map(([i, t, d]) => `<div class="card feature"><div class="cat-icon">${icon(i)}</div><h3>${t}</h3><p>${d}</p></div>`).join('')}
       </div>
     </section>
+
+    ${ossSection()}
+    <section class="section" id="home-links" hidden></section>
   </div>`;
 
   $('#browse').onclick = (e) => { e.preventDefault(); $('#catalog').scrollIntoView({ behavior: 'smooth' }); };
@@ -333,7 +361,8 @@ async function pageHome() {
     const q = $('#q').value.trim().toLowerCase();
     $$('#cats .chip').forEach((b) => b.classList.toggle('active', b.dataset.cat === current));
     const list = cat.modules.filter((m) => (current === 'all' || m.category === current) &&
-      (!q || [m.title, m.description, m.name, ...m.routes.map((r) => r.path + r.summary)].join(' ').toLowerCase().includes(q)));
+      (!q || [m.title, m.description, m.name, ...m.routes.map((r) => r.path + r.summary)].join(' ').toLowerCase().includes(q)))
+      .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))); // 后台置顶的排在前面
     $('#grid').innerHTML = list.length ? list.map((m) => `
       <a class="card api-card" href="/docs/${encodeURIComponent(m.name)}">
         <div class="head"><div class="cat-icon">${icon(catOf(m.category).icon)}</div><h3>${esc(m.title)}</h3></div>
@@ -351,6 +380,8 @@ async function pageHome() {
   };
   $('#q').oninput = draw;
   loadToday();
+  loadPlatform();
+  loadHomeLinks();
   draw();
   // 调用量缓存 1 分钟；取到后重画一次卡片
   if (!cardStats || Date.now() - cardStats.at > 60_000) {
@@ -574,6 +605,8 @@ const ENVELOPE_FIELDS = [
   { name: 'cached', type: 'boolean', desc: '是否命中服务端缓存（部分本地计算的接口不返回）' },
   { name: 'stale', type: 'boolean', desc: '仅在为 true 时出现：上游暂时不可用，返回的是最近一次成功获取的旧数据' },
   { name: 'updatedAt', type: 'string', desc: '数据获取时间（ISO 8601，UTC），部分接口不返回' },
+  { name: 'requestId', type: 'string', desc: '请求编号，与响应头 X-Request-Id 相同；反馈问题时附上，站长可以直接查到这次调用' },
+  { name: 'errorCode', type: 'string', desc: '仅失败时出现：错误代码，如 QUOTA_EXCEEDED、UPSTREAM_ERROR，见开发文档「错误码」' },
   { name: 'data', type: 'object|array|null', desc: '接口数据，各接口字段见对应文档；失败时为 null' },
 ];
 
@@ -629,27 +662,35 @@ async function pageApi(name) {
     $('#route').innerHTML = `
       <div class="card card-pad">
         <h2 style="font-size:18px">${esc(r.summary)}</h2>
+        <nav class="doc-toc small" aria-label="本页目录">${[['sec-params', '请求参数'], ['sec-fields', '返回字段'], ['sec-codes', '状态码'], ['sec-try', '在线调试'], ['sec-code', '示例代码'], ['sec-stats', '调用统计']]
+          .map(([id, t]) => `<a href="#${id}" data-jump="${id}">${t}</a>`).join('')}</nav>
         <div class="endpoint"><span class="method ${r.method}">${r.method}</span><span class="url">${esc(location.origin + r.path)}</span>
           <button class="btn sm ghost" id="copy-url" title="复制">${icon('copy')}</button></div>
-        <h3 class="sub-title">请求参数</h3>
+        ${cacheLine(r)}
+        <h3 class="sub-title" id="sec-params">请求参数</h3>
         ${r.params.length ? `<div class="table-wrap"><table class="table params-table"><thead><tr><th>参数</th><th>位置</th><th>说明</th><th>默认值</th></tr></thead><tbody>
           ${r.params.map((p) => `<tr><td>${esc(p.name)}${p.required ? '<span class="req">*</span>' : ''}</td>
             <td class="faint small">${p.in === 'body' ? 'body' : r.path.includes(':' + p.name) ? 'path' : 'query'}</td>
             <td>${esc(p.desc)}</td><td class="faint">${p.default !== undefined ? `<code>${esc(p.default)}</code>` : '—'}</td></tr>`).join('')}
         </tbody></table></div>` : '<p class="faint small">无需参数</p>'}
-        <h3 class="sub-title">返回字段</h3>
+        <h3 class="sub-title" id="sec-fields">返回字段</h3>
         ${r.raw
           ? `<p class="muted small">${esc(r.returns ?? '返回图片或跳转，而不是 JSON')}</p>`
-          : `<p class="faint small" style="margin:0 0 8px">以下为 <code>data</code> 中的字段。外层统一为 <code>{ code, message, cached, stale, updatedAt, data }</code>，<a href="/docs">查看说明</a>。</p>${fieldsTable(r.fields)}`}
+          : `<p class="faint small" style="margin:0 0 8px">以下为 <code>data</code> 中的字段。外层统一为 <code>{ code, message, cached, stale, updatedAt, requestId, data }</code>，<a href="/docs">查看说明</a>。</p>${fieldsTable(r.fields)}`}
+        <h3 class="sub-title" id="sec-codes">状态码</h3>
+        ${codesTable(m, r)}
       </div>
 
-      <div class="playground">
+      <div class="playground" id="sec-try">
         <div class="card card-pad">
           <div class="row" style="justify-content:space-between;margin-bottom:14px"><h3 style="font-size:15px">在线调试</h3>
             <span class="small faint">${state.user ? '计入你的账号额度' : `未登录：每天 ${fmtNum(cat.limits.anonDaily)} 次`}</span></div>
           <form id="try">
             ${r.params.map((p) => `<div class="field"><label for="p-${esc(p.name)}">${esc(p.name)}${p.required ? '<span class="req">*</span>' : ''} <span class="faint">${esc(p.desc)}</span></label>
               <input class="input mono" id="p-${esc(p.name)}" name="${esc(p.name)}" value="${esc(p.required ? p.example ?? '' : '')}" placeholder="${esc(placeholderOf(p))}"></div>`).join('')}
+            <details class="try-key"><summary class="small faint">使用 API Key 调试（可选）</summary>
+              <input class="input mono" id="try-key" autocomplete="off" spellcheck="false" placeholder="ak_… 不填则${state.user ? '使用当前登录账号' : '按未登录访客计算'}">
+              <span class="hint">填写后请求带上 <code>X-API-Key</code>，可以检验 Key 的来源限制和接口范围；Key 只保存在当前页面，不会上传到别处</span></details>
             <button class="btn primary" type="submit" style="width:100%">${icon('play')}发送请求</button>
           </form>
         </div>
@@ -659,10 +700,18 @@ async function pageApi(name) {
         </div>
       </div>
 
-      <div class="card" style="margin-top:16px;overflow:hidden">
+      <div class="card" style="margin-top:16px;overflow:hidden" id="sec-code">
         <div class="tabs-bar"><div class="tabs" id="lang"></div><button class="btn sm ghost" id="copy-code">${icon('copy')}复制</button></div>
         <div class="code-block"><pre id="code"></pre></div>
-      </div>`;
+      </div>
+      <div class="card card-pad" style="margin-top:16px" id="sec-stats"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div>`;
+    loadRouteStats(m, r);
+    $('.doc-toc').onclick = (e) => {
+      const a = e.target.closest('[data-jump]');
+      if (!a) return;
+      e.preventDefault();
+      document.getElementById(a.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
 
     let lang = storage.get('lang') || 'cURL';
     const drawCode = () => {
@@ -680,6 +729,20 @@ async function pageApi(name) {
     bindForm($('#try'), async (values) => {
       const req = buildRequest(r, values);
       const resp = $('#resp');
+      const tryKey = $('#try-key').value.trim();
+      const keyHeader = tryKey ? { 'x-api-key': tryKey } : {};
+      if (r.raw && r.method === 'GET' && tryKey) {
+        // 带 Key 时不能直接用 <img>（无法加请求头），先取回内容再预览
+        resp.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+        const res = await fetch(req.url, { headers: keyHeader, redirect: 'follow' }).catch((err) => ({ ok: false, status: 0, err }));
+        const rid = res.headers?.get('x-request-id');
+        const type = res.headers?.get('content-type') ?? '';
+        let view;
+        if (res.ok && /^image\//.test(type)) view = `<div class="preview"><img alt="响应预览" src="${URL.createObjectURL(await res.blob())}"></div>`;
+        else view = `<pre>${res.text ? esc((await res.text()).slice(0, 4000)) : esc(res.err?.message ?? '请求失败（跳转到其他网站的图片无法带 Key 预览，请去掉 Key 后再试）')}</pre>`;
+        resp.innerHTML = `<div class="response-bar"><span class="badge ${res.ok ? 'ok' : 'danger'}">${res.status || '失败'}</span>${ridBadge(rid)}</div>${view}`;
+        return;
+      }
       if (r.raw && r.method === 'GET') {
         const src = req.url + (req.url.includes('?') ? '&' : '?') + '_t=' + Date.now();
         resp.innerHTML = `<div class="response-bar"><span class="badge ok">图片/跳转</span><a class="small" href="${esc(req.url)}" target="_blank" rel="noopener">在新窗口打开 ${icon('external')}</a></div>
@@ -692,7 +755,7 @@ async function pageApi(name) {
       const t0 = performance.now();
       const res = await fetch(req.url, {
         method: r.method,
-        headers: req.body ? { 'content-type': 'application/json' } : {},
+        headers: { ...(req.body ? { 'content-type': 'application/json' } : {}), ...keyHeader },
         body: req.body ? JSON.stringify(req.body) : undefined,
       });
       const ms = Math.round(performance.now() - t0);
@@ -702,6 +765,7 @@ async function pageApi(name) {
       resp.innerHTML = `<div class="response-bar">
           <span class="badge ${res.ok ? 'ok' : 'danger'}">${res.status}</span><span class="faint">${ms} ms</span>
           ${body.cached ? '<span class="badge">缓存</span>' : ''}${body.stale ? '<span class="badge warn">旧数据</span>' : ''}
+          ${ridBadge(res.headers.get('x-request-id'))}
           ${remaining != null ? `<span class="faint" style="margin-left:auto">今日剩余 ${fmtNum(remaining)}</span>` : ''}
           <label class="small faint cmt-toggle" title="在每个字段后面显示中文说明"><input type="checkbox" id="cmt-on" ${storage.get('cmt') !== '0' ? 'checked' : ''}> 字段注释</label>
         </div><pre id="resp-json"></pre>`;
@@ -715,8 +779,12 @@ async function pageApi(name) {
       // 返回里带 data:image 图片（如验证码）时直接预览
       const inlineImage = body?.data && typeof body.data === 'object'
         ? Object.values(body.data).find((v) => typeof v === 'string' && /^data:image\/(svg\+xml|png|jpeg|gif|webp);base64,/.test(v)) : null;
-      if (inlineImage) {
-        resp.querySelector('.response-bar').insertAdjacentHTML('afterend', `<div class="preview inline-preview"><img alt="图片预览" src="${esc(inlineImage)}"></div>`);
+      // 返回里带图片地址（壁纸、头像、封面等）时预览第一张
+      const image = inlineImage ?? findImageUrl(body?.data);
+      if (image) {
+        resp.querySelector('.response-bar').insertAdjacentHTML('afterend', `<div class="preview inline-preview"><img alt="图片预览" referrerpolicy="no-referrer" loading="lazy" src="${esc(image)}"></div>`);
+        const img = $('.inline-preview img', resp);
+        img.onerror = () => img.parentElement.remove();
       }
       if (res.status === 429 && !state.user) {
         resp.insertAdjacentHTML('beforeend', '<div class="card-pad"><a class="btn primary" href="/register">免费注册获取更多额度</a></div>');
@@ -841,13 +909,23 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
     <p>需要更高额度、在服务器端调用时，才使用 API Key（见下一节）。</p>
 
     <h2>认证方式</h2>
-    <p>以下三种方式任选其一（推荐请求头，避免 Key 出现在日志里）：</p>
+    <p>以下三种方式任选其一（推荐请求头，避免 Key 出现在日志里）。同时传了多个时，按下面的顺序取第一个：</p>
     <ul>
+      <li>请求头 <code>Authorization: Bearer ak_xxx</code>（推荐）</li>
       <li>请求头 <code>X-API-Key: ak_xxx</code></li>
-      <li>请求头 <code>Authorization: Bearer ak_xxx</code></li>
       <li>查询参数 <code>?key=ak_xxx</code></li>
     </ul>
     <p>Key 无效或已删除时返回 <code>401</code>。同一账号下所有 Key 共享额度。</p>
+
+    <h3>Key 的安全设置</h3>
+    <p>在 <a href="/console/keys">控制台 → API Keys</a> 里可以给每个 Key 单独设置：</p>
+    <ul>
+      <li><b>停用 / 启用</b>：暂时不用的 Key 先停用，调用返回 <code>403 KEY_DISABLED</code>，随时可以恢复。</li>
+      <li><b>重置</b>：Key 泄露时一键换新，名称和各项限制保留，旧 Key 立即失效。新 Key 只显示一次。</li>
+      <li><b>接口范围</b>：只允许调用勾选的接口，其他接口返回 <code>403 KEY_SCOPE_DENIED</code>。</li>
+      <li><b>来源限制</b>：只允许从指定的服务器 IP（如 <code>1.2.3.4</code>、<code>1.2.3.0/24</code>）或网站域名（如 <code>example.com</code>、<code>*.example.com</code>）调用，不满足时返回 <code>403 KEY_SOURCE_DENIED</code>。
+        IP 限制对服务器端调用很可靠；域名限制按浏览器带的 <code>Origin</code> / <code>Referer</code> 判断，只能防止 Key 被别人直接放到他们的网页里使用，脚本可以伪造来源，所以<b>不要把 Key 当作唯一的保护</b>。</li>
+    </ul>
 
     <h2>调用额度</h2>
     <div class="table-wrap"><table class="table">
@@ -856,11 +934,16 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
         <tr><td>未登录（按 IP）</td><td class="num">${fmtNum(L.anonDaily)}</td><td class="num">${fmtNum(L.anonMinute)}</td></tr>
         <tr><td>注册用户（按账号）</td><td class="num">${fmtNum(L.userDaily)}</td><td class="num">${fmtNum(L.userMinute)}</td></tr>
       </tbody></table></div>
-    <p>额度在北京时间 0 点重置。每个响应都带有以下响应头：</p>
+    <p>额度在北京时间 0 点重置。<b>因为服务端或上游的原因失败的调用（5xx）不扣额度</b>；参数错误等 4xx 照常计数，每分钟的频率限制对所有请求都生效。</p>
+    <p>注册用户可以在 <a href="/console/settings">账号设置</a> 里使用兑换码，换到的「额外次数」在当天额度用完后继续使用，用完为止，不会过期。</p>
+    <p>每个响应都带有以下响应头：</p>
     <ul>
       <li><code>X-RateLimit-Limit</code>：每日总额度</li>
       <li><code>X-RateLimit-Remaining</code>：今日剩余次数</li>
       <li><code>X-RateLimit-Reset</code>：距离重置的秒数</li>
+      <li><code>X-RateLimit-Bonus</code>：正在使用兑换码的额外次数时，剩余的额外次数</li>
+      <li><code>X-Request-Id</code>：这次请求的编号，返回内容里的 <code>requestId</code> 也是它。遇到问题反馈时附上它，站长能直接查到这次调用</li>
+      <li><code>X-Cache</code>：<code>HIT</code> 命中缓存，<code>MISS</code> 实时获取，<code>STALE</code> 上游故障时返回的旧数据</li>
     </ul>
 
     <h2>响应格式</h2>
@@ -873,15 +956,23 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
   "cached": true,       // 是否命中缓存
   "stale": false,       // 上游故障时返回的旧数据
   "updatedAt": "2026-09-24T12:00:00.000Z",
+  "requestId": "mfx3k2a1-9f3c2b1a0d",
   "data": { ... }
 }</pre>
 
     <h2>错误码</h2>
-    <div class="table-wrap"><table class="table"><tbody>
-      ${[['400', '参数错误'], ['401', 'API Key 无效'], ['404', '接口或数据不存在'], ['405', '请求方法不支持'], ['429', '超出调用额度或请求过快'],
-        ['502', '上游服务返回错误'], ['503', '服务端未配置该接口所需的密钥'], ['504', '上游服务响应超时']]
-        .map(([c, d]) => `<tr><td><code>${c}</code></td><td>${d}</td></tr>`).join('')}
+    <p>失败时 HTTP 状态码和 <code>code</code> 一致，另外带一个 <code>errorCode</code> 字符串方便程序判断，<code>message</code> 是给人看的中文原因：</p>
+    <pre>{
+  "code": 429,
+  "message": "今日调用次数已用完，额度将于北京时间 0 点重置",
+  "errorCode": "QUOTA_EXCEEDED",
+  "requestId": "mfx3k2a1-9f3c2b1a0d",
+  "data": null
+}</pre>
+    <div class="table-wrap"><table class="table"><thead><tr><th>状态码</th><th>errorCode</th><th>说明</th></tr></thead><tbody>
+      ${ERROR_DOCS.map(([c, e, d]) => `<tr><td><code>${c}</code></td><td><code>${e}</code></td><td>${d}</td></tr>`).join('')}
     </tbody></table></div>
+    <p>每个接口详情页的「状态码」一节列出了该接口可能返回的状态码，以及近 7 天实际出现的次数。</p>
 
     <h2>订阅推送</h2>
     <p>在 <a href="/console/notify">控制台 → 推送通知</a> 中添加推送渠道（Server酱、Bark、Telegram、钉钉、飞书、企业微信、自定义 Webhook、邮件），然后勾选想订阅的主题。内容更新时会自动推送。</p>
@@ -1145,6 +1236,7 @@ async function consoleOverview(panel) {
         <div class="meter"><i class="${pct > 80 ? 'hot' : ''}" style="width:${pct}%"></i></div></div>
       <div class="card tile"><div class="label">今日剩余</div><div class="value">${fmtNum(q.remaining)}</div></div>
       <div class="card tile"><div class="label">近 14 天调用</div><div class="value">${fmtNum(total14)}</div></div>
+      ${q.bonus ? `<div class="card tile" title="兑换码换到的次数：当天额度用完后继续使用"><div class="label">额外次数</div><div class="value">${fmtNum(q.bonus)}</div></div>` : ''}
     </div>
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>近 14 天调用量</h2></div>${chart.html}</div>
     <div class="grid-2">
@@ -1152,7 +1244,7 @@ async function consoleOverview(panel) {
       <div class="card"><h2 class="card-title">最近调用</h2><div style="padding:8px">
         ${u.recent.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>接口</th><th>Key</th><th class="num">状态</th></tr></thead><tbody>
           ${u.recent.map((r) => `<tr><td class="small faint nowrap">${fmtDate(r.ts)}</td><td class="mono">${esc(r.path)}</td><td class="small nowrap">${esc(r.keyName ?? '网页')}</td>
-            <td class="num"><span class="badge ${r.status < 400 ? 'ok' : 'danger'}">${r.status}</span></td></tr>`).join('')}
+            <td class="num"><span class="badge ${r.status < 400 ? 'ok' : 'danger'}" title="${esc(`请求 ID：${r.rid ?? '—'}${r.error ? `\n${r.error}` : ''}`)}">${r.status}</span></td></tr>`).join('')}
         </tbody></table></div>` : '<div class="empty">暂无调用记录</div>'}
       </div></div>
     </div>`;
@@ -1161,46 +1253,103 @@ async function consoleOverview(panel) {
 
 async function consoleKeys(panel) {
   const keys = await cachedGet('/account/keys');
+  const cat = await loadCatalog();
+  const titleOf = (name) => cat.modules.find((m) => m.name === name)?.title ?? name;
   panel.innerHTML = `
     <div class="page-head"><div><h1>API Keys</h1><p>同一账号下的 Key 共享每日 ${fmtNum(state.user.dailyLimit)} 次额度</p></div>
       <button class="btn primary" id="new-key">${icon('key')}创建 Key</button></div>
-    <div class="card">${keys.length ? `<div class="table-wrap"><table class="table">
-      <thead><tr><th>名称</th><th>Key</th><th>创建时间</th><th>最近使用</th><th></th></tr></thead><tbody>
-      ${keys.map((k) => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}••••••••</td><td class="small faint">${fmtDate(k.createdAt)}</td>
-        <td class="small faint">${k.lastUsedAt ? fmtDate(k.lastUsedAt) : '从未'}</td>
-        <td class="num"><button class="btn sm danger" data-del="${k.id}" data-name="${esc(k.name)}">删除</button></td></tr>`).join('')}
-      </tbody></table></div>` : `<div class="empty">${icon('key')}<p>还没有 API Key，创建一个开始调用吧</p></div>`}</div>
+    ${keys.length ? `<div class="key-list">${keys.map((k) => `
+      <div class="card key-card ${k.disabled ? 'off' : ''}">
+        <div class="key-top">
+          <div><b>${esc(k.name)}</b> ${k.disabled ? '<span class="badge danger">已停用</span>' : '<span class="badge ok">使用中</span>'}
+            <div class="mono small faint" style="margin-top:4px">${esc(k.prefix)}••••••••</div></div>
+          <div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn sm" data-act="edit" data-id="${k.id}">设置</button>
+            <button class="btn sm" data-act="toggle" data-id="${k.id}">${k.disabled ? '启用' : '停用'}</button>
+            <button class="btn sm" data-act="reset" data-id="${k.id}">重置</button>
+            <button class="btn sm danger" data-act="del" data-id="${k.id}">删除</button>
+          </div>
+        </div>
+        <div class="key-meta small">
+          <span><span class="faint">接口范围</span> ${k.scopes.length ? esc(k.scopes.map(titleOf).join('、')) : '全部接口'}</span>
+          <span><span class="faint">来源限制</span> ${k.allow.length ? `<span class="mono">${esc(k.allow.join('，'))}</span>` : '不限'}</span>
+          <span><span class="faint">创建</span> ${fmtDate(k.createdAt)}</span>
+          <span><span class="faint">最近使用</span> ${k.lastUsedAt ? fmtDate(k.lastUsedAt) : '从未'}</span>
+        </div>
+      </div>`).join('')}</div>` : `<div class="card"><div class="empty">${icon('key')}<p>还没有 API Key，创建一个开始调用吧</p></div></div>`}
     <div class="card card-pad" style="margin-top:16px">
       <h3 style="font-size:15px;margin-bottom:8px">使用方式</h3>
-      <div class="code-block"><pre style="border-radius:10px">curl ${esc(location.origin)}/api/epic/free -H "X-API-Key: 你的 Key"</pre></div>
+      <div class="code-block"><pre style="border-radius:10px">curl ${esc(location.origin)}/api/epic/free -H "Authorization: Bearer 你的 Key"</pre></div>
+      <p class="small faint" style="margin:10px 0 0">Key 写在网页、小程序等前端代码里会被别人看到：请设置「来源限制」和「接口范围」，泄露后点「重置」换一个新的。<a href="/docs">查看开发文档</a></p>
     </div>`;
 
-  $('#new-key').onclick = () => modal(`
-    <h2>创建 API Key</h2><p class="muted small">给 Key 起个名字，方便区分用途</p>
+  const showKey = (title, key) => modal(`<h2>${esc(title)}</h2>
+      <p class="muted small">完整 Key 只显示这一次，关闭后<b>无法再次查看</b>。请复制保存到安全的地方，不要写进公开的代码仓库。</p>
+      <div class="key-box"><span>${esc(key)}</span><button class="btn sm" data-copy>${icon('copy')}复制</button></div>
+      <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:12px"><input type="checkbox" id="saved"> 我已安全保存这个 Key</label>
+      <div class="actions"><button class="btn primary" data-done disabled>完成</button></div>`, (root, close) => {
+    $('[data-copy]', root).onclick = () => copy(key);
+    $('#saved', root).onchange = (e) => { $('[data-done]', root).disabled = !e.target.checked; };
+    $('[data-done]', root).onclick = () => { close(); consoleKeys(panel); };
+  });
+
+  // 新建与设置共用一个表单
+  const editKey = (k = null) => modal(`
+    <h2>${k ? '设置 Key' : '创建 API Key'}</h2>
     <form id="kf"><div class="form-error" hidden></div>
-      <div class="field"><label for="kn">名称</label><input class="input" id="kn" name="name" maxlength="40" placeholder="例如：我的博客"></div>
-      <div class="actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">创建</button></div>
+      <div class="field"><label for="kn">名称</label><input class="input" id="kn" name="name" maxlength="40" placeholder="例如：我的博客" value="${esc(k?.name ?? '')}"></div>
+      <div class="field"><label for="ka">来源限制 <span class="faint">每行一条，留空不限制</span></label>
+        <textarea class="input mono" id="ka" name="allow" rows="3" placeholder="1.2.3.4\n1.2.3.0/24\nexample.com\n*.example.com">${esc((k?.allow ?? []).join('\n'))}</textarea>
+        <span class="hint">服务器调用填服务器 IP；网页里调用填网站域名（按浏览器带的来源判断，只能防止 Key 被直接拿去别的网站用）</span></div>
+      <div class="field"><label>接口范围 <span class="faint">不勾选表示全部接口</span></label>
+        <input class="input" id="ks-q" placeholder="搜索接口" style="height:32px;margin-bottom:6px">
+        <div class="scope-list" id="ks">${cat.modules.map((m) => `<label data-t="${esc(`${m.title} ${m.name}`.toLowerCase())}"><input type="checkbox" value="${esc(m.name)}" ${k?.scopes.includes(m.name) ? 'checked' : ''}> ${esc(m.title)}</label>`).join('')}</div></div>
+      <div class="actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">${k ? '保存' : '创建'}</button></div>
     </form>`, (root, close) => {
     $('[data-close]', root).onclick = close;
+    $('#ks-q', root).oninput = (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      $$('#ks label', root).forEach((l) => { l.hidden = Boolean(q) && !l.dataset.t.includes(q); });
+    };
     bindForm($('#kf', root), async (v) => {
-      const k = await api('POST', '/account/keys', { name: v.name });
-      $('.modal', root).innerHTML = `<h2>Key 已创建</h2>
-        <p class="muted small">请立即复制并妥善保存，关闭后将<b>无法再次查看</b>完整 Key。</p>
-        <div class="key-box"><span>${esc(k.key)}</span><button class="btn sm" data-copy>${icon('copy')}复制</button></div>
-        <div class="actions"><button class="btn primary" data-done>我已保存</button></div>`;
-      $('[data-copy]', root).onclick = () => copy(k.key);
-      $('[data-done]', root).onclick = () => { close(); consoleKeys(panel); };
+      const body = { name: v.name, allow: v.allow, scopes: $$('#ks input:checked', root).map((x) => x.value) };
+      if (k) {
+        await api('PATCH', `/account/keys/${k.id}`, body);
+        close();
+        toast('已保存');
+        consoleKeys(panel);
+      } else {
+        const created = await api('POST', '/account/keys', body);
+        close();
+        showKey('Key 已创建', created.key);
+      }
     });
   });
 
+  $('#new-key').onclick = () => editKey();
   panel.onclick = async (e) => {
-    const b = e.target.closest('[data-del]');
+    const b = e.target.closest('[data-act]');
     if (!b) return;
-    if (!(await confirmDialog('删除 Key', `确定删除「${b.dataset.name}」？使用该 Key 的程序将立即无法调用。`, { okText: '删除' }))) return;
+    const k = keys.find((x) => x.id === Number(b.dataset.id));
     try {
-      await api('DELETE', `/account/keys/${b.dataset.del}`, {});
-      toast('已删除');
-      consoleKeys(panel);
+      if (b.dataset.act === 'edit') return editKey(k);
+      if (b.dataset.act === 'toggle') {
+        if (!k.disabled && !(await confirmDialog('停用 Key', `停用后「${k.name}」调用会返回 403，可以随时重新启用。`, { okText: '停用' }))) return;
+        await api('PATCH', `/account/keys/${k.id}`, { disabled: !k.disabled });
+        toast(k.disabled ? '已启用' : '已停用');
+        return consoleKeys(panel);
+      }
+      if (b.dataset.act === 'reset') {
+        if (!(await confirmDialog('重置 Key', `将为「${k.name}」生成一个新的 Key，旧 Key 立即失效，名称和各项限制保留。`, { okText: '重置' }))) return;
+        const r = await api('POST', `/account/keys/${k.id}/reset`, {});
+        return showKey('Key 已重置', r.key);
+      }
+      if (b.dataset.act === 'del') {
+        if (!(await confirmDialog('删除 Key', `确定删除「${k.name}」？使用该 Key 的程序将立即无法调用。`, { okText: '删除' }))) return;
+        await api('DELETE', `/account/keys/${k.id}`, {});
+        toast('已删除');
+        consoleKeys(panel);
+      }
     } catch (err) { toast(err.message, true); }
   };
 }
@@ -1315,6 +1464,12 @@ async function consoleSettings(panel) {
         <button class="btn primary" type="submit">保存</button>
       </form>
     </div>
+    <div class="card card-pad" style="max-width:520px;margin-bottom:16px">
+      <h3 style="font-size:15px;margin-bottom:6px">${icon('gift')} 兑换码</h3>
+      <p class="small muted" style="margin:0 0 12px">兑换到的「额外次数」在当天额度用完后继续使用，用完为止，不会过期。${state.quota?.bonus ? `当前剩余 <b>${fmtNum(state.quota.bonus)}</b> 次。` : ''}</p>
+      <form id="redeem" class="row" style="gap:8px"><input class="input mono" name="code" placeholder="XXXX-XXXX-XXXX-XXXX" required style="flex:1" autocomplete="off"><button class="btn primary" type="submit">兑换</button></form>
+    </div>
+    <div class="card" style="margin-bottom:16px"><h2 class="card-title">最近登录</h2><div style="padding:8px" id="logins"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div></div>
     <div class="card card-pad" style="max-width:520px">
       <h3 style="font-size:15px;margin-bottom:6px;color:var(--danger)">注销账号</h3>
       <p class="small muted" style="margin:0 0 14px">将永久删除账号、全部 API Key 与推送配置，无法恢复。</p>
@@ -1323,6 +1478,21 @@ async function consoleSettings(panel) {
         <button class="btn danger" type="submit">注销账号</button>
       </form>
     </div>`;
+  bindForm($('#redeem'), async (v) => {
+    const r = await api('POST', '/account/redeem', v);
+    $('#redeem').reset();
+    toast(`兑换成功：获得 ${fmtNum(r.calls)} 次，额外次数共 ${fmtNum(r.bonus)} 次`);
+    await loadMe();
+    renderTopbar('console');
+  });
+  api('GET', '/account/logins').then((list) => {
+    const box = $('#logins');
+    if (!box) return;
+    box.innerHTML = list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>时间</th><th>IP</th><th>地区</th><th>客户端</th><th>结果</th></tr></thead><tbody>
+      ${list.map((l) => `<tr><td class="small faint nowrap">${fmtDate(l.at)}</td><td class="mono small">${esc(l.ip ?? '—')}</td><td class="small">${esc(l.region ?? '—')}</td><td class="small">${esc(l.client ?? '—')}</td>
+        <td>${l.ok ? '<span class="badge ok">成功</span>' : `<span class="badge danger" title="${esc(l.reason ?? '')}">失败</span>`}</td></tr>`).join('')}</tbody></table></div>
+      <p class="small faint" style="padding:0 8px">看到不认识的登录地点，请立即修改密码。</p>` : '<div class="empty">暂无登录记录</div>';
+  }).catch(() => {});
   bindForm($('#pw'), async (v) => {
     await api('POST', '/account/password', v);
     $('#pw').reset();
@@ -1347,6 +1517,9 @@ async function pageAdmin() {
   const chart = barChart(rows, [{ key: 'user', label: '注册用户' }, { key: 'anon', label: '未登录', cls: 's2' }]);
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计、系统更新与接口开关</p></div>${adminTabs('overview')}</div>
+    <div class="card card-pad" style="margin-bottom:16px"><form id="rid-form" class="row" style="gap:8px;flex-wrap:wrap">
+      <b style="font-size:15px">按请求 ID 查调用</b><span class="small faint">用户反馈问题时让他附上返回内容里的 requestId（或响应头 X-Request-Id）</span>
+      <input class="input mono" name="rid" placeholder="mfx3k2a1-9f3c2b1a0d" required style="flex:1;min-width:220px;height:34px"><button class="btn sm primary">查询</button></form></div>
     <div class="card" id="update-card" style="margin-bottom:16px"><div class="card-head"><h2>系统更新</h2>
       <div class="row" style="gap:8px"><button class="btn sm ghost" id="upload-update" title="服务器下载 GitHub 太慢时使用：在电脑上下载代码包后在这里上传">上传更新包</button>
       <input type="file" id="upload-file" accept=".zip,.tar.gz,.tgz,application/zip,application/gzip" hidden>
@@ -1375,6 +1548,7 @@ async function pageAdmin() {
       <div class="card-pad" id="mod-body"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div></div>
   </div>`;
   chart.mount($('#main'));
+  $('#rid-form').onsubmit = (e) => { e.preventDefault(); lookupRequest(new FormData(e.target).get('rid').trim()); };
   $('#check-update').onclick = () => checkUpdate();
   $('#upload-update').onclick = () => uploadUpdateHelp();
   initInspect();
@@ -1397,6 +1571,7 @@ const adminTabs = (active) => `<div class="seg">
   <a href="/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
   <a href="/admin/stats" class="${active === 'stats' ? 'active' : ''}">统计</a>
   <a href="/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
+  <a href="/admin/site" class="${active === 'site' ? 'active' : ''}">运营</a>
   <a href="/admin/changelog" class="${active === 'changelog' ? 'active' : ''}">更新记录</a>
   <a href="/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
 
@@ -1441,8 +1616,10 @@ async function pageAdminUsers(q = '', page = 1, size) {
       if (!f) return;
       e.preventDefault();
       const raw = new FormData(f).get('limit').trim();
+      const reason = await promptDialog('调整每日额度', `改为：${raw === '' ? '默认值' : `${raw} 次/天`}。原因会记录在操作日志里，记录不能修改。`, { placeholder: '例如：赞助者、活动奖励、滥用限制' });
+      if (reason == null) return;
       try {
-        await api('PATCH', `/admin/users/${f.dataset.limit}`, { dailyLimit: raw === '' ? null : Number(raw) });
+        await api('PATCH', `/admin/users/${f.dataset.limit}`, { dailyLimit: raw === '' ? null : Number(raw), reason });
         toast('额度已更新');
       } catch (err) { toast(err.message, true); }
     });
@@ -1452,9 +1629,11 @@ async function pageAdminUsers(q = '', page = 1, size) {
       const b = e.target.closest('[data-toggle]');
       if (!b) return;
       const disable = b.dataset.disabled === '0';
-      if (disable && !(await confirmDialog('停用用户', '停用后该用户将无法登录，其 API Key 也将失效。', { okText: '停用' }))) return;
+      const reason = await promptDialog(disable ? '停用用户' : '启用用户', disable ? '停用后该用户将无法登录，其 API Key 也将失效。原因会记录在操作日志里。' : '原因会记录在操作日志里。',
+        { okText: disable ? '停用' : '启用', danger: disable });
+      if (reason == null) return;
       try {
-        await api('PATCH', `/admin/users/${b.dataset.toggle}`, { disabled: disable });
+        await api('PATCH', `/admin/users/${b.dataset.toggle}`, { disabled: disable, reason });
         const cur = $('#users-body').dataset;
         pageAdminUsers(cur.q ?? '', Number(cur.page ?? 1));
       } catch (err) { toast(err.message, true); }
@@ -1639,8 +1818,9 @@ async function loadModuleSwitches() {
         <div class="mod-grid">${list.map((m) => `
           <label class="mod-item ${m.enabled && !m.compliance ? '' : 'off'}" title="${esc(m.compliance ? `备案合规模式已下线：${m.compliance}` : m.routes.join('\n'))}">
             <span class="switch"><input type="checkbox" data-mod="${esc(m.name)}" ${m.enabled ? 'checked' : ''}><span></span></span>
-            <span class="grow"><span class="mod-title">${esc(m.title)}${keyBadge(m.keys)}${m.compliance ? ' <span class="badge warn">合规模式下线</span>' : ''}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
+            <span class="grow"><span class="mod-title">${esc(m.title)}${optBadges(m.options)}${keyBadge(m.keys)}${m.compliance ? ' <span class="badge warn">合规模式下线</span>' : ''}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
             <span class="small faint" title="近 7 天调用">${fmtNum(m.calls7d)}</span>
+            <button class="btn sm ghost mod-opt" type="button" data-opt="${esc(m.name)}" title="置顶、推荐、缓存时长、每分钟上限、清除缓存">参数</button>
           </label>`).join('')}</div></div>`;
     }).join('') || '<div class="empty">没有匹配的接口</div>';
   };
@@ -1657,6 +1837,12 @@ async function loadModuleSwitches() {
     try { await save([cb.dataset.mod], cb.checked); } catch (err) { cb.checked = !cb.checked; toast(err.message, true); }
   };
   body.onclick = async (e) => {
+    const o = e.target.closest('[data-opt]');
+    if (o) {
+      e.preventDefault();
+      const m = data.modules.find((x) => x.name === o.dataset.opt);
+      return editModuleOptions(m, (opts) => { m.options = opts; state.catalog = null; draw(); });
+    }
     const b = e.target.closest('[data-bulk]');
     if (!b) return;
     const enabled = b.dataset.on === '1';
@@ -1989,7 +2175,7 @@ function setPageMeta(routeName, arg) {
   const m = routeName === 'api' ? cat?.modules.find((x) => x.name === arg) : null;
   const title = m ? `${m.title} API 接口 - 免费调用 | Miao API`
     : { home: `Miao API - 免费聚合 API 接口平台 | 游戏限免、热榜、天气、节假日等 ${n} 个常用接口`, docs: '开发文档 - 调用方式、API Key 与推送 | Miao API',
-      status: '运行状态 - 各接口实时可用性 | Miao API', auth: '登录 | Miao API', console: '控制台 | Miao API', admin: '管理后台 | Miao API' }[routeName] ?? 'Miao API';
+      status: '运行状态 - 各接口实时可用性 | Miao API', links: '友情链接 - 合作伙伴站点 | Miao API', auth: '登录 | Miao API', console: '控制台 | Miao API', admin: '管理后台 | Miao API' }[routeName] ?? 'Miao API';
   document.title = title;
   const desc = m ? `${m.title} API：${m.description}。免费调用，统一 JSON 格式，含参数说明、返回字段中文注释与示例代码。` : null;
   const metaDesc = document.querySelector('meta[name="description"]');
@@ -2029,7 +2215,7 @@ async function router({ keepScroll = false } = {}) {
   // /docs 是开发文档，/docs/<接口名> 是接口详情
   if (segs[0] === 'docs' && segs[1]) segs.splice(0, 1, 'api');
   const [page, arg, sub, extra] = segs;
-  const routeName = { '': 'home', api: 'api', docs: 'docs', status: 'status', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
+  const routeName = { '': 'home', api: 'api', docs: 'docs', status: 'status', links: 'links', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
   navToken++;
   renderTopbar(routeName);
   // 换一个新的 #main：上一个页面挂在上面的事件监听随之清除，不会越积越多
@@ -2046,9 +2232,10 @@ async function router({ keepScroll = false } = {}) {
       case 'api': await pageApi(arg ?? ''); break;
       case 'docs': await pageDocs(); break;
       case 'status': await pageStatus(); break;
+      case 'links': await pageLinks(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : pageAdmin()); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : arg === 'site' ? pageAdminSite(sub) : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {
@@ -2059,7 +2246,9 @@ async function router({ keepScroll = false } = {}) {
 }
 
 migrateHashUrl();
-loadMe().then(() => router());
+// 等后面的 admin-stats.js、status-page.js、site.js 都执行完再渲染页面（它们定义了部分页面）
+const domReady = new Promise((r) => (document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', r, { once: true }) : r()));
+Promise.all([loadMe(), domReady]).then(() => { router(); initNotices(); });
 
 
 // ---------- AI 分析接口失败原因（管理后台） ----------

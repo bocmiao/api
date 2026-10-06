@@ -3,7 +3,8 @@ import { categories, modules } from './apis/index.js';
 import { community } from './lib/seo.js';
 import { HttpError } from './lib/http.js';
 import { config } from './config.js';
-import { isModuleEnabled } from './lib/modules.js';
+import { isModuleEnabled, moduleOptions } from './lib/modules.js';
+import { routeTtl } from './lib/routecache.js';
 
 export const apiRouter = new Router();
 for (const mod of modules) {
@@ -35,7 +36,11 @@ export function catalog({ includeDisabled = false } = {}) {
         enabled: isModuleEnabled(m.name),
         available: m.isAvailable ? Boolean(m.isAvailable()) : env.every((e) => e.optional || e.configured),
         suspended: m.suspended ?? null,
-        routes: m.routes.map(({ method, path, summary, params = [], raw = false, fields = [], returns = null }) => ({ method, path, summary, params, raw, fields, returns })),
+        // 后台设置的置顶 / 推荐：首页排在前面、卡片上显示「推荐」
+        pinned: moduleOptions(m.name).pinned,
+        featured: moduleOptions(m.name).featured,
+        // cacheTtl：实际调用时记录到的缓存时长（毫秒），0 为实时获取，null 为还没有调用记录
+        routes: m.routes.map(({ method, path, summary, params = [], raw = false, fields = [], returns = null }) => ({ method, path, summary, params, raw, fields, returns, cacheTtl: routeTtl(path) })),
       };
     }),
   };

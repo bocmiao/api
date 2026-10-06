@@ -46,7 +46,7 @@ export const charCount = (s) => [...String(s)].length;
 
 // 顺序：未登录 401 → 未配置 503。输入校验（400）由各路由在 reserve 之前完成，不消耗次数
 export function requireAccess(user) {
-  if (!user?.id) throw new HttpError(401, 'AI 接口需要登录后使用');
+  if (!user?.id) throw new HttpError(401, 'AI 接口需要登录后使用', 'LOGIN_REQUIRED');
   if (!isConfigured()) throw new HttpError(503, '管理员尚未配置 AI 接口');
 }
 

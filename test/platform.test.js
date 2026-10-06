@@ -179,7 +179,9 @@ test('管理后台仅管理员可访问，可调整用户额度', async () => {
   const log = (await admin('GET', '/admin/changelog')).body.data;
   assert.equal(log.entries[0].version, ver.disk, '更新记录第一条就是当前版本');
   assert.ok(log.entries.length > 5 && log.entries[0].items.length > 0);
-  assert.equal((await admin('PATCH', `/admin/users/${u2.id}`, { dailyLimit: 50 })).status, 200);
+  // 调整额度必须填原因
+  assert.equal((await admin('PATCH', `/admin/users/${u2.id}`, { dailyLimit: 50 })).status, 400);
+  assert.equal((await admin('PATCH', `/admin/users/${u2.id}`, { dailyLimit: 50, reason: '测试调整' })).status, 200);
   assert.equal((await admin('GET', '/admin/users')).body.data.items.find((u) => u.id === u2.id).dailyLimit, 50);
 
   const normal = client();

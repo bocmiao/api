@@ -161,6 +161,102 @@ if (newStats) {
   db.exec(`INSERT INTO stats_day_meta (day, ips, users) SELECT date(ts / 1000 + 28800, 'unixepoch'), COUNT(DISTINCT ip), COUNT(DISTINCT user_id) FROM request_log GROUP BY 1`);
 }
 
+// ---------- v0.11 ----------
+// 请求 ID：每次调用都有一个，返回在响应头 X-Request-Id 里，用户报错时凭它在后台查到这次调用
+if (!hasColumn('request_log', 'rid')) db.exec('ALTER TABLE request_log ADD COLUMN rid TEXT');
+db.exec('CREATE INDEX IF NOT EXISTS request_log_rid ON request_log(rid)');
+// API Key 来源限制：每行一条，域名（example.com、*.example.com）或 IP / IP 段；为空不限制
+if (!hasColumn('api_keys', 'allow')) db.exec('ALTER TABLE api_keys ADD COLUMN allow TEXT');
+// Key 停用（保留 Key 和设置，随时可以重新启用）、可调用的接口范围（模块名，每行一个；为空不限制）
+if (!hasColumn('api_keys', 'disabled')) db.exec('ALTER TABLE api_keys ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
+if (!hasColumn('api_keys', 'scopes')) db.exec('ALTER TABLE api_keys ADD COLUMN scopes TEXT');
+// 兑换码送的额外次数：当天额度用完后再从这里扣，用完为止
+if (!hasColumn('users', 'bonus_calls')) db.exec('ALTER TABLE users ADD COLUMN bonus_calls INTEGER NOT NULL DEFAULT 0');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS route_cache (path TEXT PRIMARY KEY, ttl_ms INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS notices (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    level TEXT NOT NULL DEFAULT 'info',
+    mode TEXT NOT NULL DEFAULT 'bar',
+    frequency TEXT NOT NULL DEFAULT 'once',
+    priority INTEGER NOT NULL DEFAULT 0,
+    audience TEXT NOT NULL DEFAULT 'all',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    starts_at INTEGER,
+    ends_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS friend_links (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    sort INTEGER NOT NULL DEFAULT 0,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    note TEXT,
+    created_at INTEGER NOT NULL,
+    reviewed_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS friend_links_status ON friend_links(status, sort);
+  -- 每个接口模块的运行参数：置顶、推荐、缓存时长、每分钟限流（为空用接口自带的设置）
+  CREATE TABLE IF NOT EXISTS module_options (
+    name TEXT PRIMARY KEY,
+    pinned INTEGER NOT NULL DEFAULT 0,
+    featured INTEGER NOT NULL DEFAULT 0,
+    cache_ttl_ms INTEGER,
+    minute_limit INTEGER,
+    updated_at INTEGER NOT NULL
+  );
+  -- 管理操作记录：只增不改，调整额度、停用用户等必须填原因
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY,
+    ts INTEGER NOT NULL,
+    admin_id INTEGER,
+    admin_email TEXT,
+    action TEXT NOT NULL,
+    target TEXT,
+    detail TEXT,
+    reason TEXT,
+    ip TEXT
+  );
+  CREATE INDEX IF NOT EXISTS audit_log_ts ON audit_log(ts);
+  CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+  CREATE TABLE IF NOT EXISTS login_log (
+    id INTEGER PRIMARY KEY,
+    ts INTEGER NOT NULL,
+    user_id INTEGER,
+    email TEXT,
+    ip TEXT,
+    region TEXT,
+    client TEXT,
+    ok INTEGER NOT NULL,
+    reason TEXT
+  );
+  CREATE INDEX IF NOT EXISTS login_log_user ON login_log(user_id, ts);
+  CREATE INDEX IF NOT EXISTS login_log_ts ON login_log(ts);
+  CREATE TABLE IF NOT EXISTS redeem_codes (
+    code TEXT PRIMARY KEY,
+    calls INTEGER NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER,
+    note TEXT,
+    created_by INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS redemptions (
+    code TEXT NOT NULL REFERENCES redeem_codes(code) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    calls INTEGER NOT NULL,
+    ts INTEGER NOT NULL,
+    PRIMARY KEY (code, user_id)
+  );
+`);
+
 // 小工具：db.prepare 的缓存版
 const stmts = new Map();
 export function sql(text) {

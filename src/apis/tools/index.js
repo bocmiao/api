@@ -25,7 +25,8 @@ import diff from './diff.js';
 import formatConvert from './convert.js';
 import markdown from './markdown.js';
 import devref from './devref.js';
+import qqAvatar from './qq-avatar.js';
 
 export default [qrcode, shorturl, webmeta, whois, translate, devtools, captcha, visitor, useragent, color, ipcard,
   netcalc, codec, securityTools, debugTools, textTools, svgImage, cron, regex, pinyin, chineseConvert, barcode, random,
-  diff, formatConvert, markdown, devref];
+  diff, formatConvert, markdown, devref, qqAvatar];

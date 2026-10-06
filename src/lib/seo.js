@@ -6,6 +6,13 @@ import { categories, modules } from '../apis/index.js';
 import { isModuleEnabled } from './modules.js';
 import { config } from '../config.js';
 import { localChangelog, RUNNING_VERSION } from './updater.js';
+import { sql } from '../db.js';
+
+export const REPO_URL = 'https://github.com/bocmiao/api';
+// 已通过审核的友情链接（首页底部、友链页）；直接读表，避免引用路由模块造成循环依赖
+export const friendLinks = () => sql("SELECT name, url, description FROM friend_links WHERE status = 'approved' ORDER BY sort DESC, id").all();
+// 最近一次发布日期，作为文档页的修改时间
+const lastRelease = () => localChangelog()[0]?.date?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
 
 const SITE = 'Miao API';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -27,6 +34,22 @@ ${categories.map((c) => {
     if (!ms.length) return '';
     return `<section><h2>${esc(c.title)}接口（${ms.length} 个）</h2><ul>${ms.map((m) => `<li><a href="/docs/${encodeURIComponent(m.name)}">${esc(m.title)} API</a>：${esc(m.description ?? '')}</li>`).join('')}</ul></section>`;
   }).join('\n')}
+<section><h2>开源，可以自己部署</h2><p>${SITE} 以 GPL v3 协议开源，源码在 <a href="${REPO_URL}">GitHub</a>。只需要 Node.js 22.13 以上或 Docker，没有任何第三方依赖，<a href="/about#deploy">查看部署步骤</a>。</p></section>
+${linksSection()}
+</div>`;
+}
+
+function linksSection() {
+  const links = friendLinks();
+  return links.length ? `<section><h2>友情链接</h2><ul>${links.map((l) => `<li><a href="${esc(l.url)}" rel="noopener">${esc(l.name)}</a>${l.description ? `：${esc(l.description)}` : ''}</li>`).join('')}</ul></section>` : '';
+}
+
+function linksBody() {
+  const links = friendLinks();
+  return `<div class="wrap seo-pre" style="padding:40px 20px">
+<h1>友情链接</h1>
+<p>${SITE} 的合作伙伴站点。欢迎交换友情链接：登录后在本页提交申请，管理员审核通过后展示。</p>
+${links.length ? `<ul>${links.map((l) => `<li><a href="${esc(l.url)}" rel="noopener">${esc(l.name)}</a>${l.description ? `：${esc(l.description)}` : ''}</li>`).join('')}</ul>` : '<p>暂无友情链接。</p>'}
 </div>`;
 }
 
@@ -113,6 +136,9 @@ export function pageMeta(path) {
       category: cat,
     };
   }
+  if (seg[0] === 'links' && seg.length === 1) {
+    return { title: `友情链接 - 合作伙伴站点 | ${SITE}`, description: `${SITE} 的友情链接与合作伙伴站点，欢迎交换友链。`, body: linksBody() };
+  }
   if (seg[0] === 'status' && seg.length === 1) {
     return { title: `运行状态 - 各接口实时可用性 | ${SITE}`, description: `${SITE} 各接口最近 24 小时的调用量、平均耗时与失败率，实时查看哪些接口运行正常。` };
   }
@@ -128,6 +154,7 @@ function jsonLd(meta, origin, url) {
       '@type': 'SoftwareApplication', name: SITE, applicationCategory: 'DeveloperApplication', operatingSystem: 'Web',
       url: `${origin}/`, offers: { '@type': 'Offer', price: '0', priceCurrency: 'CNY' }, license: 'https://www.gnu.org/licenses/gpl-3.0.html',
     });
+    graph.push({ '@type': 'SoftwareSourceCode', name: SITE, codeRepository: REPO_URL, programmingLanguage: 'JavaScript', runtimePlatform: 'Node.js', license: 'https://www.gnu.org/licenses/gpl-3.0.html' });
   }
   if (meta.schema === 'module') {
     graph.push({
@@ -139,6 +166,12 @@ function jsonLd(meta, origin, url) {
       ],
     });
     graph.push({ '@type': 'WebAPI', name: `${meta.module.title} API`, description: meta.description, url, documentation: url, provider: { '@type': 'Organization', name: SITE, url: `${origin}/` } });
+    const modified = lastRelease();
+    graph.push({
+      '@type': 'TechArticle', headline: meta.title, description: meta.description, url, inLanguage: 'zh-CN',
+      ...(modified ? { dateModified: modified } : {}),
+      author: { '@type': 'Organization', name: SITE, url: `${origin}/` }, publisher: { '@type': 'Organization', name: SITE, url: `${origin}/` },
+    });
   }
   if (!graph.length) return '';
   // </ 转义，防止 JSON 里的内容提前结束 <script>
@@ -157,7 +190,7 @@ export function renderPage(html, path, origin) {
     meta.keywords ? `<meta name="keywords" content="${esc(meta.keywords)}">` : '',
     meta.noindex ? '<meta name="robots" content="noindex, nofollow">' : `<link rel="canonical" href="${esc(url)}">`,
     ...(meta.noindex ? [] : [
-      `<meta property="og:type" content="website">`,
+      `<meta property="og:type" content="${meta.schema === 'module' ? 'article' : 'website'}">`,
       `<meta property="og:site_name" content="${SITE}">`,
       `<meta property="og:title" content="${esc(meta.title)}">`,
       `<meta property="og:description" content="${esc(meta.description)}">`,
@@ -223,7 +256,7 @@ export function renderAbout(html, origin) {
       {
         '@type': 'SoftwareApplication', name: SITE, applicationCategory: 'DeveloperApplication', operatingSystem: 'Web, Linux, Docker',
         url: `${origin}/about`, softwareVersion: RUNNING_VERSION, license: 'https://www.gnu.org/licenses/gpl-3.0.html',
-        codeRepository: 'https://github.com/bocmiao/api', offers: { '@type': 'Offer', price: '0', priceCurrency: 'CNY' },
+        codeRepository: REPO_URL, offers: { '@type': 'Offer', price: '0', priceCurrency: 'CNY' },
         description: `开源免费的聚合 API 接口平台，提供 ${list.length} 个常用接口。`,
       },
       {
@@ -247,9 +280,9 @@ export function renderAbout(html, origin) {
 }
 
 export function sitemap(origin) {
-  const lastmod = localChangelog()[0]?.date?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  const lastmod = lastRelease();
   const urls = [
-    ['/', '1.0', 'daily'], ['/about', '0.9', 'weekly'], ['/docs', '0.8', 'weekly'], ['/status', '0.5', 'hourly'],
+    ['/', '1.0', 'daily'], ['/about', '0.9', 'weekly'], ['/docs', '0.8', 'weekly'], ['/status', '0.5', 'hourly'], ['/links', '0.4', 'weekly'],
     ...enabled().map((m) => [`/docs/${encodeURIComponent(m.name)}`, '0.7', 'weekly']),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>

@@ -20,6 +20,14 @@ export const SETTING_GROUPS = [
     ],
   },
   {
+    id: 'site', title: '站点展示',
+    fields: [
+      { key: 'HOME_STATS', label: '首页显示平台数据', type: 'bool', default: '1', help: '首页展示接口数量、累计调用、注册用户数、今日调用、可用率、近 7 天调用趋势和热门接口' },
+      { key: 'FRIEND_LINK_APPLY', label: '开放友情链接申请', type: 'bool', default: '1', help: '登录用户可以在「友情链接」页提交申请，管理员在后台「公告与友链」审核；关闭后友链页只展示已通过的站点' },
+      { key: 'FRIEND_LINK_NOTICE', label: '友链申请须知', type: 'text', placeholder: '请先在贵站添加本站链接，再提交申请', help: '显示在申请表单上方' },
+    ],
+  },
+  {
     id: 'limits', title: '调用额度',
     fields: [
       { key: 'ANON_DAILY_LIMIT', label: '未登录每天', type: 'int', default: '100', min: 0, max: 1e9, help: '按 IP 计算' },

@@ -1,9 +1,20 @@
 export class HttpError extends Error {
-  constructor(status, message) {
+  // code：可选的错误代码（如 QUOTA_EXCEEDED），不传时按状态码给一个通用的
+  constructor(status, message, code) {
     super(message);
     this.status = status;
+    if (code) this.code = code;
   }
 }
+
+// 错误代码：放在错误响应的 errorCode 字段里，程序可以按它判断，不用解析中文提示
+export const ERROR_CODES = {
+  400: 'BAD_REQUEST', 401: 'UNAUTHORIZED', 403: 'FORBIDDEN', 404: 'NOT_FOUND', 405: 'METHOD_NOT_ALLOWED',
+  413: 'PAYLOAD_TOO_LARGE', 415: 'UNSUPPORTED_MEDIA_TYPE', 429: 'RATE_LIMITED',
+  500: 'INTERNAL_ERROR', 502: 'UPSTREAM_ERROR', 503: 'SERVICE_UNAVAILABLE', 504: 'UPSTREAM_TIMEOUT',
+};
+export const errorCode = (status, err) => (typeof err?.code === 'string' && /^[A-Z][A-Z0-9_]+$/.test(err.code) ? err.code : null)
+  ?? ERROR_CODES[status] ?? (status >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST');
 
 import { outboundFetch, proxyConfig, shouldProxy, DEFAULT_PROXY_HOSTS } from './proxy.js';
 import { complianceOn } from './compliance.js';

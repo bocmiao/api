@@ -97,7 +97,7 @@ export function generateApiKey() {
 
 export function userFromApiKey(key) {
   if (!key || !/^ak_[0-9A-Za-z]{32}$/.test(key)) return null;
-  const row = sql(`SELECT k.id AS key_id, u.* FROM api_keys k JOIN users u ON u.id = k.user_id
+  const row = sql(`SELECT k.id AS key_id, k.allow AS key_allow, k.disabled AS key_disabled, k.scopes AS key_scopes, u.* FROM api_keys k JOIN users u ON u.id = k.user_id
                    WHERE k.key_hash = ? AND u.disabled = 0`).get(sha256(key));
   if (!row) return null;
   sql("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?").run(row.key_id);

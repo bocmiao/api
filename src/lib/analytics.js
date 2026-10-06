@@ -68,7 +68,7 @@ function rollupRows(from, to, path = null) {
 }
 
 const blank = () => Object.fromEntries(STAT_COLS.map((c) => [c, 0]));
-function sumRows(rows) {
+export function sumRows(rows) {
   const s = blank();
   for (const r of rows) for (const c of STAT_COLS) s[c] = c === 'ms_max' ? Math.max(s[c], r[c]) : s[c] + r[c];
   return s;
