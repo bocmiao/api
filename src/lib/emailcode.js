@@ -6,7 +6,7 @@ import { HttpError } from './http.js';
 import { store as captchaStore } from '../apis/tools/captcha.js';
 import { sendMail } from '../notify/smtp.js';
 
-export const PURPOSES = { register: '注册', reset: '重置密码' };
+export const PURPOSES = { register: '注册', reset: '重置密码', friendlink: '申请友情链接' };
 
 // 发信函数，测试时可替换
 let mailer = sendMail;

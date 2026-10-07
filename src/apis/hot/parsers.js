@@ -392,8 +392,34 @@ export function parseCsdn(raw) {
 }
 
 // ---------- 百度贴吧热议（hottopic/browse/topicList） ----------
-// { errno: 0, data: { bang_topic: { topic_list: [{ topic_id, topic_name, topic_desc, abstract, topic_pic, discuss_num, topic_url, create_time }] } } }
+// 上游现在直接返回网页：<li class="topic-top-item"><img src="封面" class="topic-cover">…
+//   <a href="…hottopic?topic_id=…&topic_name=…" class="topic-text">标题</a><span class="topic-num">255.3W实时讨论</span>…
+//   <p class="topic-top-item-desc">简介</p></li>
+// 以前返回的 JSON：{ errno: 0, data: { bang_topic: { topic_list: [{ topic_id, topic_name, topic_desc, abstract, topic_pic, discuss_num, topic_url, create_time }] } } }
+// 两种都能解析
+export function parseTiebaHtml(html) {
+  const blocks = String(html ?? '').match(/<li class="topic-top-item">[\s\S]*?<\/li>/g);
+  if (!blocks?.length) throw bad('百度贴吧');
+  const pick = (b, re) => re.exec(b)?.[1] ?? null;
+  return blocks.map((b) => {
+    const href = pick(b, /<a[^>]+href="([^"]+)"[^>]*class="topic-text"/);
+    const url = href ? decodeEntities(href).replace(/^\/\//, 'https://').replace(/^http:/, 'https:') : null;
+    return {
+      topic_id: url ? new URL(url, 'https://tieba.baidu.com').searchParams.get('topic_id') : null,
+      topic_name: stripTags(pick(b, /class="topic-text"[^>]*>([\s\S]*?)<\/a>/) ?? ''),
+      topic_desc: stripTags(pick(b, /class="topic-top-item-desc"[^>]*>([\s\S]*?)<\/p>/) ?? '') || null,
+      topic_pic: pick(b, /<img[^>]+src="([^"]+)"[^>]*class="topic-cover"/),
+      discuss_num: parseHotNumber(stripTags(pick(b, /class="topic-num"[^>]*>([\s\S]*?)<\/span>/) ?? '')),
+      topic_url: url && /^https:\/\/tieba\.baidu\.com\//.test(url) ? url : null,
+    };
+  });
+}
+
 export function parseTieba(raw) {
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    raw = t.startsWith('{') ? JSON.parse(t) : { errno: 0, data: { bang_topic: { topic_list: parseTiebaHtml(t) } } };
+  }
   if (raw?.errno != null && raw.errno !== 0) throw new HttpError(502, `贴吧接口返回错误：${raw.errmsg || raw.errno}`);
   const list = raw?.data?.bang_topic?.topic_list;
   if (!Array.isArray(list)) throw bad('百度贴吧');

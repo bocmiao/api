@@ -1,7 +1,11 @@
 // 站点运营：首页平台数据、接口文档页的调用统计、公告、友情链接、按请求 ID 查调用记录。
 // 路由挂在 accountRouter 上（同源、JSON、同样的 CSRF 检查），由 app.js 在 account.js 之后加载
 import { sql, STAT_COLS } from '../db.js';
-import { HttpError } from '../lib/http.js';
+import { HttpError, stripTags } from '../lib/http.js';
+import { config } from '../config.js';
+import { siteOrigin } from '../lib/origin.js';
+import { checkCaptcha, sendEmailCode, consumeEmailCode } from '../lib/emailcode.js';
+import { fetchFollow, readLimited, reasonOf } from '../apis/net/common.js';
 import { accountRouter, requireUser, requireAdmin } from './account.js';
 import { modules as apiModules } from '../apis/index.js';
 import { isModuleEnabled } from '../lib/modules.js';
@@ -199,15 +203,38 @@ r('DELETE', '/admin/notices/:id', (ctx) => {
 
 // ---------- 友情链接 ----------
 const LINK_STATUS = ['pending', 'approved', 'rejected'];
+const parseJson = (t) => { try { return t ? JSON.parse(t) : null; } catch { return null; } };
 const linkRow = (l, { admin = false } = {}) => ({
   id: l.id, name: l.name, url: l.url, description: l.description,
-  ...(admin ? { status: l.status, sort: l.sort, note: l.note, email: l.email ?? null, createdAt: new Date(l.created_at).toISOString(), reviewedAt: l.reviewed_at ? new Date(l.reviewed_at).toISOString() : null } : {}),
+  ...(admin ? {
+    status: l.status, sort: l.sort, note: l.note, email: l.email ?? null, contactEmail: l.contact_email ?? null, ip: l.ip ?? null,
+    createdAt: new Date(l.created_at).toISOString(), reviewedAt: l.reviewed_at ? new Date(l.reviewed_at).toISOString() : null,
+    check: l.check_json ? { ...parseJson(l.check_json), at: new Date(l.checked_at).toISOString() } : null,
+  } : {}),
 });
+
+// ---------- 友链防刷 ----------
+// 每个账号每天最多提交 3 次、同时最多 3 个待审核；每个 IP 每天最多 5 次（挡多账号）；
+// 被拒绝的网站 7 天内不能再申请；不能申请本站；判断是否同一网站时忽略 www.
+// 配置了 SMTP 时还要填联系邮箱并输入邮箱验证码（发送验证码要先过图形验证码），否则提交时要填图形验证码
+export const LINK_LIMITS = { userDaily: 3, pending: 3, ipDaily: 5, rejectCooldownDays: 7 };
+const bareHost = (h) => String(h ?? '').toLowerCase().replace(/:\d+$/, '').replace(/^www\./, '');
+const hostOf = (u) => { try { return bareHost(new URL(u).hostname); } catch { return ''; } };
+const ownHosts = (req) => [...new Set([hostOf(siteOrigin(req)), hostOf(config.publicUrl), bareHost(req?.headers?.host)].filter(Boolean))];
+const dayStart = (now = Date.now()) => now - ((now + 8 * 3600_000) % DAY);
+const linkEmailRequired = () => Boolean(config.smtp.host);
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+function contactEmail(raw) {
+  const email = String(raw ?? '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email) || email.length > 254) throw new HttpError(400, '请填写正确的联系邮箱');
+  return email;
+}
 
 export function normalizeSiteUrl(raw) {
   let u;
   try { u = new URL(String(raw ?? '').trim()); } catch { throw new HttpError(400, '网站地址格式不正确，请以 https:// 开头'); }
-  if (!['http:', 'https:'].includes(u.protocol) || !u.hostname.includes('.') || u.username || u.password) throw new HttpError(400, '网站地址须以 http:// 或 https:// 开头');
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new HttpError(400, '网站地址须以 http:// 或 https:// 开头');
+  if (!u.hostname.includes('.')) throw new HttpError(400, '请填写可以公开访问的网站域名');
   if (u.href.length > 200) throw new HttpError(400, '网站地址过长');
   return `${u.protocol}//${u.host}${u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, '')}`;
 }
@@ -227,23 +254,83 @@ export const approvedLinks = () => sql("SELECT * FROM friend_links WHERE status 
 r('GET', '/site/links', (ctx) => ({
   data: {
     links: approvedLinks(),
-    apply: { open: flag('FRIEND_LINK_APPLY'), notice: process.env.FRIEND_LINK_NOTICE || '请先在贵站添加本站链接，再提交申请。站点需能正常访问、内容合法，审核通过后展示。' },
+    apply: {
+      open: flag('FRIEND_LINK_APPLY'),
+      notice: process.env.FRIEND_LINK_NOTICE || '请先在贵站添加本站链接，再提交申请。站点需能正常访问、内容合法，审核通过后展示。',
+      // emailCode：需要联系邮箱 + 邮箱验证码；否则提交时填图形验证码
+      emailCode: linkEmailRequired(),
+      limits: LINK_LIMITS,
+    },
     mine: ctx.user ? sql('SELECT * FROM friend_links WHERE user_id = ? ORDER BY id DESC LIMIT 10').all(ctx.user.id)
       .map((l) => ({ ...linkRow(l), status: l.status, note: l.status === 'rejected' ? l.note : null })) : [],
   },
 }));
 
+// 发送友链申请的邮箱验证码：要登录、要过图形验证码，发送频率沿用注册验证码的限制（按邮箱和 IP）
+r('POST', '/site/links/send-code', async (ctx) => {
+  requireUser(ctx);
+  if (!flag('FRIEND_LINK_APPLY')) throw new HttpError(403, '暂未开放友情链接申请');
+  if (!linkEmailRequired()) throw new HttpError(400, '站点未配置邮件服务，提交申请时填写图形验证码即可');
+  const email = contactEmail(ctx.body?.email);
+  checkCaptcha(ctx.body?.captchaToken, ctx.body?.captchaAnswer);
+  return { data: await sendEmailCode({ email, purpose: 'friendlink', ip: ctx.ip, exists: true }) };
+});
+
 r('POST', '/site/links', (ctx) => {
   const user = requireUser(ctx);
   if (!flag('FRIEND_LINK_APPLY')) throw new HttpError(403, '暂未开放友情链接申请');
   const v = linkInput(ctx.body);
-  if (sql("SELECT COUNT(*) AS n FROM friend_links WHERE user_id = ? AND status = 'pending'").get(user.id).n >= 3) throw new HttpError(400, '你已有 3 个申请在等待审核，请耐心等待');
-  const host = new URL(v.url).host;
-  const dup = sql("SELECT url FROM friend_links WHERE status != 'rejected'").all().some((l) => { try { return new URL(l.url).host === host; } catch { return false; } });
-  if (dup) throw new HttpError(400, '这个网站已经申请过或已在友情链接中');
-  const { lastInsertRowid } = sql('INSERT INTO friend_links (name, url, description, status, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(v.name, v.url, v.description, 'pending', user.id, Date.now());
+  const host = hostOf(v.url);
+  if (ownHosts(ctx.req).includes(host)) throw new HttpError(400, '不能申请本站自己的地址，请填写你的网站地址');
+  const since = dayStart();
+  const L = LINK_LIMITS;
+  if (sql("SELECT COUNT(*) AS n FROM friend_links WHERE user_id = ? AND status = 'pending'").get(user.id).n >= L.pending) throw new HttpError(429, `你已有 ${L.pending} 个申请在等待审核，请耐心等待`, 'RATE_LIMITED');
+  if (sql('SELECT COUNT(*) AS n FROM friend_links WHERE user_id = ? AND created_at >= ?').get(user.id, since).n >= L.userDaily) throw new HttpError(429, `每个账号每天最多提交 ${L.userDaily} 次友链申请，请明天再试`, 'RATE_LIMITED');
+  if (sql('SELECT COUNT(*) AS n FROM friend_links WHERE ip = ? AND created_at >= ?').get(ctx.ip, since).n >= L.ipDaily) throw new HttpError(429, '今天从你的网络提交的友链申请太多了，请明天再试', 'RATE_LIMITED');
+  const same = sql('SELECT url, status, reviewed_at, created_at FROM friend_links').all().filter((l) => hostOf(l.url) === host);
+  if (same.some((l) => l.status !== 'rejected')) throw new HttpError(400, '这个网站已经申请过或已在友情链接中');
+  const lastReject = Math.max(0, ...same.map((l) => l.reviewed_at ?? l.created_at));
+  const wait = lastReject + L.rejectCooldownDays * DAY - Date.now();
+  if (lastReject && wait > 0) throw new HttpError(400, `这个网站的申请最近未通过，请 ${Math.ceil(wait / DAY)} 天后再申请`);
+  // 校验（放在最后：前面的检查不通过时不浪费用户的验证码）
+  let email = null;
+  if (linkEmailRequired()) {
+    email = contactEmail(ctx.body?.email);
+    consumeEmailCode(email, 'friendlink', ctx.body?.emailCode);
+  } else {
+    checkCaptcha(ctx.body?.captchaToken, ctx.body?.captchaAnswer);
+  }
+  const { lastInsertRowid } = sql('INSERT INTO friend_links (name, url, description, status, user_id, ip, contact_email, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(v.name, v.url, v.description, 'pending', user.id, ctx.ip, email, Date.now());
   return { data: { id: Number(lastInsertRowid), status: 'pending' } };
+});
+
+// 后台检测：访问对方首页，看能不能打开、有没有加本站链接（只访问公网地址，最多跟随 5 次跳转、读取 2MB）
+export async function checkLinkSite(url, hosts) {
+  const t0 = Date.now();
+  try {
+    const r = await fetchFollow(url, { timeoutMs: 8000, headers: { 'user-agent': 'Mozilla/5.0 (compatible; MiaoAPI-LinkCheck/1.0)', accept: 'text/html,*/*' } });
+    const status = r.res.statusCode;
+    const { body } = await readLimited(r.res, { maxBytes: 2_000_000, decompress: true });
+    const html = body.toString('utf8');
+    const lower = html.toLowerCase();
+    return {
+      reachable: status >= 200 && status < 400, status, finalUrl: r.url.href, ms: Date.now() - t0,
+      title: stripTags(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? '').slice(0, 100) || null,
+      backlink: hosts.some((h) => lower.includes(h)),
+    };
+  } catch (err) {
+    return { reachable: false, status: null, error: reasonOf(err), ms: Date.now() - t0, backlink: false };
+  }
+}
+
+r('POST', '/admin/links/:id/check', async (ctx) => {
+  requireAdmin(ctx);
+  const l = sql('SELECT * FROM friend_links WHERE id = ?').get(Number(ctx.params.id));
+  if (!l) throw new HttpError(404, '友情链接不存在');
+  const result = await checkLinkSite(l.url, ownHosts(ctx.req));
+  sql('UPDATE friend_links SET check_json = ?, checked_at = ? WHERE id = ?').run(JSON.stringify(result), Date.now(), l.id);
+  return { data: { ...result, at: new Date().toISOString() } };
 });
 
 r('GET', '/admin/links', (ctx) => {

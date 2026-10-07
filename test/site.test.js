@@ -10,6 +10,14 @@ const { parseRule, normalizeRules, checkKeySource } = await import('../src/lib/k
 const { db } = await import('../src/db.js');
 const { siteOverview } = await import('../src/routes/site.js');
 const { TTLCache, cacheScope } = await import('../src/lib/cache.js');
+const { store: captchaStore } = await import('../src/apis/tools/captcha.js');
+const { checkLinkSite } = await import('../src/routes/site.js');
+
+// 取一张图形验证码并直接读出答案
+async function captcha(c) {
+  const { body } = await c('GET', '/auth/captcha');
+  return { captchaToken: body.data.token, captchaAnswer: captchaStore.map.get(body.data.token).answer };
+}
 
 const realFetch = globalThis.fetch;
 let server, base;
@@ -205,8 +213,11 @@ test('友情链接：登录用户申请，管理员审核后出现在友链页�
   assert.equal((await client()('POST', '/site/links', { name: 'A', url: 'https://a.example.org' })).status, 401);
   assert.equal((await alice('POST', '/site/links', { name: 'A', url: 'javascript:alert(1)' })).status, 400);
   assert.equal((await alice('POST', '/site/links', { name: '<b>', url: 'https://a.example.org' })).status, 400);
-  assert.equal((await alice('POST', '/site/links', { name: '小站', url: 'https://blog.example.org/', description: '个人博客' })).status, 200);
-  assert.equal((await alice('POST', '/site/links', { name: '小站2', url: 'https://blog.example.org/x' })).status, 400, '同一网站不能重复申请');
+  // 未配置邮件服务：提交时要填图形验证码
+  assert.equal((await alice('POST', '/site/links', { name: '小站', url: 'https://blog.example.org/' })).status, 400, '没填图形验证码');
+  assert.equal((await alice('POST', '/site/links', { name: '小站', url: 'https://blog.example.org/', captchaToken: 'x', captchaAnswer: 'y' })).status, 400);
+  assert.equal((await alice('POST', '/site/links', { name: '小站', url: 'https://blog.example.org/', description: '个人博客', ...(await captcha(alice)) })).status, 200);
+  assert.equal((await alice('POST', '/site/links', { name: '小站2', url: 'https://www.blog.example.org/x', ...(await captcha(alice)) })).status, 400, '同一网站（忽略 www.）不能重复申请');
   assert.equal((await client()('GET', '/site/links')).body.data.links.length, 0, '未审核不展示');
   assert.equal((await alice('GET', '/site/links')).body.data.mine[0].status, 'pending');
 
@@ -225,6 +236,60 @@ test('友情链接：登录用户申请，管理员审核后出现在友链页�
   process.env.FRIEND_LINK_APPLY = '0';
   assert.equal((await alice('POST', '/site/links', { name: 'B', url: 'https://b.example.org' })).status, 403);
   delete process.env.FRIEND_LINK_APPLY;
+});
+
+test('友链防刷：不能申请本站，每个账号每天 3 次、每个 IP 每天 5 次，被拒绝后 7 天内不能再申请', async () => {
+  const carol = client();
+  await carol('POST', '/auth/register', { email: 'carol@example.com', password: 'password123' });
+  const ip = { 'x-forwarded-for': '9.9.7.1' };
+  const apply = (c, url, h = ip) => c('POST', '/site/links', { name: '站点', url }, h).then(async () => c('POST', '/site/links', { name: '站点', url, ...(await captcha(c)) }, h));
+
+  const own = await apply(carol, `${base.replace('127.0.0.1', 'www.127.0.0.1')}`);
+  assert.equal(own.status, 400);
+  const self = await carol('POST', '/site/links', { name: '本站', url: base, ...(await captcha(carol)) }, ip);
+  assert.equal(self.status, 400);
+  assert.match(self.body.message, /本站/);
+
+  // 被拒绝：7 天内不能再申请
+  const r1 = await apply(carol, 'https://c1.example.net');
+  assert.equal(r1.status, 200);
+  const id = (await admin('GET', '/admin/links')).body.data.find((l) => l.url === 'https://c1.example.net').id;
+  await admin('PUT', `/admin/links/${id}`, { status: 'rejected', note: '未加本站链接' });
+  const again = await apply(carol, 'https://www.c1.example.net');
+  assert.equal(again.status, 400);
+  assert.match(again.body.message, /7 天后/);
+
+  // 每个账号每天 3 次（已用 1 次）
+  assert.equal((await apply(carol, 'https://c2.example.net')).status, 200);
+  assert.equal((await apply(carol, 'https://c3.example.net')).status, 200);
+  const over = await apply(carol, 'https://c4.example.net');
+  assert.equal(over.status, 429);
+  assert.match(over.body.message, /每天最多提交 3 次/);
+
+  // 同一 IP 换账号：每天最多 5 次（这个 IP 已经提交 3 次）
+  const dave = client();
+  await dave('POST', '/auth/register', { email: 'dave@example.com', password: 'password123' });
+  assert.equal((await apply(dave, 'https://d1.example.net')).status, 200);
+  assert.equal((await apply(dave, 'https://d2.example.net')).status, 200);
+  const ipOver = await apply(dave, 'https://d3.example.net');
+  assert.equal(ipOver.status, 429);
+  assert.match(ipOver.body.message, /网络/);
+  assert.equal((await apply(dave, 'https://d3.example.net', { 'x-forwarded-for': '9.9.7.2' })).status, 200, '换网络后可以');
+
+  const row = (await admin('GET', '/admin/links')).body.data.find((l) => l.url === 'https://d1.example.net');
+  assert.equal(row.ip, '9.9.7.1');
+});
+
+test('友链检测：只访问公网地址', async () => {
+  const r = await checkLinkSite('http://127.0.0.1:1/', ['miao.club']);
+  assert.equal(r.reachable, false);
+  assert.match(r.error, /内网|保留/);
+  const id = (await admin('POST', '/admin/links', { name: '内网', url: 'http://10.0.0.1' })).body.data.id;
+  const c = await admin('POST', `/admin/links/${id}/check`, {});
+  assert.equal(c.status, 200);
+  assert.equal(c.body.data.reachable, false);
+  assert.equal((await admin('GET', '/admin/links')).body.data.find((l) => l.id === id).check.reachable, false);
+  assert.equal((await alice('POST', `/admin/links/${id}/check`, {})).status, 403);
 });
 
 test('首页平台数据与接口文档页统计', async () => {

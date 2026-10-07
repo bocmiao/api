@@ -65,6 +65,22 @@ test('贴吧：话题链接、讨论数、导语与创建时间', () => {
   assert.throws(() => P.parseTieba({ errno: 110003, errmsg: '请求过于频繁' }), { status: 502, message: /请求过于频繁/ });
 });
 
+test('贴吧：上游改为返回网页时从页面里解析话题', () => {
+  const html = readFileSync(new URL('../fixtures/hot/tieba.html', import.meta.url), 'utf8');
+  const items = P.parseTieba(html);
+  assertShape(items);
+  assert.equal(items.length, 2);
+  assert.equal(items[0].title, 'Zuian美签被拒,369紧急出征');
+  assert.equal(items[0].hot, 2553000);
+  assert.match(items[0].url, /^https:\/\/tieba\.baidu\.com\/hottopic\/browse\/hottopic\?topic_id=28366389&topic_name=/);
+  assert.match(items[0].desc, /Zuian/);
+  assert.match(items[0].extra.cover, /^https:\/\/tiebapic\.baidu\.com\//);
+  assert.equal(items[1].hot, 2328000);
+  // 以 JSON 文本返回时照旧解析
+  assert.equal(P.parseTieba(JSON.stringify(json('tieba.json'))).length, 2);
+  assert.throws(() => P.parseTieba('<html><body>验证</body></html>'), { status: 502, message: /百度贴吧返回的数据格式无法识别/ });
+});
+
 // ---------- 注册表与字段说明（mock fetch） ----------
 const realFetch = globalThis.fetch;
 afterEach(() => {

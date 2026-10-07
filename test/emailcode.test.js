@@ -140,3 +140,26 @@ test('单个邮箱每天的发送次数有上限', noCooldown(async () => {
     delete process.env.EMAIL_CODE_PER_EMAIL_DAILY;
   }
 }));
+
+test('友链申请：配置了邮件服务时要填联系邮箱并输入邮箱验证码', noCooldown(async () => {
+  const c = client();
+  await c('POST', '/auth/send-code', { email: 'link@example.com', purpose: 'register', ...(await captcha(c)) });
+  assert.equal((await c('POST', '/auth/register', { email: 'link@example.com', password: 'password123', code: lastCode() })).status, 200);
+  // 注册接口不能拿来发友链验证码
+  assert.equal((await c('POST', '/auth/send-code', { email: 'x@example.com', purpose: 'friendlink', ...(await captcha(c)) })).status, 400);
+  assert.equal((await c('GET', '/site/links')).body.data.apply.emailCode, true);
+
+  const site = { name: '我的博客', url: 'https://myblog.example.com' };
+  assert.equal((await c('POST', '/site/links/send-code', { email: 'contact@example.com' })).status, 400, '要图形验证码');
+  const noCode = await c('POST', '/site/links', { ...site, email: 'contact@example.com' });
+  assert.equal(noCode.status, 400);
+  assert.match(noCode.body.message, /邮箱验证码/);
+
+  assert.equal((await c('POST', '/site/links/send-code', { email: 'contact@example.com', ...(await captcha(c)) })).status, 200);
+  assert.equal(mails.at(-1).to, 'contact@example.com');
+  assert.match(mails.at(-1).subject, /申请友情链接/);
+  assert.equal((await c('POST', '/site/links', { ...site, email: 'other@example.com', emailCode: lastCode() })).status, 400, '邮箱要和收验证码的一致');
+  assert.equal((await c('POST', '/site/links', { ...site, email: 'contact@example.com', emailCode: lastCode() })).status, 200);
+  assert.equal((await c('POST', '/site/links', { name: '再来', url: 'https://other.example.com', email: 'contact@example.com', emailCode: lastCode() })).status, 400, '验证码只能用一次');
+  assert.equal((await client()('POST', '/site/links/send-code', { email: 'a@example.com', ...(await captcha(c)) })).status, 401);
+}));

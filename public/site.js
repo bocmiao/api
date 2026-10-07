@@ -285,6 +285,14 @@ async function pageLinks() {
             <div class="field"><label for="la-n">网站名称</label><input class="input" id="la-n" name="name" maxlength="30" required></div>
             <div class="field"><label for="la-u">网站地址</label><input class="input" id="la-u" name="url" type="url" placeholder="https://" required></div>
             <div class="field"><label for="la-d">一句话介绍 <span class="faint">可选</span></label><input class="input" id="la-d" name="description" maxlength="100"></div>
+            ${d.apply.emailCode ? `<div class="field"><label for="la-e">联系邮箱 <span class="faint">审核结果和后续联系用</span></label><input class="input" id="la-e" name="email" type="email" required value="${esc(state.user.email)}"></div>` : ''}
+            <div class="field"><label for="la-c">图形验证码</label>
+              <div class="code-row"><input class="input" id="la-c" name="captchaAnswer" autocomplete="off" maxlength="8" placeholder="输入右侧字符" ${d.apply.emailCode ? '' : 'required'}>
+              <img id="la-ci" class="captcha-img" alt="图形验证码" title="看不清？点击刷新"></div></div>
+            ${d.apply.emailCode ? `<div class="field"><label for="la-code">邮箱验证码</label>
+              <div class="code-row"><input class="input" id="la-code" name="emailCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位数字" required>
+              <button class="btn" type="button" id="la-send">获取验证码</button></div></div>` : ''}
+            <p class="small faint" style="margin:0 0 12px">每个账号每天最多提交 ${d.apply.limits.userDaily} 次；未通过的网站 ${d.apply.limits.rejectCooldownDays} 天内不能重复申请。</p>
             <button class="btn primary" type="submit">提交申请</button></form>`
           : `<p class="small">请先 <a href="/login">登录</a> 或 <a href="/register">免费注册</a> 后提交申请。</p>`}`
         : '<p class="small muted">暂未开放友链申请。</p>'}
@@ -305,8 +313,52 @@ async function pageLinks() {
       </div>
     </div></div>`;
   const form = $('#link-apply');
-  if (form) bindForm(form, async (v) => {
-    await api('POST', '/site/links', v);
+  if (!form) return;
+  // 图形验证码只能用一次：发送邮箱验证码或提交后都换一张
+  let captchaToken = null;
+  const loadCaptcha = async () => {
+    try {
+      const c = await api('GET', '/auth/captcha');
+      captchaToken = c.token;
+      $('#la-ci').src = c.image;
+      $('#la-c').value = '';
+    } catch (err) { toast(err.message, true); }
+  };
+  loadCaptcha();
+  $('#la-ci').onclick = loadCaptcha;
+  const send = $('#la-send');
+  if (send) send.onclick = async () => {
+    const email = $('#la-e').value.trim();
+    const answer = $('#la-c').value.trim();
+    if (!email || !$('#la-e').checkValidity()) return toast('请先填写正确的联系邮箱', true);
+    if (!answer) return toast('请先填写图形验证码', true);
+    send.disabled = true;
+    try {
+      const r = await api('POST', '/site/links/send-code', { email, captchaToken, captchaAnswer: answer });
+      toast('验证码已发送，请查收邮件（也看看垃圾箱）');
+      let sec = r.cooldown ?? 60;
+      const tick = () => {
+        if (!send.isConnected) return;
+        if (sec <= 0) { send.disabled = false; send.textContent = '重新获取'; return; }
+        send.textContent = `${sec--} 秒后重试`;
+        setTimeout(tick, 1000);
+      };
+      tick();
+      $('#la-code').focus();
+    } catch (err) {
+      toast(err.message, true);
+      send.disabled = false;
+    } finally {
+      loadCaptcha();
+    }
+  };
+  bindForm(form, async (v) => {
+    try {
+      await api('POST', '/site/links', { ...v, captchaToken });
+    } catch (err) {
+      if (!d.apply.emailCode) loadCaptcha();
+      throw err;
+    }
     toast('已提交，管理员审核通过后展示');
     pageLinks();
   });
@@ -503,16 +555,17 @@ async function adminLinks(panel) {
   const STATUS = { pending: ['待审核', 'warn'], approved: ['已通过', 'ok'], rejected: ['已拒绝', 'danger'] };
   panel.innerHTML = `<div class="card"><div class="card-head"><h2>友情链接</h2>
       <span class="row" style="gap:8px"><a class="btn sm ghost" href="/admin/settings/site">申请设置</a><a class="btn sm ghost" href="/links">查看友链页</a><button class="btn sm primary" id="l-new">直接添加</button></span></div>
-    ${list.length ? `<div class="table-wrap" style="padding:8px"><table class="table"><thead><tr><th>网站</th><th>申请人</th><th>时间</th><th class="num">排序</th><th>状态</th><th></th></tr></thead><tbody>
+    ${list.length ? `<div class="table-wrap" style="padding:8px"><table class="table"><thead><tr><th>网站</th><th>申请人</th><th>申请时间 / 检测</th><th class="num">排序</th><th>状态</th><th></th></tr></thead><tbody>
       ${list.map((l) => {
         const [t, c] = STATUS[l.status];
         return `<tr><td><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.name)}</a><div class="small faint mono">${esc(l.url)}</div>${l.description ? `<div class="small muted">${esc(l.description)}</div>` : ''}</td>
-          <td class="small">${esc(l.email ?? '管理员添加')}</td><td class="small faint">${fmtDate(l.createdAt)}</td><td class="num">${l.sort}</td>
+          <td class="small">${esc(l.email ?? '管理员添加')}${l.contactEmail && l.contactEmail !== l.email ? `<div class="faint">联系：${esc(l.contactEmail)}</div>` : ''}${l.ip ? `<div class="faint mono">${esc(l.ip)}</div>` : ''}</td>
+          <td class="small faint">${fmtDate(l.createdAt)}<div>${checkBadge(l.check)}</div></td><td class="num">${l.sort}</td>
           <td><span class="badge ${c}">${t}</span>${l.note ? `<div class="small faint">${esc(l.note)}</div>` : ''}</td>
           <td class="num nowrap">${l.status !== 'approved' ? `<button class="btn sm primary" data-st="approved" data-id="${l.id}">通过</button> ` : ''}${l.status !== 'rejected' ? `<button class="btn sm" data-st="rejected" data-id="${l.id}">拒绝</button> ` : ''}
-            <button class="btn sm" data-edit="${l.id}">编辑</button> <button class="btn sm danger" data-del="${l.id}">删除</button></td></tr>`;
+            <button class="btn sm" data-check="${l.id}" title="访问对方首页，看能不能打开、有没有加本站链接">检测</button> <button class="btn sm" data-edit="${l.id}">编辑</button> <button class="btn sm danger" data-del="${l.id}">删除</button></td></tr>`;
       }).join('')}</tbody></table></div>` : '<div class="empty">还没有友链申请</div>'}</div>
-    <p class="small faint">审核前请确认对方站点能正常访问、内容合法，并已添加本站链接。</p>`;
+    <p class="small faint">审核前请确认对方站点能正常访问、内容合法，并已添加本站链接。点「检测」由服务器访问对方首页，自动检查能否打开、页面里有没有本站地址；内容是否合法仍需人工查看。</p>`;
   const edit = (l = null) => modal(`<h2>${l ? '编辑友链' : '添加友链'}</h2>
     <form id="lf"><div class="form-error" hidden></div>
       <div class="field"><label>网站名称</label><input class="input" name="name" maxlength="30" required value="${esc(l?.name ?? '')}"></div>
@@ -531,6 +584,14 @@ async function adminLinks(panel) {
   $('#l-new').onclick = () => edit();
   panel.onclick = async (e) => {
     try {
+      const ck = e.target.closest('[data-check]');
+      if (ck) {
+        ck.disabled = true;
+        ck.textContent = '检测中…';
+        const r = await api('POST', `/admin/links/${ck.dataset.check}/check`, {});
+        toast(r.reachable ? (r.backlink ? '能打开，已找到本站链接' : '能打开，但页面里没有找到本站链接') : `打不开：${r.error ?? `HTTP ${r.status}`}`, !r.reachable || !r.backlink);
+        return adminLinks(panel);
+      }
       const st = e.target.closest('[data-st]');
       if (st) {
         let note;
@@ -550,6 +611,14 @@ async function adminLinks(panel) {
       }
     } catch (err) { toast(err.message, true); }
   };
+}
+
+// 友链检测结果
+function checkBadge(c) {
+  if (!c) return '';
+  const when = `检测于 ${fmtDate(c.at)}${c.title ? `\n标题：${c.title}` : ''}${c.finalUrl ? `\n地址：${c.finalUrl}` : ''}${c.error ? `\n${c.error}` : ''}`;
+  if (!c.reachable) return `<span class="badge danger" title="${esc(when)}">打不开${c.status ? ` ${c.status}` : ''}</span>`;
+  return c.backlink ? `<span class="badge ok" title="${esc(when)}">可访问 · 有本站链接</span>` : `<span class="badge warn" title="${esc(when)}">可访问 · 无本站链接</span>`;
 }
 
 async function adminRedeem(panel) {

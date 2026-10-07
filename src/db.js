@@ -257,6 +257,11 @@ db.exec(`
   );
 `);
 
+// 友链申请：申请时的 IP（按 IP 限制每天申请次数）、联系邮箱（验证过的）、后台检测对方网站的结果
+for (const [col, type] of [['ip', 'TEXT'], ['contact_email', 'TEXT'], ['check_json', 'TEXT'], ['checked_at', 'INTEGER']]) {
+  if (!hasColumn('friend_links', col)) db.exec(`ALTER TABLE friend_links ADD COLUMN ${col} ${type}`);
+}
+
 // 小工具：db.prepare 的缓存版
 const stmts = new Map();
 export function sql(text) {

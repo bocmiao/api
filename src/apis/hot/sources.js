@@ -215,6 +215,12 @@ export const SOURCES = {
     async load() {
       const raw = await fetchJSON('https://blog.csdn.net/phoenix/web/blog/hot-rank?page=0&pageSize=30', {
         headers: { 'user-agent': UA, referer: 'https://blog.csdn.net/rank/list' },
+      }).catch((err) => {
+        // CSDN 的防火墙会对部分机房 IP 返回 521 人机验证页面，这里不尝试绕过，只说明原因
+        if (/HTTP (521|403|405)\b/.test(err?.message ?? '')) {
+          throw new HttpError(502, `${err.message}：CSDN 的防火墙拦截了服务器 IP。可在「系统设置 → 网络」把 csdn.net 加入走出站代理的域名，或在接口开关里暂时关闭 CSDN 热榜`);
+        }
+        throw err;
       });
       return { title: 'CSDN 热榜', items: P.parseCsdn(raw) };
     },
@@ -223,7 +229,8 @@ export const SOURCES = {
     title: '百度贴吧热议',
     key: () => '',
     async load() {
-      const raw = await fetchJSON('https://tieba.baidu.com/hottopic/browse/topicList?res_type=1', {
+      // 上游以前返回 JSON，现在返回网页，按文本取回后由解析函数判断格式
+      const raw = await fetchText('https://tieba.baidu.com/hottopic/browse/topicList?res_type=1', {
         headers: { 'user-agent': UA, referer: 'https://tieba.baidu.com/' },
       });
       return { title: '百度贴吧热议', items: P.parseTieba(raw) };

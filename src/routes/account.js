@@ -14,7 +14,7 @@ import { Router } from '../lib/router.js';
 import { checkUpdate, startUpdate, startUploadUpdate, updateProgress, versionInfo, localChangelog } from '../lib/updater.js';
 import { diagnose } from '../lib/diagnose.js';
 import { startInspect, stopInspect, inspectStatus, COSTLY } from '../lib/inspect.js';
-import { checkCaptcha, sendEmailCode, consumeEmailCode, PURPOSES } from '../lib/emailcode.js';
+import { checkCaptcha, sendEmailCode, consumeEmailCode } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
 import { isModuleEnabled, isModuleSwitchedOn, setModulesEnabled } from '../lib/modules.js';
@@ -71,7 +71,7 @@ r('POST', '/auth/send-code', async (ctx) => {
   const email = String(ctx.body?.email ?? '').trim().toLowerCase();
   const purpose = ctx.body?.purpose;
   if (!EMAIL_RE.test(email) || email.length > 254) throw new HttpError(400, '邮箱格式不正确');
-  if (!PURPOSES[purpose]) throw new HttpError(400, 'purpose 只能是 register 或 reset');
+  if (!['register', 'reset'].includes(purpose)) throw new HttpError(400, 'purpose 只能是 register 或 reset');
   if (purpose === 'register' && !config.registrationOpen) throw new HttpError(403, '暂未开放注册');
   checkCaptcha(ctx.body?.captchaToken, ctx.body?.captchaAnswer);
   const exists = Boolean(sql('SELECT 1 FROM users WHERE email = ?').get(email));
