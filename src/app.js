@@ -19,13 +19,19 @@ import { applySettings } from './lib/settings.js';
 
 // 后台「系统设置」中保存的配置优先于环境变量
 applySettings();
-import { consume, logRequest, refund } from './lib/limits.js';
+import { consume, logRequest, refund, reserveAdditional } from './lib/limits.js';
 import { recordLimited } from './lib/stats.js';
 
 // 日汇总与日志仍原子提交；日志故障不能改变已经完成的业务结果或再记一次假 500。
 function writeRequestLog(entry) {
   try { logRequest(entry); }
   catch (err) { console.error('[request_log] 写入失败', err); }
+}
+
+// 退款事务失败保留账目并告警；不得让基础设施异常阻止业务错误响应。
+function refundRequest(charges, rid) {
+  try { refund(charges); }
+  catch (err) { console.error(`[quota] 退款未完成 requestId=${rid}`, err); }
 }
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
@@ -196,17 +202,20 @@ export function pageNavigation(req, path) {
 
 export async function handle(req, res) {
   const started = Date.now();
-  const url = new URL(req.url, 'http://localhost');
-  const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : '/';
-  const ip = clientIp(req);
-  const cookies = parseCookies(req.headers.cookie);
-  const isApi = path === '/api' || path.startsWith('/api/');
+  let url, path = '/', ip = '', cookies, isApi = false;
   const log = { user: null, keyId: null, logged: false, charges: [] };
   const rid = newRequestId();
   log.rid = rid;
   res.setHeader('x-request-id', rid);
 
   try {
+    try {
+      url = new URL(req.url, 'http://localhost');
+      path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, '') : '/';
+      isApi = path === '/api' || path.startsWith('/api/');
+      ip = clientIp(req);
+      cookies = parseCookies(req.headers.cookie);
+    } catch { throw new HttpError(400, '请求地址或 Cookie 格式不合法'); }
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
     // 产品发布页：独立的静态页面，服务端填入接口数量等信息（about.html 是模板，不直接对外）
     if (req.method === 'GET' && (path === '/about' || path === '/about.html')) {
@@ -288,13 +297,13 @@ export async function handle(req, res) {
       const body = await readBody(req);
       const ctx = { req, ip, params: hit.params, query: url.searchParams, body, user: user && { id: user.id, email: user.email } };
       // 批量接口按目标数计费：入口已计 1 次，handler 调用 ctx.charge(n) 再多计 n 次（额度不足时抛 429）
-      ctx.charge = (n) => { if (!route.public && n > 0) Object.assign(rateHeaders, consume({ user, ip }, n, { charges: log.charges })); };
-      const scope = { ttlOverride: opts.cacheTtlMs, keys: new Set() };
+      ctx.charge = (n) => { if (!route.public && n > 0) Object.assign(rateHeaders, reserveAdditional({ user, ip }, n, charge)); };
+      const scope = { module: hit.route.module.name, ttlOverride: opts.cacheTtlMs, keys: new Set() };
       const result = await cacheScope.run(scope, () => route.handler(ctx));
       noteRouteKeys(hit.route.module.name, scope.keys);
       if ((result?.status ?? 200) < 400) noteRouteTtl(route.path, scope.ttl ?? 0);
       // 返回图片等原始内容的接口自己给出状态码：服务端失败时同样退回额度
-      if ((result?.status ?? 200) >= 500) refund(log.charges);
+      if ((result?.status ?? 200) >= 500) refundRequest(log.charges, rid);
 
       if (route.raw) {
         const headers = { ...CORS, ...rateHeaders, ...result.headers };
@@ -318,7 +327,7 @@ export async function handle(req, res) {
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
     // 服务端或上游的问题不算调用方的额度
-    if (status >= 500) refund(log.charges);
+    if (status >= 500) refundRequest(log.charges, rid);
     // 代码错误打印完整堆栈；上游故障、服务不支持等预期内的 5xx 只记一行
     if (status >= 500) console.error(`[${req.method} ${path}]`, err instanceof HttpError ? `${status} ${err.message}` : err);
     // 被限流的请求不计入日志，避免刷量拖慢数据库

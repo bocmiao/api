@@ -59,3 +59,33 @@ test('发件人：地址始终使用登录账号，只取 SMTP_FROM 的显示名
   assert.deepEqual(senderOf('other@miao.club', 'i@miao.club'), { envelope: 'i@miao.club', header: 'i@miao.club' });
   assert.equal(senderOf('喵喵 API', 'i@miao.club').header, '=?UTF-8?B?5Za15Za1IEFQSQ==?= <i@miao.club>');
 });
+
+test('过期兜底默认最多6小时，允许显式保留长期历史策略', async()=>{
+ const c=new TTLCache();c.set('old','old',1000);c.store.get('old').expiresAt=Date.now()-7*3600_000;
+ const down=()=>Promise.reject(Error('synthetic down'));
+ await assert.rejects(c.wrap('old',1000,down),/synthetic down/);
+ assert.equal((await c.wrap('old',1000,down,{maxStaleMs:Infinity})).stale,true);
+ await assert.rejects(c.wrap('old',1000,down,{maxStaleMs:0}),/synthetic down/);
+});
+
+test('清除在途缓存后旧loader不能回填或删除新pending',async()=>{
+ const c=new TTLCache();let oldResolve,newResolve;
+ const old=c.wrap('k',1000,()=>new Promise(r=>oldResolve=r));c.delete('k');
+ const fresh=c.wrap('k',1000,()=>new Promise(r=>newResolve=r));
+ oldResolve('old');assert.equal((await old).data,'old');assert.equal(c.get('k'),undefined);assert.equal(c.pending.size,1);
+ newResolve('new');assert.equal((await fresh).data,'new');assert.equal(c.get('k').value,'new');
+});
+
+test('一个等待者取消不终止共享loader，不返回stale；监听清理，已取消不启动loader',async()=>{
+ const c=new TTLCache(),controller=new AbortController();let resolve,calls=0;
+ const loader=()=>{calls++;return new Promise(r=>resolve=r);};
+ const cancelled=c.wrap('k',1000,loader,{signal:controller.signal});const other=c.wrap('k',1000,loader);
+ controller.abort();await assert.rejects(cancelled,e=>e.name==='AbortError');resolve('value');assert.equal((await other).data,'value');assert.equal(calls,1);
+ await assert.rejects(c.wrap('new',1000,loader,{signal:controller.signal}),e=>e.name==='AbortError');assert.equal(calls,1);
+});
+
+test('模块清除覆盖首次请求的在途key，无需等handler完成',async()=>{
+ const {cache,cacheScope,clearModuleCache}=await import('../src/lib/cache.js');let resolve;
+ const pending=cacheScope.run({module:'synthetic-clear',keys:new Set()},()=>cache.wrap('first-inflight',1000,()=>new Promise(r=>resolve=r)));
+ clearModuleCache('synthetic-clear');resolve('old');await pending;assert.equal(cache.get('first-inflight'),undefined);
+});

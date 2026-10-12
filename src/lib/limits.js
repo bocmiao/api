@@ -1,11 +1,9 @@
-import { sql } from '../db.js';
+import { sql, db } from '../db.js';
+import { today } from './day.js';
+export { today } from './day.js';
 import { config } from '../config.js';
 import { HttpError } from './http.js';
 import { recordCall, regionOf, refererHost, clientOf, pruneStats } from './stats.js';
-
-// 按北京时间计算"今天"，每天 0 点重置额度
-const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' });
-export const today = (d = new Date()) => dayFmt.format(d);
 
 export function secondsUntilReset(now = Date.now()) {
   const shanghai = now + 8 * 3600_000;
@@ -86,11 +84,30 @@ export function consume({ user, ip }, cost = 1, { charges = null, module = null,
 
 // 调用因服务端或上游原因失败（5xx）时退回本次扣的额度；每分钟的频率限制不退，防止有人靠失败请求刷接口
 export function refund(charges) {
-  for (const c of charges ?? []) {
-    if (c.bonus) sql('UPDATE users SET bonus_calls = bonus_calls + ? WHERE id = ?').run(c.cost, c.userId);
-    else sql('UPDATE usage_daily SET count = MAX(0, count - ?) WHERE day = ? AND subject = ?').run(c.cost, c.day, c.subject);
+  if (!charges?.length) return;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const c of charges) {
+      if (c.bonus) sql('UPDATE users SET bonus_calls = bonus_calls + ? WHERE id = ?').run(c.cost, c.userId);
+      else sql('UPDATE usage_daily SET count = MAX(0, count - ?) WHERE day = ? AND subject = ?').run(c.cost, c.day, c.subject);
+    }
+    db.exec('COMMIT');
+    charges.length = 0;
+  } catch (err) { db.exec('ROLLBACK'); throw err; }
+}
+
+// 批量 handler 必须在外部工作开始前追加预留；追加被拒绝时整笔退回，频率窗口不退。
+export function reserveAdditional(identity, cost, options) {
+  try { return consume(identity, cost, options); }
+  catch (err) {
+    if (err instanceof HttpError && err.status === 429) {
+      refund(options.charges);
+      const q = quota(identity);
+      err.headers = { ...err.headers, 'x-ratelimit-remaining': String(q.remaining) };
+      if (err.headers['x-ratelimit-bonus'] != null) err.headers['x-ratelimit-bonus'] = String(q.bonus);
+    }
+    throw err;
   }
-  if (charges) charges.length = 0;
 }
 
 export function quota({ user, ip }) {

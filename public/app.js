@@ -48,14 +48,15 @@ const ICONS = {
 const icon = (name, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
 // ---------- 请求 ----------
-async function api(method, path, body) {
+async function api(method, path, body, { signal = method === 'GET' ? navigationController?.signal : undefined } = {}) {
   const res = await fetch(path, {
-    method,
+    method, signal,
     headers: body !== undefined ? { 'content-type': 'application/json' } : {},
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   let json;
-  try { json = await res.json(); } catch { json = { code: res.status, message: `HTTP ${res.status}` }; }
+  try { json = await res.json(); } catch (err) { if (err.name === 'AbortError') throw err; json = { code: res.status, message: `HTTP ${res.status}` }; }
+  signal?.throwIfAborted();
   if (!res.ok || json.code !== 200) {
     const err = new Error(json.message || `HTTP ${res.status}`);
     err.status = res.status;
@@ -63,7 +64,7 @@ async function api(method, path, body) {
     err.requestId = json.requestId ?? res.headers.get('x-request-id');
     throw err;
   }
-  if (method !== 'GET') pageCache.clear(); // 改动过数据后，页面缓存全部作废
+  if (method !== 'GET') { pageCache.clear(); cacheVersion++; } // 改动过数据后，页面缓存全部作废
   return json.data;
 }
 
@@ -71,15 +72,18 @@ async function api(method, path, body) {
 // 切换页面时先用上次的数据立即显示，同时在后台取最新数据；数据有变化且用户还没开始操作时再刷新一次页面
 const pageCache = new Map();
 let navToken = 0;
+let navigationController = new AbortController();
+let cacheVersion = 0;
 
 async function cachedGet(path) {
   const hit = pageCache.get(path);
   const token = navToken;
-  const load = () => api('GET', path).then((data) => {
-    pageCache.set(path, { data, at: Date.now(), json: JSON.stringify(data) });
+  const version = cacheVersion;
+  const load = (signal = null) => api('GET', path, undefined, { signal }).then((data) => {
+    if (version === cacheVersion) pageCache.set(path, { data, at: Date.now(), json: JSON.stringify(data) });
     return data;
   });
-  if (!hit) return load();
+  if (!hit) return load(navigationController.signal);
   if (Date.now() - hit.at > 2000) {
     const started = Date.now();
     load().then(() => {
@@ -96,11 +100,14 @@ function prefetchPages() {
   if (state.user?.isAdmin) paths.push('/admin/stats', '/admin/users?q=&page=1&size=20', '/admin/changelog', '/admin/settings');
   if (state.user) paths.push('/account/usage', '/account/keys', '/account/notify');
   paths.push('/status');
+  const startedVersion = cacheVersion;
   let i = 0;
   const next = () => {
+    if (startedVersion !== cacheVersion) return;
     const p = paths[i++];
     if (!p) return;
-    (pageCache.has(p) ? Promise.resolve() : api('GET', p).then((data) => pageCache.set(p, { data, at: Date.now(), json: JSON.stringify(data) })))
+    const version = cacheVersion;
+    (pageCache.has(p) ? Promise.resolve() : api('GET', p, undefined, { signal: null }).then((data) => { if (version === cacheVersion) pageCache.set(p, { data, at: Date.now(), json: JSON.stringify(data) }); }))
       .catch(() => {}).finally(() => setTimeout(next, 150));
   };
   next();
@@ -124,11 +131,11 @@ async function copy(text) {
   }
 }
 
-function modal(html, onMount) {
+function modal(html, onMount, onClose) {
   const back = document.createElement('div');
   back.className = 'modal-back';
   back.innerHTML = `<div class="modal card" role="dialog" aria-modal="true">${html}</div>`;
-  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); };
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
   const onKey = (e) => e.key === 'Escape' && close();
   back.addEventListener('click', (e) => e.target === back && close());
   document.addEventListener('keydown', onKey);
@@ -230,18 +237,21 @@ function renderTopbar(route) {
 }
 
 async function loadMe() {
+  const version = cacheVersion;
   const before = state.user?.id ?? null;
   try {
-    const { user, quota } = await api('GET', '/auth/me');
+    const { user, quota } = await api('GET', '/auth/me', undefined, { signal: null });
+    if (version !== cacheVersion) return;
     state.user = user;
     state.quota = quota;
-  } catch {
+  } catch (err) {
+    if (version !== cacheVersion || err.name === 'AbortError') return;
     state.user = null;
   }
   // 登录身份变化后重新加载接口目录（管理员可见已关闭的接口）
   if ((state.user?.id ?? null) !== before) {
     state.catalog = null;
-    pageCache.clear();
+    pageCache.clear(); cacheVersion++;
     prefetched = false;
     if (state.noticesLoaded) globalThis.initNotices?.(); // 登录 / 退出后可见的公告不同
   }
@@ -1642,13 +1652,18 @@ async function pageAdminUsers(q = '', page = 1, size) {
     });
   }
   const body = $('#users-body');
+  const token = navToken, ticket = String(Number(body.dataset.request ?? 0) + 1);
+  body.dataset.request = ticket;
+  const current = () => body.isConnected && token === navToken && body.dataset.request === ticket;
   let d;
   try {
     d = await cachedGet(`/admin/users?q=${encodeURIComponent(q)}&page=${page}&size=${size}`);
   } catch (err) {
+    if (!current() || err.name === 'AbortError') return;
     body.innerHTML = `<div class="form-error" style="margin:16px">${esc(err.message)}</div>`;
     return;
   }
+  if (!current()) return;
   body.dataset.q = q;
   body.dataset.page = String(page);
   $('#users-count').textContent = q ? `找到 ${fmtNum(d.total)} 个用户` : `共 ${fmtNum(d.total)} 个用户`;
@@ -1672,6 +1687,7 @@ async function pageAdminUsers(q = '', page = 1, size) {
 let closeUserCalls;
 function userCallDetails(id, email) {
   closeUserCalls?.();
+  let requestController;
   const shanghaiToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   closeUserCalls = modal(`<h2>调用详情 · ${esc(email)}</h2>
     <p class="muted small">北京时间自然日；每次 HTTP 请求计一次（含缓存），与额度消耗不同。成功含 3xx；429 限流另计。</p>
@@ -1685,16 +1701,18 @@ function userCallDetails(id, email) {
     date.value = shanghaiToday();
     $('[data-close]', root).onclick = close;
     const load = async () => {
+      requestController?.abort();
+      requestController = new AbortController();
       const ticket = ++seq, day = date.value;
       result.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
       try {
-        const d = await api('GET', `/admin/users/${encodeURIComponent(id)}/calls?day=${encodeURIComponent(day)}`);
+        const d = await api('GET', `/admin/users/${encodeURIComponent(id)}/calls?day=${encodeURIComponent(day)}`, undefined, { signal: requestController.signal });
         if (ticket !== seq || !root.isConnected) return;
         result.innerHTML = `${d.coverage === 'partial' ? '<p class="small muted">历史依据剩余日志回填，可能不完整；已删除的日志无法恢复。</p>' : ''}
           <p>合计 <b>${fmtNum(d.totals.calls)}</b> · 成功 ${fmtNum(d.totals.ok)} · 失败 ${fmtNum(d.totals.e4xx + d.totals.e5xx)}（4xx ${fmtNum(d.totals.e4xx)} / 5xx ${fmtNum(d.totals.e5xx)}）</p>
           ${d.items.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th>调用</th><th>成功</th><th>4xx</th><th>5xx</th></tr></thead><tbody>${d.items.map((v) => `<tr><td class="mono">${esc(v.path)}</td><td>${fmtNum(v.calls)}</td><td>${fmtNum(v.ok)}</td><td>${fmtNum(v.e4xx)}</td><td>${fmtNum(v.e5xx)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="empty">${d.coverage === 'partial' ? '没有保留的调用记录；无法确认当天是否无调用' : '当天无调用'}</div>`}`;
       } catch (err) {
-        if (ticket !== seq || !root.isConnected) return;
+        if (ticket !== seq || !root.isConnected || err.name === 'AbortError') return;
         result.innerHTML = `<div class="form-error">加载失败：${esc(err.message)}</div><button class="btn sm" data-retry>重试</button>`;
         $('[data-retry]', root).onclick = load;
       }
@@ -1711,7 +1729,7 @@ function userCallDetails(id, email) {
     $('[data-next]', root).onclick = () => shift(1);
     $('[data-today]', root).onclick = () => { date.value = shanghaiToday(); load(); };
     load();
-  });
+  }, () => requestController?.abort());
 }
 
 // ---------- 系统设置 ----------
@@ -2264,17 +2282,20 @@ async function router({ keepScroll = false } = {}) {
   if (segs[0] === 'docs' && segs[1]) segs.splice(0, 1, 'api');
   const [page, arg, sub, extra] = segs;
   const routeName = { '': 'home', api: 'api', docs: 'docs', status: 'status', links: 'links', login: 'auth', register: 'auth', reset: 'auth', console: 'console', admin: 'admin' }[page] ?? 'none';
-  navToken++;
+  navigationController.abort();
+  navigationController = new AbortController();
+  const token = ++navToken;
   renderTopbar(routeName);
   // 换一个新的 #main：上一个页面挂在上面的事件监听随之清除，不会越积越多
   const oldMain = $('#main');
   const scrollY = window.scrollY;
-  const freshMain = oldMain.cloneNode(true);
+  const freshMain = oldMain.cloneNode(false);
   oldMain.replaceWith(freshMain);
   if (!keepScroll) window.scrollTo(0, 0);
   if (!prefetched) { prefetched = true; setTimeout(prefetchPages, 1500); }
   try {
     await loadCatalog();
+    if (token !== navToken) return;
     switch (page) {
       case '': await pageHome(); break;
       case 'api': await pageApi(arg ?? ''); break;
@@ -2287,8 +2308,10 @@ async function router({ keepScroll = false } = {}) {
       default: pageNotFound();
     }
   } catch (err) {
+    if (token !== navToken || err.name === 'AbortError') return;
     $('#main').innerHTML = `<div class="wrap"><div class="empty" style="padding:100px 0">加载失败：${esc(err.message)}</div></div>`;
   }
+  if (token !== navToken) return;
   if (keepScroll) window.scrollTo(0, scrollY);
   setPageMeta(routeName, arg);
 }

@@ -1,7 +1,7 @@
 // 调用统计的采集：每次调用先在内存里累加，每分钟写一次按小时 / 按天的汇总表（stats_hourly / stats_daily）。
 // 统计页面只读汇总表；需要按用户、IP、来源等维度细看时才查调用明细（request_log，默认保留 30 天）。
 import { db, sql, STAT_COLS } from '../db.js';
-import { today } from './limits.js';
+import { today } from './day.js';
 import { lookupIpOffline } from '../apis/life/offline-db.js';
 
 // 耗时分桶上限（毫秒），最后一桶为 >5000
@@ -132,10 +132,10 @@ export function flushStats() {
   if (!pending.size && !pendingLimited.size) return;
   const rows = [...pending];
   const limited = [...pendingLimited];
-  pending.clear();
-  pendingLimited.clear();
-  db.exec('BEGIN');
+  let began = false;
   try {
+    db.exec('BEGIN');
+    began = true;
     for (const [key, s] of rows) {
       const [hour, day, path] = key.split('|');
       const vals = STAT_COLS.map((c) => s[c]);
@@ -148,9 +148,13 @@ export function flushStats() {
            ON CONFLICT(day, subject, path) DO UPDATE SET count = count + excluded.count`).run(day, subject, path, n);
     }
     db.exec('COMMIT');
+    pending.clear();
+    pendingLimited.clear();
+    return true;
   } catch (err) {
-    db.exec('ROLLBACK');
-    console.error('[stats] 写入统计失败：', err.message);
+    if (began) db.exec('ROLLBACK');
+    console.error('[stats] 写入统计失败，保留批次待重试：', err.message);
+    return false;
   }
 }
 

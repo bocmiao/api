@@ -49,35 +49,42 @@ export function upstreamError(err, url, what = '上游服务') {
   return new HttpError(502, `无法连接${what}（${host}${reason ? `：${reason}` : ''}）${overseasHint(url)}`);
 }
 
-async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body } = {}) {
+async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body, signal } = {}) {
   let res;
+  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
   try {
     res = await outboundFetch(url, {
       method,
       body,
       headers: { 'user-agent': UA, ...headers },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: requestSignal,
     });
   } catch (err) {
-    throw upstreamError(err, url);
+    signal?.throwIfAborted();
+    throw upstreamError(requestSignal.aborted ? requestSignal.reason : err, url);
   }
   if (!res.ok) throw new HttpError(502, `上游返回 HTTP ${res.status}`);
-  return res;
+  return { res, signal: requestSignal };
 }
 
 export async function fetchJSON(url, opts = {}) {
-  const res = await request(url, { ...opts, headers: { accept: 'application/json', ...opts.headers } });
+  const { res, signal } = await request(url, { ...opts, headers: { accept: 'application/json', ...opts.headers } });
   try {
     return await res.json();
   } catch {
+    opts.signal?.throwIfAborted();
+    if (signal.aborted) throw upstreamError(signal.reason, url);
     throw new HttpError(502, '上游返回的不是合法 JSON');
   }
 }
 
 // encoding 用于 GBK 等非 UTF-8 页面，例如 fetchText(url, { encoding: 'gbk' })
 export async function fetchText(url, { encoding = 'utf-8', ...opts } = {}) {
-  const res = await request(url, opts);
-  return new TextDecoder(encoding).decode(await res.arrayBuffer());
+  const { res, signal } = await request(url, opts);
+  let body;
+  try { body = await res.arrayBuffer(); }
+  catch (err) { opts.signal?.throwIfAborted(); throw upstreamError(signal.aborted ? signal.reason : err, url); }
+  return new TextDecoder(encoding).decode(body);
 }
 
 export function requireEnv(name) {

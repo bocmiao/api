@@ -116,8 +116,12 @@ if (!hasColumn('request_log', 'error')) db.exec('ALTER TABLE request_log ADD COL
 // 每个接口地址的累计调用次数（不随调用日志清理而减少）；首次建表时用现有日志初始化
 const hasTable = (name) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
 if (!hasTable('api_calls')) {
-  db.exec('CREATE TABLE api_calls (path TEXT PRIMARY KEY, total INTEGER NOT NULL DEFAULT 0)');
-  db.exec("INSERT INTO api_calls (path, total) SELECT path, COUNT(*) FROM request_log WHERE path LIKE '/api/%' GROUP BY path");
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.exec('CREATE TABLE api_calls (path TEXT PRIMARY KEY, total INTEGER NOT NULL DEFAULT 0)');
+    db.exec("INSERT INTO api_calls (path, total) SELECT path, COUNT(*) FROM request_log WHERE path LIKE '/api/%' GROUP BY path");
+    db.exec('COMMIT');
+  } catch (err) { db.exec('ROLLBACK'); throw err; }
 }
 
 // ---------- 统计 ----------
@@ -134,6 +138,8 @@ export const STAT_COLS = ['calls', 'ok', 'e4xx', 'e5xx', 'limited', 'cached', 's
   'l0', 'l1', 'l2', 'l3', 'l4', 'l5', 'l6', 'l7', 'l8', 'l9'];
 const statCols = STAT_COLS.map((c) => `${c} INTEGER NOT NULL DEFAULT 0`).join(', ');
 const newStats = !hasTable('stats_hourly');
+db.exec('BEGIN IMMEDIATE');
+try {
 db.exec(`
   CREATE TABLE IF NOT EXISTS stats_hourly (hour INTEGER NOT NULL, path TEXT NOT NULL, ${statCols}, PRIMARY KEY (hour, path));
   CREATE TABLE IF NOT EXISTS stats_daily (day TEXT NOT NULL, path TEXT NOT NULL, ${statCols}, PRIMARY KEY (day, path));
@@ -160,6 +166,9 @@ if (newStats) {
   db.exec(`INSERT INTO stats_daily (day, path, ${STAT_COLS.join(', ')}) SELECT date(ts / 1000 + 28800, 'unixepoch'), path, ${agg} FROM request_log GROUP BY 1, 2`);
   db.exec(`INSERT INTO stats_day_meta (day, ips, users) SELECT date(ts / 1000 + 28800, 'unixepoch'), COUNT(DISTINCT ip), COUNT(DISTINCT user_id) FROM request_log GROUP BY 1`);
 }
+
+  db.exec('COMMIT');
+} catch (err) { db.exec('ROLLBACK'); throw err; }
 
 // ---------- v0.11 ----------
 // 请求 ID：每次调用都有一个，返回在响应头 X-Request-Id 里，用户报错时凭它在后台查到这次调用

@@ -9,8 +9,9 @@ const MAX_STALE_MS = 6 * 3600_000;
 export const cacheScope = new AsyncLocalStorage();
 
 export class TTLCache {
-  constructor({ maxEntries = 5000 } = {}) {
+  constructor({ maxEntries = 5000, maxStaleMs = MAX_STALE_MS } = {}) {
     this.maxEntries = maxEntries;
+    this.maxStaleMs = maxStaleMs;
     this.store = new Map();
     this.pending = new Map();
   }
@@ -42,7 +43,8 @@ export class TTLCache {
 
   // 命中新鲜缓存直接返回；刚过期的先返回旧数据、后台刷新（stale-while-revalidate）；
   // 否则调用 loader（同 key 并发请求合并为一次）；loader 失败但有旧数据时返回旧数据并标记 stale。
-  async wrap(key, ttlMs, loader) {
+  async wrap(key, ttlMs, loader, { signal, maxStaleMs = this.maxStaleMs } = {}) {
+    signal?.throwIfAborted();
     const scope = cacheScope.getStore();
     if (scope) {
       // 后台给这个接口单独设置了缓存时长时以后台为准（0 表示不缓存，每次实时获取）
@@ -50,25 +52,35 @@ export class TTLCache {
       scope.ttl = Math.max(scope.ttl ?? 0, ttlMs);
       // 记下用到的缓存键，后台「清除该接口缓存」时按键删除
       if (scope.keys && scope.keys.size < 50) scope.keys.add(key);
+      if (scope.module) noteRouteKeys(scope.module, new Set([key]));
     }
     if (scope?.ttlOverride === 0) {
-      const data = await loader();
+      const data = await waitFor(loader(), signal);
       return { data, cached: false, updatedAt: new Date().toISOString() };
     }
+    const entry = this.store.get(key);
     const hit = this.get(key);
     if (hit?.fresh) return { data: hit.value, cached: true, updatedAt: hit.updatedAt };
-    if (hit?.revalidate) {
+    if (hit?.revalidate && Date.now() - entry.expiresAt <= maxStaleMs) {
       this.load(key, ttlMs, loader).catch(() => {});
       return { data: hit.value, cached: true, updatedAt: hit.updatedAt };
     }
 
     try {
-      const data = await this.load(key, ttlMs, loader);
-      return { data, cached: false, updatedAt: this.get(key).updatedAt };
+      const data = await waitFor(this.load(key, ttlMs, loader), signal);
+      return { data, cached: false, updatedAt: this.get(key)?.updatedAt ?? new Date().toISOString() };
     } catch (err) {
-      if (hit) return { data: hit.value, cached: true, stale: true, updatedAt: hit.updatedAt };
+      signal?.throwIfAborted();
+      if (hit && this.store.get(key) === entry && Date.now() - entry.expiresAt <= maxStaleMs) return { data: hit.value, cached: true, stale: true, updatedAt: hit.updatedAt };
       throw err;
     }
+  }
+
+  // 清除也使在途 loader 失效；旧调用可以完成，但不能回填新缓存。
+  delete(key) {
+    const removed = this.store.delete(key);
+    this.pending.delete(key);
+    return removed;
   }
 
   // 同一个 key 同时只有一个 loader 在跑
@@ -76,13 +88,25 @@ export class TTLCache {
     if (!this.pending.has(key)) {
       const p = (async () => {
         const value = await loader();
-        this.set(key, value, ttlMs);
+        if (this.pending.get(key) === p) this.set(key, value, ttlMs);
         return value;
-      })().finally(() => this.pending.delete(key));
+      })().finally(() => { if (this.pending.get(key) === p) this.pending.delete(key); });
       this.pending.set(key, p);
     }
     return this.pending.get(key);
   }
+}
+
+// 仅取消当前等待者；共享 loader 不随单个客户端取消。
+function waitFor(promise, signal) {
+  if (!signal) return promise;
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { cleanup(); reject(signal.reason); };
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(promise).then(v => { cleanup(); resolve(v); }, e => { cleanup(); reject(e); });
+  });
 }
 
 export const cache = new TTLCache();
@@ -101,7 +125,7 @@ export function noteRouteKeys(module, keys) {
 export function clearModuleCache(module) {
   const set = routeKeys.get(module);
   let n = 0;
-  for (const k of set ?? []) if (cache.store.delete(k)) n++;
+  for (const k of set ?? []) if (cache.delete(k)) n++;
   routeKeys.delete(module);
   return n;
 }
