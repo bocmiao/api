@@ -83,6 +83,7 @@ export function regionOf(ip) {
 
 // ---------- 内存累加与写入 ----------
 const pending = new Map(); // `${hour}|${day}|${path}` -> 计数
+let flushFailures = 0;
 const pendingLimited = new Map(); // `${day}|${subject}|${path}` -> 次数
 
 const blank = () => Object.fromEntries(STAT_COLS.map((c) => [c, 0]));
@@ -132,28 +133,36 @@ export function flushStats() {
   if (!pending.size && !pendingLimited.size) return;
   const rows = [...pending];
   const limited = [...pendingLimited];
-  let began = false;
+  let began = false, stage = 'begin';
   try {
     db.exec('BEGIN');
     began = true;
     for (const [key, s] of rows) {
       const [hour, day, path] = key.split('|');
       const vals = STAT_COLS.map((c) => s[c]);
+      stage = 'hourly';
       sql(UPSERT_HOURLY).run(Number(hour), path, ...vals);
+      stage = 'daily';
       sql(UPSERT_DAILY).run(day, path, ...vals);
     }
+    stage = 'limited';
     for (const [key, n] of limited) {
       const [day, subject, path] = key.split('|');
       sql(`INSERT INTO stats_limited (day, subject, path, count) VALUES (?, ?, ?, ?)
            ON CONFLICT(day, subject, path) DO UPDATE SET count = count + excluded.count`).run(day, subject, path, n);
     }
+    stage = 'commit';
     db.exec('COMMIT');
     pending.clear();
     pendingLimited.clear();
     return true;
-  } catch (err) {
-    if (began) db.exec('ROLLBACK');
-    console.error('[stats] 写入统计失败，保留批次待重试：', err.message);
+  } catch {
+    let code = 'STATS_DB_FAILURE';
+    if (began) {
+      try { db.exec('ROLLBACK'); }
+      catch { stage = 'rollback'; code = 'STATS_ROLLBACK_FAILURE'; }
+    }
+    console.error({ event: 'stats_write_failed', requestId: null, stage, code, failureCount: ++flushFailures });
     return false;
   }
 }

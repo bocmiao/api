@@ -147,7 +147,59 @@ test('HTTP错误路径退款失败不逃逸、不谎称成功，原始500/503响
    const res=await fetch(base+path,{headers:{cookie:`sid=${createSession(identity.user.id)}`}});assert.equal(res.status,503);await res.text();
   }
   assert.equal(used(identity.user.id),2);assert.deepEqual(escaped,[]);
-  assert.equal(errors.mock.calls.filter(c=>String(c.arguments[0]).startsWith('[quota] 退款未完成 requestId=')).length,2);
+  assert.equal(errors.mock.calls.filter(c=>c.arguments[0]?.event === 'quota_refund_failed').length,2);
  }finally{db.exec('DROP TRIGGER reject_http_refund');errors.mock.restore();}
  assert.equal((await fetch(base+'/health')).status,200);
+});
+
+test('统计告警仅白名单阶段/代码/次数，不泄露message stack cause SQL或凭据',()=>{
+ const sensitive='SYNTHETIC_SECRET_password_token_SQL';
+ const fault=Object.assign(new Error(sensitive),{stack:sensitive,cause:{credential:sensitive},code:sensitive,sql:sensitive});
+ const logs=mock.method(console,'error',()=>{});
+ recordCall({path:'/api/safe-warning',status:200,ms:1});
+ const exec=mock.method(db,'exec',()=>{throw fault;});
+ try{
+  assert.equal(flushStats(),false);assert.equal(flushStats(),false);
+  const events=logs.mock.calls.map(c=>{assert.equal(c.arguments.length,1);return c.arguments[0];});
+  for(const e of events){
+   assert.deepEqual(Object.keys(e).sort(),['code','event','failureCount','requestId','stage']);
+   assert.equal(e.event,'stats_write_failed');assert.equal(e.stage,'begin');assert.equal(e.code,'STATS_DB_FAILURE');assert.equal(e.requestId,null);
+  }
+  assert.equal(events[1].failureCount,events[0].failureCount+1);
+  assert.equal(JSON.stringify(logs.mock.calls.map(c=>c.arguments)).includes(sensitive),false);
+ }finally{exec.mock.restore();logs.mock.restore();}
+ assert.equal(flushStats(),true);
+});
+
+test('退款HTTP告警只保留安全rid和受控字段，不输出敏感数据库异常',async()=>{
+ const sensitive='SYNTHETIC_SECRET_password_token_SQL';
+ const identity=seed(10);
+ const path='/api/safe-refund-warning';const handler=()=>{throw new HttpError(503,'synthetic business failure');};
+ apiRouter.add('GET',path,handler,{route:{path,handler},module:{name:'safe-warning'}});
+ db.exec(`CREATE TRIGGER reject_sensitive_refund BEFORE UPDATE ON usage_daily WHEN NEW.subject='user:${identity.user.id}' AND NEW.count<OLD.count BEGIN SELECT RAISE(ABORT,'${sensitive}'); END`);
+ const logs=mock.method(console,'error',()=>{});
+ try{
+  const res=await fetch(base+path,{headers:{cookie:`sid=${createSession(identity.user.id)}`,'x-request-id':sensitive}});
+  assert.equal(res.status,503);await res.text();
+  const calls=logs.mock.calls.filter(c=>c.arguments[0]?.event==='quota_refund_failed');assert.equal(calls.length,1);assert.equal(calls[0].arguments.length,1);
+  const e=calls[0].arguments[0];assert.deepEqual(Object.keys(e).sort(),['code','event','failureCount','requestId','stage']);
+  assert.equal(e.requestId,res.headers.get('x-request-id'));assert.match(e.requestId,/^[a-z0-9]{1,16}-[a-f0-9]{10}$/);
+  assert.equal(e.stage,'refund');assert.equal(e.code,'REFUND_DB_FAILURE');assert.ok(e.failureCount>=1);
+  assert.equal(JSON.stringify(logs.mock.calls.map(c=>c.arguments)).includes(sensitive),false);
+  assert.equal(used(identity.user.id),1);assert.deepEqual(escaped,[]);
+ }finally{db.exec('DROP TRIGGER reject_sensitive_refund');logs.mock.restore();}
+});
+
+test('统计回滚本身失败也只输出受控阶段，不泄露异常并保留批次',()=>{
+ const sensitive='SYNTHETIC_SECRET_rollback_SQL';
+ recordCall({path:'/api/safe-rollback-warning',status:200,ms:1});
+ db.exec(`CREATE TRIGGER reject_safe_stats BEFORE INSERT ON stats_daily BEGIN SELECT RAISE(ABORT,'${sensitive}'); END`);
+ const logs=mock.method(console,'error',()=>{}),original=db.exec;
+ const exec=mock.method(db,'exec',function(text){if(text==='ROLLBACK')throw Object.assign(new Error(sensitive),{cause:sensitive,stack:sensitive});return original.call(this,text);});
+ try{
+  assert.equal(flushStats(),false);const e=logs.mock.calls[0].arguments[0];
+  assert.equal(e.stage,'rollback');assert.equal(e.code,'STATS_ROLLBACK_FAILURE');assert.equal(e.event,'stats_write_failed');assert.ok(_pendingSize()>0);
+  assert.equal(JSON.stringify(logs.mock.calls.map(c=>c.arguments)).includes(sensitive),false);
+ }finally{exec.mock.restore();db.exec('ROLLBACK');db.exec('DROP TRIGGER reject_safe_stats');logs.mock.restore();}
+ assert.equal(flushStats(),true);
 });

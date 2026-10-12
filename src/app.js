@@ -29,9 +29,14 @@ function writeRequestLog(entry) {
 }
 
 // 退款事务失败保留账目并告警；不得让基础设施异常阻止业务错误响应。
+let refundFailures = 0;
 function refundRequest(charges, rid) {
   try { refund(charges); }
-  catch (err) { console.error(`[quota] 退款未完成 requestId=${rid}`, err); }
+  catch {
+    console.error({ event: 'quota_refund_failed',
+      requestId: typeof rid === 'string' && /^[a-z0-9]{1,16}-[a-f0-9]{10}$/.test(rid) ? rid : null,
+      stage: 'refund', code: 'REFUND_DB_FAILURE', failureCount: ++refundFailures });
+  }
 }
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
