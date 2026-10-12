@@ -1624,8 +1624,10 @@ async function pageAdminUsers(q = '', page = 1, size) {
       } catch (err) { toast(err.message, true); }
     });
     $('#users-page').addEventListener('click', async (e) => {
-      const pg = e.target.closest('[data-page]');
+      const pg = e.target.closest('button[data-page]');
       if (pg) return pageAdminUsers(pg.dataset.q, Number(pg.dataset.page));
+      const details = e.target.closest('[data-calls]');
+      if (details) return userCallDetails(details.dataset.calls, details.dataset.email);
       const b = e.target.closest('[data-toggle]');
       if (!b) return;
       const disable = b.dataset.disabled === '0';
@@ -1652,18 +1654,64 @@ async function pageAdminUsers(q = '', page = 1, size) {
   $('#users-count').textContent = q ? `找到 ${fmtNum(d.total)} 个用户` : `共 ${fmtNum(d.total)} 个用户`;
   const pages = Math.max(1, Math.ceil(d.total / d.size));
   body.innerHTML = d.items.length ? `<div class="table-wrap" style="padding:8px"><table class="table">
-      <thead><tr><th>邮箱</th><th>注册时间</th><th>最近调用</th><th class="num">Key</th><th class="num">今日调用</th><th class="num">近 7 天</th><th>每日额度 <span class="faint small">留空用默认值</span></th><th>状态</th></tr></thead><tbody>
+      <thead><tr><th>邮箱</th><th>注册时间</th><th>最近调用</th><th class="num">Key</th><th class="num" title="不含兑换码额外次数；批量请求可消耗多次额度">今日基础额度消耗</th><th class="num">近 7 天</th><th>每日额度 <span class="faint small">留空用默认值</span></th><th>状态</th><th>调用详情</th></tr></thead><tbody>
       ${d.items.map((u) => `<tr><td>${esc(u.email)} ${u.isAdmin ? '<span class="badge brand">管理员</span>' : ''}${u.disabled ? ' <span class="badge danger">已停用</span>' : ''}</td>
         <td class="small faint">${fmtDate(u.createdAt)}</td><td class="small faint">${u.lastCallAt ? fmtDate(u.lastCallAt) : '—'}</td>
         <td class="num">${u.keys}</td><td class="num">${fmtNum(u.usedToday)}</td><td class="num">${fmtNum(u.calls7d)}</td>
         <td><form class="row" data-limit="${u.id}"><input class="input" style="width:120px;height:30px" name="limit" inputmode="numeric" value="${u.customLimit ?? ''}" placeholder="${fmtNum(u.dailyLimit)}"><button class="btn sm">保存</button></form></td>
-        <td>${u.id === state.user.id ? '<span class="faint small">—</span>' : `<button class="btn sm ${u.disabled ? '' : 'danger'}" data-toggle="${u.id}" data-disabled="${u.disabled ? 1 : 0}">${u.disabled ? '启用' : '停用'}</button>`}</td></tr>`).join('')}
+        <td>${u.id === state.user.id ? '<span class="faint small">—</span>' : `<button class="btn sm ${u.disabled ? '' : 'danger'}" data-toggle="${u.id}" data-disabled="${u.disabled ? 1 : 0}">${u.disabled ? '启用' : '停用'}</button>`}</td><td><button class="btn sm" data-calls="${u.id}" data-email="${esc(u.email)}">调用详情</button></td></tr>`).join('')}
       </tbody></table></div>
       ${pages > 1 ? `<div class="row" style="justify-content:center;gap:8px;padding:0 0 16px">
         <button class="btn sm" data-page="${page - 1}" data-q="${esc(q)}" ${page <= 1 ? 'disabled' : ''}>上一页</button>
         <span class="small faint">第 ${page} / ${pages} 页</span>
         <button class="btn sm" data-page="${page + 1}" data-q="${esc(q)}" ${page >= pages ? 'disabled' : ''}>下一页</button></div>` : ''}`
     : `<div class="empty">${q ? '没有匹配的用户' : '还没有用户'}</div>`;
+}
+
+// 每次切换发起独立请求；只有当前弹窗的最新请求可以写入页面。
+let closeUserCalls;
+function userCallDetails(id, email) {
+  closeUserCalls?.();
+  const shanghaiToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  closeUserCalls = modal(`<h2>调用详情 · ${esc(email)}</h2>
+    <p class="muted small">北京时间自然日；每次 HTTP 请求计一次（含缓存），与额度消耗不同。成功含 3xx；429 限流另计。</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn sm" data-prev>前一天</button><input class="input" type="date" data-day aria-label="调用日期" style="width:160px">
+      <button class="btn sm" data-next>后一天</button><button class="btn sm" data-today>今天</button></div>
+    <div data-results aria-live="polite" style="margin-top:16px"></div>
+    <div class="actions"><button class="btn" data-close>关闭</button></div>`, (root, close) => {
+    const date = $('[data-day]', root), result = $('[data-results]', root);
+    let seq = 0;
+    date.value = shanghaiToday();
+    $('[data-close]', root).onclick = close;
+    const load = async () => {
+      const ticket = ++seq, day = date.value;
+      result.innerHTML = '<div class="loading"><span class="spinner"></span></div>';
+      try {
+        const d = await api('GET', `/admin/users/${encodeURIComponent(id)}/calls?day=${encodeURIComponent(day)}`);
+        if (ticket !== seq || !root.isConnected) return;
+        result.innerHTML = `${d.coverage === 'partial' ? '<p class="small muted">历史依据剩余日志回填，可能不完整；已删除的日志无法恢复。</p>' : ''}
+          <p>合计 <b>${fmtNum(d.totals.calls)}</b> · 成功 ${fmtNum(d.totals.ok)} · 失败 ${fmtNum(d.totals.e4xx + d.totals.e5xx)}（4xx ${fmtNum(d.totals.e4xx)} / 5xx ${fmtNum(d.totals.e5xx)}）</p>
+          ${d.items.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th>调用</th><th>成功</th><th>4xx</th><th>5xx</th></tr></thead><tbody>${d.items.map((v) => `<tr><td class="mono">${esc(v.path)}</td><td>${fmtNum(v.calls)}</td><td>${fmtNum(v.ok)}</td><td>${fmtNum(v.e4xx)}</td><td>${fmtNum(v.e5xx)}</td></tr>`).join('')}</tbody></table></div>` : `<div class="empty">${d.coverage === 'partial' ? '没有保留的调用记录；无法确认当天是否无调用' : '当天无调用'}</div>`}`;
+      } catch (err) {
+        if (ticket !== seq || !root.isConnected) return;
+        result.innerHTML = `<div class="form-error">加载失败：${esc(err.message)}</div><button class="btn sm" data-retry>重试</button>`;
+        $('[data-retry]', root).onclick = load;
+      }
+    };
+    const shift = (offset) => {
+      const d = new Date(date.value + 'T00:00:00Z');
+      if (!Number.isFinite(d.getTime())) return;
+      d.setUTCDate(d.getUTCDate() + offset);
+      const next = d.toISOString().slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(next) && next >= '0001-01-01') { date.value = next; load(); }
+    };
+    date.onchange = load;
+    $('[data-prev]', root).onclick = () => shift(-1);
+    $('[data-next]', root).onclick = () => shift(1);
+    $('[data-today]', root).onclick = () => { date.value = shanghaiToday(); load(); };
+    load();
+  });
 }
 
 // ---------- 系统设置 ----------

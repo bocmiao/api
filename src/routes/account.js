@@ -98,7 +98,7 @@ r('POST', '/auth/register', async (ctx) => {
   if (config.emailVerify) consumeEmailCode(email, 'register', ctx.body?.code);
   // 第一个注册的用户自动成为管理员
   const isFirst = !sql('SELECT 1 FROM users LIMIT 1').get();
-  const { lastInsertRowid } = sql('INSERT INTO users (email, password_hash, is_admin) VALUES (?, ?, ?)')
+  const { lastInsertRowid } = sql('INSERT INTO users (id, email, password_hash, is_admin) SELECT last_id + 1, ?, ?, ? FROM user_id_sequence WHERE id = 1')
     .run(email, await hashPassword(ctx.body.password), isFirst ? 1 : 0);
   ctx.setCookie(sessionCookie(createSession(Number(lastInsertRowid)), ctx.req));
   const created = sql('SELECT * FROM users WHERE id = ?').get(lastInsertRowid);
@@ -387,6 +387,27 @@ r('GET', '/admin/users', (ctx) => {
       })),
     },
   };
+});
+
+// 只返回白名单统计字段，不返回 Key、请求参数或日志明细。
+r('GET', '/admin/users/:id/calls', (ctx) => {
+  requireAdmin(ctx);
+  if (!/^[1-9]\d*$/.test(ctx.params.id) || !Number.isSafeInteger(Number(ctx.params.id))) throw new HttpError(400, '用户 ID 无效');
+  const id = Number(ctx.params.id);
+  const day = ctx.query.get('day') ?? today();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < '0001-01-01' ||
+      !Number.isFinite(Date.parse(day + 'T00:00:00Z')) || new Date(day + 'T00:00:00Z').toISOString().slice(0, 10) !== day) {
+    throw new HttpError(400, '日期须为真实的 YYYY-MM-DD 日期');
+  }
+  const user = sql('SELECT id, email FROM users WHERE id = ?').get(id);
+  if (!user) throw new HttpError(404, '用户不存在');
+  const items = sql('SELECT path, calls, ok, e4xx, e5xx FROM user_calls_daily WHERE user_id = ? AND day = ? ORDER BY calls DESC, path').all(id, day);
+  const totals = { calls: 0, ok: 0, e4xx: 0, e5xx: 0 };
+  for (const item of items) for (const field of Object.keys(totals)) totals[field] += item[field];
+  const startedAt = sql('SELECT started_at FROM user_calls_meta WHERE id = 1').get().started_at;
+  const completeFrom = today(new Date(startedAt + 86400_000));
+  return { data: { user, day, today: today(), items, totals, completeFrom,
+    coverage: day < completeFrom ? 'partial' : 'complete' } };
 });
 
 r('PATCH', '/admin/users/:id', (ctx) => {

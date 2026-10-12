@@ -22,6 +22,12 @@ applySettings();
 import { consume, logRequest, refund } from './lib/limits.js';
 import { recordLimited } from './lib/stats.js';
 
+// 日汇总与日志仍原子提交；日志故障不能改变已经完成的业务结果或再记一次假 500。
+function writeRequestLog(entry) {
+  try { logRequest(entry); }
+  catch (err) { console.error('[request_log] 写入失败', err); }
+}
+
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -228,6 +234,7 @@ export async function handle(req, res) {
     // 平台接口（注册登录、控制台、管理后台）
     const acct = accountRouter.match(req.method, path);
     if (acct) {
+      res.setHeader('cache-control', 'no-store');
       if (acct.methodNotAllowed) throw new HttpError(405, '不支持的请求方法');
       const raw = acct.route.rawBody;
       assertSameOrigin(req, { raw: Boolean(raw) });
@@ -251,6 +258,7 @@ export async function handle(req, res) {
     if (hit?.methodNotAllowed) throw new HttpError(405, '不支持的请求方法');
     if (hit) {
       const { route } = hit.route;
+      log.canonicalPath = route.path;
       const key = extractApiKey(req, url.searchParams);
       let user = null;
       if (key) {
@@ -301,7 +309,7 @@ export async function handle(req, res) {
       }
       // 缓存：0 未命中，1 命中，2 上游故障时返回的旧数据
       log.cached = result?.stale ? 2 : result?.cached ? 1 : 0;
-      if (log.logged) logRequest({ ...log, ip, path, status: result.status ?? 200, ms: Date.now() - started, headers: req.headers });
+      if (log.logged) writeRequestLog({ ...log, ip, path: log.canonicalPath ?? path, status: result.status ?? 200, ms: Date.now() - started, headers: req.headers });
       return;
     }
 
@@ -318,7 +326,7 @@ export async function handle(req, res) {
     if (log.logged && status === 429) recordLimited({ subject: log.user ? `user:${log.user.id}` : `ip:${ip}`, path });
     if (log.logged && status !== 429) {
       const error = err instanceof HttpError ? err.message : `${err?.name ?? 'Error'}: ${err?.message ?? err}`;
-      logRequest({ ...log, ip, path, status, ms: Date.now() - started, error, headers: req.headers });
+      writeRequestLog({ ...log, ip, path: log.canonicalPath ?? path, status, ms: Date.now() - started, error, headers: req.headers });
     }
     if (res.headersSent) return res.end();
     send(res, status, { code: status, message: status === 500 ? '服务器内部错误' : err.message, errorCode: errorCode(status, err), requestId: rid, data: null }, {

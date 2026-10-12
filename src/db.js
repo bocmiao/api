@@ -269,3 +269,55 @@ export function sql(text) {
   if (!s) stmts.set(text, (s = db.prepare(text)));
   return s;
 }
+
+// 用户接口日汇总永久保留；触发器与原日志在同一 SQLite 事务内提交。
+// 迁移前的日志可能已被清理，因此只有迁移后的完整自然日能保证完整。
+db.exec('BEGIN IMMEDIATE');
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_calls_daily (
+      user_id INTEGER NOT NULL, day TEXT NOT NULL, path TEXT NOT NULL,
+      calls INTEGER NOT NULL DEFAULT 0, ok INTEGER NOT NULL DEFAULT 0,
+      e4xx INTEGER NOT NULL DEFAULT 0, e5xx INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, day, path)
+    );
+    CREATE TABLE IF NOT EXISTS user_calls_meta (id INTEGER PRIMARY KEY CHECK(id = 1), started_at INTEGER NOT NULL);
+  `);
+  if (!db.prepare('SELECT 1 FROM user_calls_meta WHERE id = 1').get()) {
+    db.exec(`INSERT INTO user_calls_daily (user_id, day, path, calls, ok, e4xx, e5xx)
+      SELECT user_id, date(ts / 1000.0, 'unixepoch', '+8 hours'), path, COUNT(*),
+        SUM(status < 400), SUM(status >= 400 AND status < 500), SUM(status >= 500)
+      FROM request_log WHERE user_id IS NOT NULL AND status NOT IN (404, 405, 429)
+      GROUP BY user_id, 2, path`);
+    db.prepare('INSERT INTO user_calls_meta VALUES (1, ?)').run(Date.now());
+  }
+  // users 的旧 INTEGER PRIMARY KEY 会复用已注销的最高 ID；注册时使用永久高水位。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_id_sequence (
+      id INTEGER PRIMARY KEY CHECK(id = 1), last_id INTEGER NOT NULL
+    );
+    INSERT INTO user_id_sequence (id, last_id)
+      SELECT 1, MAX(n) FROM (
+        SELECT COALESCE(MAX(id), 0) AS n FROM users
+        UNION ALL SELECT COALESCE(MAX(user_id), 0) FROM request_log
+        UNION ALL SELECT COALESCE(MAX(user_id), 0) FROM user_calls_daily
+      ) WHERE true
+      ON CONFLICT(id) DO UPDATE SET last_id = MAX(last_id, excluded.last_id);
+    CREATE TRIGGER IF NOT EXISTS user_id_high_water AFTER INSERT ON users
+    BEGIN UPDATE user_id_sequence SET last_id = MAX(last_id, NEW.id) WHERE id = 1; END;
+  `);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS user_calls_log_insert AFTER INSERT ON request_log
+    WHEN NEW.user_id IS NOT NULL AND NEW.status NOT IN (404, 405, 429)
+    BEGIN
+      INSERT INTO user_calls_daily (user_id, day, path, calls, ok, e4xx, e5xx)
+      VALUES (NEW.user_id, date(NEW.ts / 1000.0, 'unixepoch', '+8 hours'), NEW.path, 1,
+        NEW.status < 400, NEW.status >= 400 AND NEW.status < 500, NEW.status >= 500)
+      ON CONFLICT(user_id, day, path) DO UPDATE SET
+        calls = calls + excluded.calls, ok = ok + excluded.ok,
+        e4xx = e4xx + excluded.e4xx, e5xx = e5xx + excluded.e5xx;
+    END`);
+  db.exec('COMMIT');
+} catch (e) {
+  db.exec('ROLLBACK');
+  throw e;
+}
