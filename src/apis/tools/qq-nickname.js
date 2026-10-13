@@ -5,9 +5,22 @@ import { QQ_RE } from './qq-avatar.js';
 const UPSTREAM = 'https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg';
 const MAX_BYTES = 16 * 1024;
 
+// 只记录结构类别，绝不记录响应正文、QQ 号或昵称。
+export function portraitShape(raw) {
+  const head = raw.trimStart();
+  if (!head) return 'empty';
+  if (/^<!doctype\s+html|^<html\b/i.test(head)) return 'html';
+  if (head.startsWith('<')) return 'markup';
+  if (/^portraitCallBack\s*\(/.test(head)) return 'portrait-callback';
+  if (/^_Callback\s*\(/.test(head)) return 'error-callback';
+  if (/^[a-z_$][\w$]*\s*\(/i.test(head)) return 'other-callback';
+  if (head.startsWith('{') || head.startsWith('[')) return 'json-like';
+  return 'other';
+}
+
 export function parsePortrait(raw, qq) {
   const match = /^\s*portraitCallBack\s*\(\s*(\{[\s\S]*\})\s*\)\s*;?\s*$/.exec(raw);
-  if (!match) throw new HttpError(502, 'QQ 昵称上游响应格式不可识别');
+  if (!match) throw new HttpError(502, `QQ 昵称上游响应格式不可识别（结构：${portraitShape(raw)}）`);
   let data;
   try { data = JSON.parse(match[1]); } catch { throw new HttpError(502, 'QQ 昵称上游数据无效'); }
   const keys = data && typeof data === 'object' && !Array.isArray(data) ? Object.keys(data) : [];
@@ -74,7 +87,15 @@ export async function loadNickname(qq, fetcher = fetch) {
     }
   }
   catch { throw new HttpError(502, 'QQ 昵称上游编码无效'); }
-  return parsePortrait(raw, qq);
+  try { return parsePortrait(raw, qq); }
+  catch (err) {
+    // 请求日志会保存错误信息；只附固定类别和状态，不附正文或个人资料。
+    if (err instanceof HttpError) {
+      const contentType = /^text\/html/i.test(type) ? 'html' : /^text\/plain/i.test(type) ? 'text' : /^application\/json/i.test(type) ? 'json' : 'other';
+      err.message += `（HTTP ${response.status}，类型：${contentType}）`;
+    }
+    throw err;
+  }
 }
 
 export default {

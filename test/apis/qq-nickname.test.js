@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadNickname, parsePortrait } from '../../src/apis/tools/qq-nickname.js';
+import { loadNickname, parsePortrait, portraitShape } from '../../src/apis/tools/qq-nickname.js';
 import nicknameModule from '../../src/apis/tools/qq-nickname.js';
 import { assertFieldsDocumented } from '../helpers/fields.js';
 
@@ -36,6 +36,20 @@ test('QQ 昵称：错误或无法确认的上游数据不伪造成功', async ()
   await assert.rejects(() => loadNickname('10001', async () => reply('', { status: 302, headers: { location: 'https://evil.test/' } })), { status: 502 });
   await assert.rejects(() => loadNickname('10001', async () => { throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }); }), { status: 504 });
   await assert.rejects(() => loadNickname('10001', async () => reply(new Uint8Array([0xff]))), { status: 502 });
+});
+
+test('QQ 昵称：格式失败只暴露安全的结构特征，不泄露响应正文', async () => {
+  const secret = '<html>QQ 12345678 nickname Alice cookie secret</html>';
+  assert.equal(portraitShape(secret), 'html');
+  await assert.rejects(() => loadNickname('10001', async () => reply(secret, { headers: { 'content-type': 'text/html' } })), (err) => {
+    assert.equal(err.status, 502);
+    assert.match(err.message, /结构：html.*HTTP 200，类型：html/);
+    assert.doesNotMatch(err.message, /12345678|Alice|secret|10001/);
+    return true;
+  });
+  assert.equal(portraitShape('foo({"10001":[]})'), 'other-callback');
+  assert.equal(portraitShape('_Callback({"error":"limited"})'), 'error-callback');
+  assert.throws(() => parsePortrait('_Callback({"error":"limited"})', '10001'), { status: 502 });
 });
 
 test('QQ 昵称：尊重 UTF-8 声明与 BOM，拒绝未知、冲突及歧义编码', async () => {
