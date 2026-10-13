@@ -57,7 +57,22 @@ export async function loadNickname(qq, fetcher = fetch) {
     throw new HttpError(err?.name === 'TimeoutError' ? 504 : 502, 'QQ 昵称上游读取失败');
   }
   let raw;
-  try { raw = new TextDecoder('gbk', { fatal: true }).decode(Buffer.concat(chunks)); }
+  try {
+    const bytes = Buffer.concat(chunks);
+    const declared = /(?:^|;)\s*charset\s*=\s*["']?([^\s;"']+)/i.exec(type)?.[1]?.toLowerCase();
+    const encodings = { 'utf-8': 'utf-8', utf8: 'utf-8', gbk: 'gbk', gb2312: 'gbk', gb18030: 'gb18030' };
+    if (declared && !encodings[declared]) throw new Error('unknown charset');
+    const bom = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+    if (bom && declared && encodings[declared] !== 'utf-8') throw new Error('charset conflicts with BOM');
+    const encoding = bom ? 'utf-8' : (encodings[declared] ?? 'gbk');
+    raw = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+    // Without a charset, a valid UTF-8 body that decodes differently as GBK is ambiguous.
+    if (!declared && !bom) {
+      let utf8;
+      try { utf8 = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch {}
+      if (utf8 != null && utf8 !== raw) throw new Error('ambiguous charset');
+    }
+  }
   catch { throw new HttpError(502, 'QQ 昵称上游编码无效'); }
   return parsePortrait(raw, qq);
 }

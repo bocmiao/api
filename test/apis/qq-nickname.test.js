@@ -37,3 +37,17 @@ test('QQ 昵称：错误或无法确认的上游数据不伪造成功', async ()
   await assert.rejects(() => loadNickname('10001', async () => { throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }); }), { status: 504 });
   await assert.rejects(() => loadNickname('10001', async () => reply(new Uint8Array([0xff]))), { status: 502 });
 });
+
+test('QQ 昵称：尊重 UTF-8 声明与 BOM，拒绝未知、冲突及歧义编码', async () => {
+  const utf8 = Buffer.from(portrait('10001', '中文昵称'));
+  const declared = await loadNickname('10001', async () => reply(utf8, { headers: { 'content-type': 'text/plain; charset=UTF-8' } }));
+  assert.equal(declared.nickname, '中文昵称');
+  const bom = await loadNickname('10001', async () => reply(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), utf8])));
+  assert.equal(bom.nickname, '中文昵称');
+  for (const response of [
+    reply(utf8),
+    reply(utf8, { headers: { 'content-type': 'text/plain; charset=unknown' } }),
+    reply(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), utf8]), { headers: { 'content-type': 'text/plain; charset=gbk' } }),
+    reply(Buffer.from([0xff]), { headers: { 'content-type': 'text/plain; charset=utf-8' } }),
+  ]) await assert.rejects(() => loadNickname('10001', async () => response), { status: 502 });
+});
