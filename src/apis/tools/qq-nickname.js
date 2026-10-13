@@ -19,6 +19,17 @@ export function portraitShape(raw) {
 }
 
 export function parsePortrait(raw, qq) {
+  const upstreamError = /^\s*_Callback\s*\(\s*(\{[\s\S]*\})\s*\)\s*;?\s*$/.exec(raw);
+  if (upstreamError) {
+    let payload;
+    try { payload = JSON.parse(upstreamError[1]); } catch { throw new HttpError(502, 'QQ 昵称上游错误回调数据无效'); }
+    const type = payload?.error?.type;
+    const code = payload?.error?.code;
+    const category = type === 'need login' ? 'need-login' : type === 'rate limit' ? 'rate-limited' : 'other';
+    const safeCode = Number.isInteger(code) && code >= 0 && code <= 9999 ? `，代码：${code}` : '';
+    throw new HttpError(category === 'need-login' ? 503 : 502,
+      `QQ 昵称上游返回错误回调（类别：${category}${safeCode}）；公开昵称暂不可查询`);
+  }
   const match = /^\s*portraitCallBack\s*\(\s*(\{[\s\S]*\})\s*\)\s*;?\s*$/.exec(raw);
   if (!match) throw new HttpError(502, `QQ 昵称上游响应格式不可识别（结构：${portraitShape(raw)}）`);
   let data;

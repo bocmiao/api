@@ -57,6 +57,9 @@ test('调用大模型并规范化结果', async () => {
   assert.equal(r.diagnosis.category, '网络不通');
   assert.deepEqual(r.diagnosis.suggestions, ['稍后再试', '配置代理']);
   assert.match(sent.messages[0].content, /运维助手/);
+  assert.match(sent.messages[0].content, /根因证据不足时 confidence 不得为「高」/);
+  assert.match(sent.messages[0].content, /Content-Type: text\/html 只代表声明的类型/);
+  assert.doesNotMatch(sent.messages[0].content, /服务器在中国大陆/);
   assert.match(sent.messages[1].content, /\/api\/epic\/free/);
   assert.equal(r.evidence.path, '/api/epic/free');
 });

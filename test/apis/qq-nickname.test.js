@@ -50,6 +50,18 @@ test('QQ 昵称：格式失败只暴露安全的结构特征，不泄露响应�
   assert.equal(portraitShape('foo({"10001":[]})'), 'other-callback');
   assert.equal(portraitShape('_Callback({"error":"limited"})'), 'error-callback');
   assert.throws(() => parsePortrait('_Callback({"error":"limited"})', '10001'), { status: 502 });
+  assert.throws(() => parsePortrait('_Callback ( {"error":{"type":"need login","msg":"请先登录 QQ 10001","code":401}} );', '10001'), (err) => {
+    assert.equal(err.status, 503);
+    assert.match(err.message, /类别：need-login，代码：401/);
+    assert.doesNotMatch(err.message, /10001|请先登录/);
+    return true;
+  });
+  await assert.rejects(() => loadNickname('10001', async () => reply('_Callback({"error":{"type":"need login"}});', { headers: { 'content-type': 'text/html' } })), { status: 503 });
+  assert.throws(() => parsePortrait('_Callback({"error":{"type":"unknown","code":999999,"msg":"SECRET"}});', '10001'), (err) => {
+    assert.match(err.message, /类别：other/);
+    assert.doesNotMatch(err.message, /999999|SECRET/);
+    return true;
+  });
 });
 
 test('QQ 昵称：尊重 UTF-8 声明与 BOM，拒绝未知、冲突及歧义编码', async () => {
