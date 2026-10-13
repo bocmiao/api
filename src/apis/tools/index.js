@@ -27,7 +27,8 @@ import markdown from './markdown.js';
 import devref from './devref.js';
 import qqAvatar from './qq-avatar.js';
 import qqNickname from './qq-nickname.js';
+import qqProfile from './qq-profile.js';
 
 export default [qrcode, shorturl, webmeta, whois, translate, devtools, captcha, visitor, useragent, color, ipcard,
   netcalc, codec, securityTools, debugTools, textTools, svgImage, cron, regex, pinyin, chineseConvert, barcode, random,
-  diff, formatConvert, markdown, devref, qqAvatar, qqNickname];
+  diff, formatConvert, markdown, devref, qqAvatar, qqNickname, qqProfile];

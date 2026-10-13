@@ -322,6 +322,7 @@ await fetch('https://api.example.com/api/shorturl', {
 | QQ 头像 | `/api/qq/avatar` | 按 QQ 号 302 跳转到官方头像图片（40 / 100 / 140 / 640 像素），可直接用作 `<img>` |
 | QQ 头像地址 | `/api/qq/avatar/urls` | 各尺寸 QQ 头像地址；默认头像不能证明账号存在 |
 | QQ 昵称（实验性） | `/api/qq/nickname` | `qq=10001`；仅腾讯公开端点返回昵称时成功，`data` 为 `{ "qq": "10001", "nickname": "上游昵称" }`，成功缓存 30 分钟。已有线上请求收到 `need-login`，返回 503；这不证明 QQ 号不存在，也不代表所有环境永久不可用。QQ 互联 OAuth 只能查询授权用户本人，不能用于任意号码。头像接口独立可用。 |
+| QQ 资料卡链接 | `/api/qq/profile` | `qq=10001`，返回 `data: {"qq":"10001","url":"mqqapi://card/show_pslcard?src_type=internal&source=sharecard&version=1&uin=10001","openPage":"/api/qq/profile/open?qq=10001"}`；打开页需用户点击，不能保证 QQ 客户端唤起，失败时可复制号码在 QQ 内搜索。只生成链接，不查询个人资料。 |
 
 ### 网络
 

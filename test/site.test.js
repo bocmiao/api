@@ -397,3 +397,21 @@ test('QQ 昵称接口：统一 JSON、目录注册及每日额度', async () => 
   const catalog = await c('GET', '/api');
   assert.ok(catalog.body.data.modules.some((m) => m.name === 'qq-nickname'));
 });
+
+test('QQ 资料卡：统一配额、目录及点击打开页', async () => {
+  const c = anonClient();
+  const json = await c('GET', '/api/qq/profile?qq=10001');
+  assert.equal(json.status, 200);
+  assert.equal(json.body.data.qq, '10001');
+  assert.match(json.body.data.url, /^mqqapi:\/\/card\/show_pslcard\?/);
+  assert.equal((await c('GET', '/auth/me')).body.data.quota.used, 1);
+  const page = await c('GET', json.body.data.openPage);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type'), /text\/html/);
+  assert.match(page.text, /点击在 QQ 中打开/);
+  assert.equal((await c('GET', '/auth/me')).body.data.quota.used, 2);
+  const bad = anonClient();
+  assert.equal((await bad('GET', '/api/qq/profile?qq=0')).status, 400);
+  assert.equal((await bad('GET', '/api/qq/profile/open?qq=abc')).status, 400);
+  assert.ok((await c('GET', '/api')).body.data.modules.some((m) => m.name === 'qq-profile'));
+});
