@@ -320,7 +320,8 @@ await fetch('https://api.example.com/api/shorturl', {
 | 徽章 | `/api/badge` | 生成 shields 风格 SVG 徽章 |
 | 文字转图片 | `/api/text-image` | 文字生成 SVG 图片 |
 | QQ 头像 | `/api/qq/avatar` | 按 QQ 号 302 跳转到官方头像图片（40 / 100 / 140 / 640 像素），可直接用作 `<img>` |
-| QQ 头像地址 | `/api/qq/avatar/urls` | 各尺寸 QQ 头像地址（不查询昵称等资料） |
+| QQ 头像地址 | `/api/qq/avatar/urls` | 各尺寸 QQ 头像地址；默认头像不能证明账号存在 |
+| QQ 昵称 | `/api/qq/nickname` | `qq=10001`，返回 `{ "qq": "10001", "nickname": "上游昵称" }`；腾讯 Qzone 非正式端点，可能失效，失败不代表账号不存在；成功缓存 30 分钟 |
 
 ### 网络
 

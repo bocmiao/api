@@ -27,6 +27,9 @@ before(async () => {
   mock.method(globalThis, 'fetch', async (url, opts) => {
     const u = String(url);
     if (u.startsWith(base)) return realFetch(url, opts);
+    if (u.startsWith('https://users.qzone.qq.com/fcg-bin/cgi_get_portrait.fcg?')) {
+      return new Response('portraitCallBack({"10001":[0,0,0,0,0,0,"Nick"]});', { headers: { 'content-type': 'text/plain' } });
+    }
     if (u.includes('epicgames.com')) return new Response('down', { status: epicStatus });
     return new Response('not mocked', { status: 500 });
   });
@@ -379,4 +382,18 @@ test('QQ 头像接口：跳转到官方头像地址，参数校验', async () =>
   assert.equal(r.headers.get('location'), 'https://q1.qlogo.cn/g?b=qq&nk=10000&s=140');
   assert.equal((await anon('GET', '/api/qq/avatar?qq=12')).status, 400);
   assert.equal((await anon('GET', '/api/qq/avatar?qq=10000&size=99')).status, 400);
+});
+
+test('QQ 昵称接口：统一 JSON、目录注册及每日额度', async () => {
+  const c = anonClient();
+  const first = await c('GET', '/api/qq/nickname?qq=10001');
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.body.data, { qq: '10001', nickname: 'Nick' });
+  assert.equal((await c('GET', '/auth/me')).body.data.quota.used, 1);
+  const second = await c('GET', '/api/qq/nickname?qq=10001');
+  assert.equal(second.body.cached, true);
+  assert.equal((await c('GET', '/auth/me')).body.data.quota.used, 2);
+  assert.equal((await c('GET', '/api/qq/nickname?qq=abc')).status, 400);
+  const catalog = await c('GET', '/api');
+  assert.ok(catalog.body.data.modules.some((m) => m.name === 'qq-nickname'));
 });
