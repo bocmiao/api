@@ -29,6 +29,7 @@ test('企微固定官方目标、加密保存、脱敏和 text 格式', async ()
   await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://qyapi.weixin.qq.com/other?key=${'A'.repeat(32)}` }), { status: 400 });
   await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://user:pass@qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${'A'.repeat(32)}` }), { status: 400 });
   await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://qyapi.weixin.qq.com:8443/cgi-bin/webhook/send?key=${'A'.repeat(32)}` }), { status: 400 });
+  await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${'A'.repeat(32)}#fragment` }), { status: 400 });
   const sent = [];
   mock.method(globalThis, 'fetch', async (url, opts) => { sent.push([url, JSON.parse(opts.body)]); return Response.json({ errcode: 0 }); });
   try {
@@ -44,14 +45,16 @@ test('企微固定官方目标、加密保存、脱敏和 text 格式', async ()
 test('企微新旧渠道的传输异常均不回显 Webhook Key', async () => {
   const key = 'K'.repeat(32);
   const cfg = { webhook: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${key}`, format: 'text' };
-  mock.method(globalThis, 'fetch', async () => { throw new Error(`failed to fetch ${cfg.webhook}`); });
+  let calls = 0;
+  mock.method(globalThis, 'fetch', async () => { calls++; throw new Error(`failed to fetch ${cfg.webhook}`); });
   try {
-    for (const config of [cfg, sealChannel('wecom', cfg)]) {
-      await assert.rejects(() => sendToChannel({ id: 9188, type: 'wecom', config: JSON.stringify(config) }, msg), (err) => {
+    for (const [index, config] of [cfg, sealChannel('wecom', cfg)].entries()) {
+      await assert.rejects(() => sendToChannel({ id: 9188 + index, type: 'wecom', config: JSON.stringify(config) }, msg), (err) => {
         assert.doesNotMatch(err.message, new RegExp(key));
         return true;
       });
     }
+    assert.equal(calls, 2, '新旧渠道均须实际走到传输异常');
   } finally { mock.restoreAll(); }
 });
 
@@ -107,4 +110,22 @@ test('结果未知后同一消息不能在本进程短时窗口内静默重发',
   await assert.rejects(() => guardedDelivery(channel, msg, send), /timeout/);
   await assert.rejects(() => guardedDelivery(channel, msg, send), { status: 503 });
   assert.equal(attempts, 1);
+});
+
+test('未知结果记录满额时拒绝新发送，不淘汰仍有效的记录', async () => {
+  const { guardedDelivery } = await import('../src/notify/delivery-guard.js?capacity-test');
+  const send = async () => { throw new Error('timeout'); };
+  for (let n = 0; n < 5000; n++) {
+    await assert.rejects(() => guardedDelivery({ id: 20_000 + n, type: 'qq-bot' }, msg, send), /timeout/);
+  }
+  let attempts = 0;
+  await assert.rejects(() => guardedDelivery({ id: 30_001, type: 'qq-bot' }, msg, async () => { attempts++; }), { status: 503 });
+  await assert.rejects(() => guardedDelivery({ id: 20_000, type: 'qq-bot' }, msg, async () => { attempts++; }), { status: 503 });
+  assert.equal(attempts, 0);
+  const later = Date.now() + 61_000;
+  mock.method(Date, 'now', () => later);
+  try {
+    await guardedDelivery({ id: 30_001, type: 'qq-bot' }, msg, async () => { attempts++; });
+    assert.equal(attempts, 1, '过期记录清理后恢复发送');
+  } finally { mock.restoreAll(); }
 });
