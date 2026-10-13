@@ -21,19 +21,23 @@ function str(v, name, { required = true, max = 500, pattern } = {}) {
 function hostIn(url, name, hosts) {
   let u;
   try { u = new URL(url); } catch { throw new HttpError(400, `${name}不是合法链接`); }
-  if (u.protocol !== 'https:' || !hosts.includes(u.hostname)) throw new HttpError(400, `${name}必须是 ${hosts[0]} 的 https 地址`);
+  if (u.protocol !== 'https:' || !hosts.includes(u.hostname) || u.username || u.password || u.port || u.hash) throw new HttpError(400, `${name}必须是 ${hosts[0]} 的标准 https 地址`);
   return u.toString();
 }
 
 async function post(url, body, { form = false } = {}) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json' },
-    body: form ? new URLSearchParams(body).toString() : JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
-    redirect: 'error',
-  });
-  const text = await res.text();
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json' },
+      body: form ? new URLSearchParams(body).toString() : JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
+    });
+  } catch { throw new Error('推送上游连接失败或超时'); }
+  let text;
+  try { text = await res.text(); } catch { throw new Error('推送上游读取失败'); }
   let json = null;
   try { json = JSON.parse(text); } catch {}
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -328,9 +328,9 @@ await fetch('https://api.example.com/api/shorturl', {
 企业微信与 QQ 官方机器人沿用「账号 → 推送渠道 → 订阅主题」：登录后通过 `POST /account/channels` 新建渠道，渠道 ID 由本站分配；`POST /account/channels/:id/test` 可由渠道所属用户手动测试，`POST /account/channels/:id/send` 可发送 `{"title":"提醒","text":"内容"}` 到该渠道已绑定的目标，成功返回 `{"status":"sent"}`，60 秒内重复成功消息返回 `{"status":"deduplicated"}`。调用者不能在请求里更换目标或凭据。创建前，服务端须自行设置并妥善备份 `NOTIFY_ENCRYPTION_KEY`（32 字节的十六进制值）；新建渠道的凭据用 AES-256-GCM 加密保存，列表仅显示已加密状态。旧版已保存的企微渠道仍可使用，需由所有者重新创建才会转为加密存储。
 
 - 企业微信：先在目标企业微信群添加机器人，取得该群的 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...` 地址。渠道配置为 `{"type":"wecom","name":"工作群","config":{"channelId":"work-group","webhook":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...","format":"markdown"}}`，格式可选 `text`。只接受企业微信固定 HTTPS 域名和发送路径，不接受任意转发目标。
-- QQ 官方机器人：先在 [QQ 机器人开放平台](https://bot.q.qq.com/)创建并获准使用机器人，取得 AppID、ClientSecret，以及已经与该机器人建立关系的目标 `user_openid` 或 `group_openid`。渠道配置为 `{"type":"qq-bot","name":"提醒","config":{"appId":"...","clientSecret":"...","targetType":"user","targetOpenid":"..."}}`；`group` 可用于群 OpenID。普通 QQ 号或群号不能替代 OpenID；目标和凭据绑定在渠道配置中，发送请求不能临时改目标。平台仍会检查权限、目标关系、主动消息开关和频率，未开通或未配置会失败。本站不提供登录回调或代取 OpenID，需自行从合规的机器人互动中取得。
+- QQ 官方机器人：先在 [QQ 机器人开放平台](https://bot.q.qq.com/)创建并获准使用机器人，取得 AppID、ClientSecret，以及已经与该机器人建立关系的目标 `user_openid` 或 `group_openid`。渠道配置为 `{"type":"qq-bot","name":"提醒","config":{"appId":"...","clientSecret":"...","targetType":"user","targetOpenid":"..."}}`；`group` 可用于群 OpenID。普通 QQ 号或群号不能替代 OpenID；目标和凭据绑定在渠道配置中，发送请求不能临时改目标。取令牌固定使用官方 SDK 的 `bots.qq.com`，消息接口固定使用 `api.bot.qq.com`，不能自选主机。平台仍会检查权限、目标关系、主动消息开关和频率，未开通或未配置会失败。本站不提供登录回调或代取 OpenID，需自行从合规的机器人互动中取得。
 
-这些渠道只在实际订阅触发或所属用户明确测试时发送，消息构建工具不会发送。本站每渠道每分钟最多尝试 10 条，60 秒内相同成功消息在本进程去重；未知结果不自动重试，避免重复推送。应用重启后去重窗口不保留，平台侧还有独立限额。以上本地模拟测试不能证明真实群或单聊已送达。
+这些渠道只在实际订阅触发或所属用户明确发送/测试时推送，消息构建工具不会发送。本站每渠道每分钟最多尝试 10 条，60 秒内相同成功消息在本进程去重；发送结果未知时，同一消息在本进程 60 秒内会被拒绝重发并提示先核实，本站不自动重试。应用重启、多进程或相同目标使用不同渠道时，此去重窗口不共享；平台侧还有独立限额。以上本地模拟测试不能证明真实群或单聊已送达。
 
 ### 网络
 

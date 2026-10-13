@@ -3,14 +3,15 @@ import { HttpError } from '../lib/http.js';
 import { encryptionAvailable } from './secrets.js';
 
 const API = 'https://api.bot.qq.com';
+const TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken';
 const tokens = new Map();
 const targetPattern = /^[A-Za-z0-9_-]{16,128}$/;
 const failCode = (value) => Number.isInteger(value) && value >= 0 && value <= 99999999 ? value : 'unknown';
 
-async function call(path, body, token) {
+async function call(url, body, token) {
   let res;
   try {
-    res = await fetch(`${API}${path}`, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000),
+    res = await fetch(url, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000),
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `QQBot ${token}` } : {}) }, body: JSON.stringify(body) });
   } catch { throw new HttpError(502, 'QQ 机器人平台连接失败或超时'); }
   let result;
@@ -37,7 +38,7 @@ async function accessToken({ appId, clientSecret }) {
   const cacheKey = createHash('sha256').update(`${appId}:${clientSecret}`).digest('hex');
   const hit = tokens.get(cacheKey);
   if (hit && hit.expires > Date.now()) return hit.token;
-  const data = await call('/app/getAppAccessToken', { appId, clientSecret });
+  const data = await call(TOKEN_URL, { appId, clientSecret });
   if (typeof data?.access_token !== 'string' || !data.access_token || !Number.isFinite(Number(data.expires_in)))
     throw new HttpError(503, 'QQ 机器人凭据未获授权或资格未开通');
   tokens.set(cacheKey, { token: data.access_token, expires: Date.now() + Math.max(0, Number(data.expires_in) - 120) * 1000 });
@@ -58,6 +59,6 @@ export const qqBotChannel = {
     const token = await accessToken(cfg);
     const target = cfg.targetType === 'group' ? 'groups' : 'users';
     const content = [m.title, m.text, m.url].filter(Boolean).join('\n').slice(0, 1500);
-    await call(`/v2/${target}/${cfg.targetOpenid}/messages`, { msg_type: 0, content }, token);
+    await call(`${API}/v2/${target}/${cfg.targetOpenid}/messages`, { msg_type: 0, content }, token);
   },
 };

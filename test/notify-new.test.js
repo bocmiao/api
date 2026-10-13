@@ -27,6 +27,8 @@ test('企微固定官方目标、加密保存、脱敏和 text 格式', async ()
   assert.deepEqual(maskConfig('wecom', sealed), { credentials: '已加密保存' });
   await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: 'https://qyapi.weixin.qq.com.evil.test/cgi-bin/webhook/send?key=abc' }), { status: 400 });
   await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://qyapi.weixin.qq.com/other?key=${'A'.repeat(32)}` }), { status: 400 });
+  await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://user:pass@qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${'A'.repeat(32)}` }), { status: 400 });
+  await assert.rejects(validateChannel('wecom', { channelId: 'x', webhook: `https://qyapi.weixin.qq.com:8443/cgi-bin/webhook/send?key=${'A'.repeat(32)}` }), { status: 400 });
   const sent = [];
   mock.method(globalThis, 'fetch', async (url, opts) => { sent.push([url, JSON.parse(opts.body)]); return Response.json({ errcode: 0 }); });
   try {
@@ -36,6 +38,20 @@ test('企微固定官方目标、加密保存、脱敏和 text 格式', async ()
     assert.equal(sent.length, 1, '同一消息短时间内不重复发送');
     assert.equal(sent[0][1].msgtype, 'text');
     assert.match(sent[0][0], /^https:\/\/qyapi\.weixin\.qq\.com\/cgi-bin\/webhook\/send\?key=/);
+  } finally { mock.restoreAll(); }
+});
+
+test('企微新旧渠道的传输异常均不回显 Webhook Key', async () => {
+  const key = 'K'.repeat(32);
+  const cfg = { webhook: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${key}`, format: 'text' };
+  mock.method(globalThis, 'fetch', async () => { throw new Error(`failed to fetch ${cfg.webhook}`); });
+  try {
+    for (const config of [cfg, sealChannel('wecom', cfg)]) {
+      await assert.rejects(() => sendToChannel({ id: 9188, type: 'wecom', config: JSON.stringify(config) }, msg), (err) => {
+        assert.doesNotMatch(err.message, new RegExp(key));
+        return true;
+      });
+    }
   } finally { mock.restoreAll(); }
 });
 
@@ -52,7 +68,7 @@ test('QQ 官方机器人仅向绑定 OpenID 发送，令牌不进日志或持久
   });
   try {
     await sendToChannel({ id: 9102, type: 'qq-bot', config: JSON.stringify(sealed) }, msg);
-    assert.equal(sent[0].url, 'https://api.bot.qq.com/app/getAppAccessToken');
+    assert.equal(sent[0].url, 'https://bots.qq.com/app/getAppAccessToken');
     assert.equal(sent[1].url, `https://api.bot.qq.com/v2/groups/${'A'.repeat(32)}/messages`);
     assert.equal(sent[1].opts.headers.authorization, 'QQBot fake-token');
     assert.equal(JSON.parse(sent[1].opts.body).msg_type, 0);
@@ -81,4 +97,14 @@ test('新渠道每分钟本地频率上限', async () => {
   const channel = { id: 9134, type: 'qq-bot' };
   for (let n = 0; n < 10; n++) await guardedDelivery(channel, { text: `message ${n}` }, async () => {});
   await assert.rejects(() => guardedDelivery(channel, { text: 'message 11' }, async () => {}), { status: 429 });
+});
+
+test('结果未知后同一消息不能在本进程短时窗口内静默重发', async () => {
+  const { guardedDelivery } = await import('../src/notify/delivery-guard.js');
+  const channel = { id: 9135, type: 'qq-bot' };
+  let attempts = 0;
+  const send = async () => { attempts++; throw new Error('timeout'); };
+  await assert.rejects(() => guardedDelivery(channel, msg, send), /timeout/);
+  await assert.rejects(() => guardedDelivery(channel, msg, send), { status: 503 });
+  assert.equal(attempts, 1);
 });

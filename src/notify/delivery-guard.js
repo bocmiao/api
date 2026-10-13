@@ -4,6 +4,7 @@ import { HttpError } from '../lib/http.js';
 const windows = new Map();
 const successful = new Map();
 const pending = new Map();
+const uncertain = new Map();
 
 // 本进程安全阀；平台侧仍有独立频控。未知结果不自动重试，避免重复发送。
 export async function guardedDelivery(channel, message, send) {
@@ -11,6 +12,7 @@ export async function guardedDelivery(channel, message, send) {
   const now = Date.now();
   const fingerprint = createHash('sha256').update(JSON.stringify([id, message])).digest('hex');
   if ((successful.get(fingerprint) ?? 0) > now) return { deduplicated: true };
+  if ((uncertain.get(fingerprint) ?? 0) > now) throw new HttpError(503, '上次推送结果未知，请先到目标会话核实，稍后再试');
   if (pending.has(fingerprint)) { await pending.get(fingerprint); return { deduplicated: true }; }
   const current = windows.get(id);
   const window = current && now - current.start < 60_000 ? current : { start: now, count: 0 };
@@ -19,6 +21,7 @@ export async function guardedDelivery(channel, message, send) {
   const running = Promise.resolve().then(send);
   pending.set(fingerprint, running);
   try { await running; successful.set(fingerprint, Date.now() + 60_000); }
+  catch (err) { uncertain.set(fingerprint, Date.now() + 60_000); throw err; }
   finally { pending.delete(fingerprint); }
   if (successful.size > 5000) for (const [key, expires] of successful) if (expires <= now) successful.delete(key);
   return { deduplicated: false };
