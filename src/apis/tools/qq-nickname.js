@@ -113,13 +113,13 @@ export default {
   name: 'qq-nickname',
   category: 'tools',
   title: 'QQ 昵称',
-  description: '按 QQ 号尝试查询公开昵称；腾讯公开端点无稳定服务承诺，查询失败不代表账号不存在',
+  description: '实验性：按 QQ 号尝试查询公开昵称；已有请求收到腾讯 need-login 错误，免登录查询可能不可用，失败不代表账号不存在',
   source: '腾讯 Qzone 公开 portrait 端点（非正式、可能失效）',
   unofficial: true,
   routes: [{
     method: 'GET',
     path: '/api/qq/nickname',
-    summary: '按 QQ 号查询公开昵称',
+    summary: '实验性查询公开昵称；腾讯端点可能要求登录并返回 503',
     params: [{ name: 'qq', required: true, desc: 'QQ 号，5~12 位数字', example: '10001' }],
     fields: [
       { name: 'qq', type: 'string', desc: 'QQ 号' },
