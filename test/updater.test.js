@@ -109,15 +109,17 @@ test('替换中途失败时恢复原样', () => {
   assert.equal(readFileSync(join(root, 'src/a.js'), 'utf8'), 'old');
 });
 
-function mockGitHub({ version, changelog, sha = 'ccc3333' }) {
-  const commit = (h, msg) => ({ sha: h, commit: { message: `${msg}\n\n详细说明`, author: { name: 'bocmiao', date: '2026-09-25T10:00:00Z' }, committer: { date: '2026-09-25T10:00:00Z' } } });
+function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200 }) {
+  const commit = (h, msg) => ({ sha: h, commit: { message: `${msg} [skip ci]\n\n- 修复 QQ 昵称编码\n- 头像接口保持兼容`, author: { name: 'bocmiao', date: '2026-09-25T10:00:00Z' }, committer: { date: '2026-09-25T10:00:00Z' } } });
   mock.method(globalThis, 'fetch', async (url) => {
     const u = String(url);
     if (u.endsWith('/repos/bocmiao/api')) return Response.json({ default_branch: 'Miao-API' });
     if (u.includes('/commits/Miao-API')) return Response.json(commit(sha, 'Latest'));
     if (u.includes('/contents/package.json') || u.endsWith('/package.json')) return new Response(JSON.stringify({ version }));
     if (u.includes('/contents/CHANGELOG.md') || u.endsWith('/CHANGELOG.md')) return changelog == null ? new Response('', { status: 404 }) : new Response(changelog);
-    if (u.includes('/compare/')) return Response.json({ ahead_by: 1, commits: [commit(sha, 'Latest')] });
+    if (u.includes('/compare/')) return compareStatus === 200
+      ? Response.json({ ahead_by: 1, commits: [commit(sha, 'Latest')] })
+      : new Response('', { status: compareStatus });
     return new Response('', { status: 404 });
   });
 }
@@ -178,6 +180,20 @@ test('检查更新：版本号相同但代码不同视为小修复', async () =>
   assert.equal(u.hasUpdate, true);
   assert.equal(u.patch, true);
   assert.equal(u.commits.length, 1);
+  assert.equal(u.commits[0].message, 'Latest');
+  assert.deepEqual(u.commits[0].notes, ['修复 QQ 昵称编码', '头像接口保持兼容']);
+});
+
+test('同版本提交比较失败时不伪造更新条目', async () => {
+  const { localVersion } = await import('../src/lib/updater.js');
+  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  mockGitHub({ version: localVersion(), changelog: CHANGELOG, sha: 'bbb2222', compareStatus: 500 });
+  const u = await checkUpdate({ maxAgeMs: 0 });
+  mock.restoreAll();
+  assert.equal(u.hasUpdate, true);
+  assert.equal(u.patch, true);
+  assert.deepEqual(u.changes, []);
+  assert.deepEqual(u.commits, []);
 });
 
 test('GitHub 不可达时给出明确错误', async () => {

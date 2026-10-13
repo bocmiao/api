@@ -1956,7 +1956,11 @@ async function checkUpdate() {
       ? `<div class="upd-changes">${u.changes.map((c) => `<div class="upd-release">
           <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}</div>
           <ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div>`
-      : u.hasUpdate ? '<p class="small muted">这次更新包含问题修复和细节改进。</p>' : '';
+      : u.hasUpdate && u.commits.length
+        ? `<div class="upd-changes">${u.commits.map((c) => `<div class="upd-release">
+            <div class="upd-release-head"><b>${esc(c.message)}</b><span class="faint small mono">${esc(c.shortSha)}</span></div>
+            ${c.notes?.length ? `<ul>${c.notes.map((note) => `<li>${esc(note)}</li>`).join('')}</ul>` : ''}</div>`).join('')}</div>`
+        : u.hasUpdate ? '<p class="small muted">暂时无法取得这次更新的详细说明，请查看仓库提交记录后再更新。</p>' : '';
 
     body.innerHTML = `
       ${cur.running && cur.version && cur.running !== cur.version ? `<div class="form-error">服务器上的代码已经是 v${esc(cur.version)}，但正在运行的仍是 v${esc(cur.running)}：代码替换后还没有重启服务。请到 1Panel「网站 → 运行环境」重启 Miao API，重启前在线更新可能失败。</div>` : ''}

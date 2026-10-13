@@ -149,13 +149,18 @@ function lastRollback() {
   }
 }
 
-const commitInfo = (c) => ({
-  sha: c.sha,
-  shortSha: c.sha.slice(0, 7),
-  message: c.commit.message.split('\n')[0],
-  author: c.commit.author?.name ?? null,
-  date: c.commit.committer?.date ?? c.commit.author?.date ?? null,
-});
+const commitInfo = (c) => {
+  const [subject, ...body] = String(c.commit.message ?? '').split('\n');
+  return {
+    sha: c.sha,
+    shortSha: c.sha.slice(0, 7),
+    message: subject.replace(/\s*\[skip ci\]\s*$/i, ''),
+    // 同版本补丁没有新版本号：提交正文中的条目就是这次实际改动的说明。
+    notes: body.filter((line) => /^\s*[-*]\s+\S/.test(line)).map((line) => line.replace(/^\s*[-*]\s+/, '').trim()).slice(0, 12),
+    author: c.commit.author?.name ?? null,
+    date: c.commit.committer?.date ?? c.commit.author?.date ?? null,
+  };
+};
 
 // ---------- 版本号与更新日志 ----------
 
