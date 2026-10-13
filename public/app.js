@@ -1952,15 +1952,16 @@ async function checkUpdate() {
         <span class="small">通常是更新分支设置不对：请到「系统设置 → 在线更新」确认分支，当前读取的是 <code>${esc(u.branch)}</code></span></div>`;
     else status = `<div class="upd-status ok">${icon('check')}<b>已经是最新版本</b></div>`;
 
+    const writtenNotes = u.commits.flatMap((c) => c.notes ?? []);
     const changes = u.changes.length
       ? `<div class="upd-changes">${u.changes.map((c) => `<div class="upd-release">
           <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}</div>
           <ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div>`
-      : u.hasUpdate && u.commits.length
-        ? `<div class="upd-changes">${u.commits.map((c) => `<div class="upd-release">
-            <div class="upd-release-head"><b>${esc(c.message)}</b><span class="faint small mono">${esc(c.shortSha)}</span></div>
-            ${c.notes?.length ? `<ul>${c.notes.map((note) => `<li>${esc(note)}</li>`).join('')}</ul>` : ''}</div>`).join('')}</div>`
-        : u.hasUpdate ? '<p class="small muted">暂时无法取得这次更新的详细说明，请查看仓库提交记录后再更新。</p>' : '';
+      : u.hasUpdate && writtenNotes.length
+        ? `<div class="upd-changes"><div class="upd-release"><ul>${writtenNotes.map((note) => `<li>${esc(note)}</li>`).join('')}</ul></div></div>`
+        : u.hasUpdate ? '<p class="small muted">暂缺面向用户的更新说明；请查看下方技术细节中的提交记录。</p>' : '';
+    const noteCaveat = u.hasUpdate && !u.changes.length && u.commits.length && (u.commitRangeIncomplete || u.commits.some((c) => !c.notes?.length || c.notesTruncated))
+      ? `<p class="small muted">${u.commitRangeIncomplete ? '提交较多，当前只展示部分提交的说明。' : ''}${u.commits.some((c) => !c.notes?.length) ? '部分提交未提供面向用户的说明。' : ''}${u.commits.some((c) => c.notesTruncated) ? '有提交的说明条目被截断。' : ''}完整提交记录请到 GitHub 查看。</p>` : '';
 
     body.innerHTML = `
       ${cur.running && cur.version && cur.running !== cur.version ? `<div class="form-error">服务器上的代码已经是 v${esc(cur.version)}，但正在运行的仍是 v${esc(cur.running)}：代码替换后还没有重启服务。请到 1Panel「网站 → 运行环境」重启 Miao API，重启前在线更新可能失败。</div>` : ''}
@@ -1972,6 +1973,7 @@ async function checkUpdate() {
       </div>
       ${status}
       ${changes ? `<div class="small faint" style="margin:14px 0 6px">更新内容</div>${changes}` : ''}
+      ${noteCaveat}
       ${u.hasUpdate ? `
         ${!u.managed ? '<p class="small" style="color:var(--warn)">当前服务不是通过 npm start 启动的，更新完成后需要到服务器面板手动重启。</p>' : ''}
         <button class="btn primary" id="do-update" data-sha="${esc(u.latest.sha)}">${icon('zap')}立即更新${u.patch ? '' : `到 ${esc(latestV)}`}</button>

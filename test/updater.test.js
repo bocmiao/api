@@ -109,7 +109,7 @@ test('替换中途失败时恢复原样', () => {
   assert.equal(readFileSync(join(root, 'src/a.js'), 'utf8'), 'old');
 });
 
-function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200 }) {
+function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200, compareCount = 1, aheadBy = compareCount, updateNotes = null }) {
   const commit = (h, msg) => ({ sha: h, commit: { message: `${msg} [skip ci]\n\n- 修复 QQ 昵称编码\n- 头像接口保持兼容`, author: { name: 'bocmiao', date: '2026-09-25T10:00:00Z' }, committer: { date: '2026-09-25T10:00:00Z' } } });
   mock.method(globalThis, 'fetch', async (url) => {
     const u = String(url);
@@ -117,8 +117,9 @@ function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200 }
     if (u.includes('/commits/Miao-API')) return Response.json(commit(sha, 'Latest'));
     if (u.includes('/contents/package.json') || u.endsWith('/package.json')) return new Response(JSON.stringify({ version }));
     if (u.includes('/contents/CHANGELOG.md') || u.endsWith('/CHANGELOG.md')) return changelog == null ? new Response('', { status: 404 }) : new Response(changelog);
+    if (u.includes('/contents/UPDATE_NOTES.json') || u.endsWith('/UPDATE_NOTES.json')) return new Response(updateNotes ?? '[]');
     if (u.includes('/compare/')) return compareStatus === 200
-      ? Response.json({ ahead_by: 1, commits: [commit(sha, 'Latest')] })
+      ? Response.json({ ahead_by: aheadBy, commits: Array.from({ length: compareCount }, (_, i) => commit(i === compareCount - 1 ? sha : `commit${i}`, `Change ${i}`)) })
       : new Response('', { status: compareStatus });
     return new Response('', { status: 404 });
   });
@@ -180,8 +181,43 @@ test('检查更新：版本号相同但代码不同视为小修复', async () =>
   assert.equal(u.hasUpdate, true);
   assert.equal(u.patch, true);
   assert.equal(u.commits.length, 1);
-  assert.equal(u.commits[0].message, 'Latest');
+  assert.equal(u.commits[0].message, 'Change 0');
   assert.deepEqual(u.commits[0].notes, ['修复 QQ 昵称编码', '头像接口保持兼容']);
+  assert.equal(u.commitRangeIncomplete, false);
+});
+
+test('同版本用户说明按实际功能提交筛选，并覆盖回顾性提交正文', async () => {
+  const { localVersion, parseUpdateNotes, localChangelog } = await import('../src/lib/updater.js');
+  const notes = readFileSync(join(process.cwd(), 'UPDATE_NOTES.json'), 'utf8');
+  const entries = parseUpdateNotes(notes);
+  assert.deepEqual(entries.map((e) => e.sha.slice(0, 7)), ['037984b', 'ed78af3', 'eb118ed']);
+  assert.deepEqual(localChangelog().filter((e) => e.date?.includes('同版本更新')).map((e) => e.date.match(/[0-9a-f]{7}$/)[0]), ['eb118ed', 'ed78af3', '037984b']);
+  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  mockGitHub({ version: localVersion(), changelog: null, sha: entries[2].sha, updateNotes: notes });
+  const u = await checkUpdate({ maxAgeMs: 0 });
+  mock.restoreAll();
+  assert.deepEqual(u.commits[0].notes, entries[2].items);
+  assert.ok(!u.commits[0].notes.some((line) => line.includes('新增 /api/qq/nickname')));
+  const longNotes = JSON.stringify([{ ...entries[2], items: Array.from({ length: 13 }, (_, i) => `条目 ${i}`) }]);
+  mockGitHub({ version: localVersion(), changelog: null, sha: entries[2].sha, updateNotes: longNotes });
+  const limited = await checkUpdate({ maxAgeMs: 0 });
+  mock.restoreAll();
+  assert.equal(limited.commits[0].notes.length, 12);
+  assert.equal(limited.commits[0].notesTruncated, true);
+});
+
+test('同版本提交超出展示上限或比较响应未覆盖全部提交时标记说明不完整', async () => {
+  const { localVersion } = await import('../src/lib/updater.js');
+  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222', compareCount: 51 });
+  const capped = await checkUpdate({ maxAgeMs: 0 });
+  mock.restoreAll();
+  assert.equal(capped.commits.length, 50);
+  assert.equal(capped.commitRangeIncomplete, true);
+  mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222', compareCount: 1, aheadBy: 4 });
+  const partial = await checkUpdate({ maxAgeMs: 0 });
+  mock.restoreAll();
+  assert.equal(partial.commitRangeIncomplete, true);
 });
 
 test('同版本提交比较失败时不伪造更新条目', async () => {

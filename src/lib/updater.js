@@ -151,12 +151,14 @@ function lastRollback() {
 
 const commitInfo = (c) => {
   const [subject, ...body] = String(c.commit.message ?? '').split('\n');
+  const notes = body.filter((line) => /^\s*[-*]\s+\S/.test(line)).map((line) => line.replace(/^\s*[-*]\s+/, '').trim());
   return {
     sha: c.sha,
     shortSha: c.sha.slice(0, 7),
     message: subject.replace(/\s*\[skip ci\]\s*$/i, ''),
     // 同版本补丁没有新版本号：提交正文中的条目就是这次实际改动的说明。
-    notes: body.filter((line) => /^\s*[-*]\s+\S/.test(line)).map((line) => line.replace(/^\s*[-*]\s+/, '').trim()).slice(0, 12),
+    notes: notes.slice(0, 12),
+    notesTruncated: notes.length > 12,
     author: c.commit.author?.name ?? null,
     date: c.commit.committer?.date ?? c.commit.author?.date ?? null,
   };
@@ -202,10 +204,26 @@ export function versionInfo() {
 // 本地 CHANGELOG.md 的全部版本记录（新的在前）
 export function localChangelog() {
   try {
-    return parseChangelog(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'));
+    const versions = parseChangelog(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'));
+    const patches = parseUpdateNotes(readFileSync(join(ROOT, 'UPDATE_NOTES.json'), 'utf8'));
+    for (const patch of patches) {
+      const index = versions.findIndex((entry) => entry.version === patch.version);
+      if (index >= 0) versions.splice(index, 0, { version: patch.version, date: `${patch.date} · 同版本更新 ${patch.sha.slice(0, 7)}`, items: patch.items });
+    }
+    return versions;
   } catch {
     return [];
   }
+}
+
+export function parseUpdateNotes(raw) {
+  let entries;
+  try { entries = JSON.parse(raw); } catch { return []; }
+  return Array.isArray(entries) ? entries.filter((e) => /^[0-9a-f]{40}$/.test(e?.sha)
+    && /^\d+(?:\.\d+)*$/.test(e?.version) && typeof e?.date === 'string'
+    && Array.isArray(e?.items) && e.items.length > 0 && e.items.every((item) => typeof item === 'string' && item.trim())).map((e) => ({
+    sha: e.sha, version: e.version, date: e.date, items: e.items,
+  })) : [];
 }
 
 // 解析 CHANGELOG.md：## v0.3.0 · 2026-09-25 下面的 "- " 列表
@@ -260,9 +278,10 @@ export async function checkUpdate({ maxAgeMs = 60_000 } = {}) {
 async function checkUpdateFresh(cfg) {
   const branch = cfg.branch || (await gh(`/repos/${cfg.repo}`)).default_branch;
   const latestCommit = commitInfo(await gh(`/repos/${cfg.repo}/commits/${encodeURIComponent(branch)}`));
-  const [pkgText, changelogText] = await Promise.all([
+  const [pkgText, changelogText, updateNotesText] = await Promise.all([
     remoteFile(cfg.repo, latestCommit.sha, 'package.json'),
     remoteFile(cfg.repo, latestCommit.sha, 'CHANGELOG.md'),
+    remoteFile(cfg.repo, latestCommit.sha, 'UPDATE_NOTES.json'),
   ]);
   let remoteVersion = null;
   try { remoteVersion = JSON.parse(pkgText).version ?? null; } catch {}
@@ -277,13 +296,21 @@ async function checkUpdateFresh(cfg) {
   const hasUpdate = cmp > 0 || (cmp === 0 && Boolean(current.sha) && !sameCode) || (!remoteVersion && !sameCode);
   const changelog = parseChangelog(changelogText);
   const changes = cmp > 0 ? changelog.filter((e) => compareVersions(e.version, current.version) > 0) : [];
+  const noteMap = new Map(parseUpdateNotes(updateNotesText).map((e) => [e.sha, e.items]));
 
   // 技术细节：两个版本之间的提交（仅当部署过的提交已知）
   let commits = [];
+  let commitRangeIncomplete = false;
   if (hasUpdate && current.sha && !sameCode) {
     try {
       const c = await gh(`/repos/${cfg.repo}/compare/${current.sha}...${latestCommit.sha}`);
+      commitRangeIncomplete = Number(c.ahead_by) > c.commits.length || c.commits.length > 50;
       commits = c.commits.map(commitInfo).reverse().slice(0, 50);
+      for (const commit of commits) if (noteMap.has(commit.sha)) {
+        const notes = noteMap.get(commit.sha);
+        commit.notes = notes.slice(0, 12);
+        commit.notesTruncated = notes.length > 12;
+      }
     } catch {}
   }
 
@@ -298,6 +325,7 @@ async function checkUpdateFresh(cfg) {
     remoteOlder: cmp < 0,
     changes,
     commits,
+    commitRangeIncomplete,
     managed: process.env.MIAO_LAUNCHER === '1',
     lastRollback: lastRollback(),
   };
