@@ -8,6 +8,8 @@ import {
 } from '../lib/auth.js';
 import { quota, today } from '../lib/limits.js';
 import { channelCatalog, validateChannel, sendToChannel, maskConfig } from '../notify/channels.js';
+import { sealChannel } from '../notify/secrets.js';
+import { buildNotifyMessage } from '../apis/tools/notify-message.js';
 import { topicCatalog, topics } from '../notify/topics.js';
 import { pushNow } from '../notify/scheduler.js';
 import { Router } from '../lib/router.js';
@@ -288,7 +290,7 @@ r('POST', '/account/channels', async (ctx) => {
   if (count >= config.limits.maxChannels) throw new HttpError(400, `最多添加 ${config.limits.maxChannels} 个推送渠道`);
   const cfg = await validateChannel(type, ctx.body?.config);
   const label = String(name ?? '').trim().slice(0, 40) || type;
-  const { lastInsertRowid } = sql('INSERT INTO channels (user_id, type, name, config) VALUES (?, ?, ?, ?)').run(user.id, type, label, JSON.stringify(cfg));
+  const { lastInsertRowid } = sql('INSERT INTO channels (user_id, type, name, config) VALUES (?, ?, ?, ?)').run(user.id, type, label, JSON.stringify(sealChannel(type, cfg)));
   return { data: channelRow(sql('SELECT * FROM channels WHERE id = ?').get(lastInsertRowid)) };
 });
 
@@ -301,7 +303,7 @@ r('DELETE', '/account/channels/:id', (ctx) => {
 
 async function sendOrExplain(fn) {
   try {
-    await fn();
+    return await fn();
   } catch (err) {
     if (err instanceof HttpError) throw err;
     throw new HttpError(502, `推送失败：${err.message}`);
@@ -312,6 +314,15 @@ r('POST', '/account/channels/:id/test', async (ctx) => {
   const channel = ownChannel(requireUser(ctx), ctx.params.id);
   await sendOrExplain(() => sendToChannel(channel, { title: 'Miao API 测试消息', text: '收到这条消息说明推送渠道配置成功 🎉', topic: 'test' }));
   return { data: null };
+});
+
+// 仅渠道所属账号可向已绑定的目标发送；请求体不能覆盖凭据或目标。
+r('POST', '/account/channels/:id/send', async (ctx) => {
+  const channel = ownChannel(requireUser(ctx), ctx.params.id);
+  if (!['wecom', 'qq-bot'].includes(channel.type)) throw new HttpError(400, '该渠道不支持自定义通知');
+  buildNotifyMessage({ channel: channel.type, title: ctx.body?.title, text: ctx.body?.text });
+  const result = await sendOrExplain(() => sendToChannel(channel, { title: ctx.body.title, text: ctx.body.text, topic: 'manual' }));
+  return { data: { status: result?.deduplicated ? 'deduplicated' : 'sent' } };
 });
 
 r('PUT', '/account/subscriptions', (ctx) => {

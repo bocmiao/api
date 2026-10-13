@@ -19,7 +19,7 @@
 - **账号体系**：注册登录，生成多个 API Key（可停用、重置，限制来源 IP / 域名和可调用的接口），查看用量统计和登录记录，兑换码领取额外次数
 - **排障友好**：每个请求都有请求 ID（`X-Request-Id`），失败带机器可读的 `errorCode`；上游故障（5xx）不扣调用额度
 - **分级额度**：未登录按 IP 每天免费调用 100 次；注册用户每天 10000 次，均可配置
-- **订阅推送**：Epic 周免、游戏限免、每日壁纸等内容更新时，推送到 Server酱（微信）、Bark、Telegram、钉钉、飞书、企业微信、自定义 Webhook 或邮件
+- **订阅推送**：Epic 周免、游戏限免、每日壁纸等内容更新时，推送到 Server酱（微信）、Bark、Telegram、钉钉、飞书、企业微信、QQ 官方机器人、自定义 Webhook 或邮件
 - **管理后台**：全站调用统计，调整用户额度、停用用户，按模块开关接口，按接口调整缓存时长、每分钟上限、置顶推荐，公告、友情链接审核、兑换码，操作日志和登录记录，按请求 ID 查调用，AI 分析接口失败原因，在线更新（增量下载、上传更新包、失败自动回滚）
 - **零依赖**：只需 Node.js 22.13+，不用 `npm install`，数据存在内置 SQLite
 
@@ -323,6 +323,14 @@ await fetch('https://api.example.com/api/shorturl', {
 | QQ 头像地址 | `/api/qq/avatar/urls` | 各尺寸 QQ 头像地址；默认头像不能证明账号存在 |
 | QQ 昵称（实验性） | `/api/qq/nickname` | `qq=10001`；仅腾讯公开端点返回昵称时成功，`data` 为 `{ "qq": "10001", "nickname": "上游昵称" }`，成功缓存 30 分钟。已有线上请求收到 `need-login`，返回 503；这不证明 QQ 号不存在，也不代表所有环境永久不可用。QQ 互联 OAuth 只能查询授权用户本人，不能用于任意号码。头像接口独立可用。 |
 | QQ 资料卡链接 | `/api/qq/profile` | `qq=10001`，返回 `data: {"qq":"10001","url":"mqqapi://card/show_pslcard?src_type=internal&source=sharecard&version=1&uin=10001","openPage":"/api/qq/profile/open?qq=10001"}`；打开页需用户点击，不能保证 QQ 客户端唤起，失败时可复制号码在 QQ 内搜索。只生成链接，不查询个人资料。 |
+| 通知消息 JSON 构建 | `POST /api/notify/message` | 请求 JSON 如 `{"channel":"wecom","format":"text","title":"提醒","text":"内容"}`，返回对应平台的 `payload` 预览；支持 `wecom` / `qq-bot` 和 `text` / `markdown`，不接收密钥、不发送消息。 |
+
+企业微信与 QQ 官方机器人沿用「账号 → 推送渠道 → 订阅主题」：登录后通过 `POST /account/channels` 新建渠道，渠道 ID 由本站分配；`POST /account/channels/:id/test` 可由渠道所属用户手动测试，`POST /account/channels/:id/send` 可发送 `{"title":"提醒","text":"内容"}` 到该渠道已绑定的目标，成功返回 `{"status":"sent"}`，60 秒内重复成功消息返回 `{"status":"deduplicated"}`。调用者不能在请求里更换目标或凭据。创建前，服务端须自行设置并妥善备份 `NOTIFY_ENCRYPTION_KEY`（32 字节的十六进制值）；新建渠道的凭据用 AES-256-GCM 加密保存，列表仅显示已加密状态。旧版已保存的企微渠道仍可使用，需由所有者重新创建才会转为加密存储。
+
+- 企业微信：先在目标企业微信群添加机器人，取得该群的 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...` 地址。渠道配置为 `{"type":"wecom","name":"工作群","config":{"channelId":"work-group","webhook":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...","format":"markdown"}}`，格式可选 `text`。只接受企业微信固定 HTTPS 域名和发送路径，不接受任意转发目标。
+- QQ 官方机器人：先在 [QQ 机器人开放平台](https://bot.q.qq.com/)创建并获准使用机器人，取得 AppID、ClientSecret，以及已经与该机器人建立关系的目标 `user_openid` 或 `group_openid`。渠道配置为 `{"type":"qq-bot","name":"提醒","config":{"appId":"...","clientSecret":"...","targetType":"user","targetOpenid":"..."}}`；`group` 可用于群 OpenID。普通 QQ 号或群号不能替代 OpenID；目标和凭据绑定在渠道配置中，发送请求不能临时改目标。平台仍会检查权限、目标关系、主动消息开关和频率，未开通或未配置会失败。本站不提供登录回调或代取 OpenID，需自行从合规的机器人互动中取得。
+
+这些渠道只在实际订阅触发或所属用户明确测试时发送，消息构建工具不会发送。本站每渠道每分钟最多尝试 10 条，60 秒内相同成功消息在本进程去重；未知结果不自动重试，避免重复推送。应用重启后去重窗口不保留，平台侧还有独立限额。以上本地模拟测试不能证明真实群或单聊已送达。
 
 ### 网络
 

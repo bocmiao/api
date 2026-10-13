@@ -415,3 +415,12 @@ test('QQ 资料卡：统一配额、目录及点击打开页', async () => {
   assert.equal((await bad('GET', '/api/qq/profile/open?qq=abc')).status, 400);
   assert.ok((await c('GET', '/api')).body.data.modules.some((m) => m.name === 'qq-profile'));
 });
+
+test('通知消息构建接口只返回预览 JSON 并计入调用额度', async () => {
+  const c = anonClient();
+  const r = await c('POST', '/api/notify/message', { channel: 'wecom', format: 'text', title: '标题', text: '正文' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.data, { channel: 'wecom', format: 'text', payload: { msgtype: 'text', text: { content: '标题\n正文' } } });
+  assert.equal((await c('GET', '/auth/me')).body.data.quota.used, 1);
+  assert.ok((await c('GET', '/api')).body.data.modules.some((m) => m.name === 'notify-message'));
+});

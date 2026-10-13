@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 process.env.ANON_DAILY_LIMIT = '3';
 process.env.USER_DAILY_LIMIT = '5';
 const { handle } = await import('../src/app.js');
+const { sql } = await import('../src/db.js');
 
 const fixture = readFileSync(new URL('./fixtures/epic.json', import.meta.url), 'utf8');
 const realFetch = globalThis.fetch;
@@ -19,6 +20,7 @@ before(async () => {
     outbound.push({ url: u, body: opts?.body });
     if (u.includes('epicgames.com')) return new Response(fixture, { headers: { 'content-type': 'application/json' } });
     if (u.includes('oapi.dingtalk.com')) return Response.json({ errcode: 0, errmsg: 'ok' });
+    if (u.startsWith('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?')) return Response.json({ errcode: 0 });
     return new Response('not mocked', { status: 500 });
   });
   server = createServer(handle).listen(0, '127.0.0.1');
@@ -152,6 +154,33 @@ test('推送渠道：校验、脱敏、测试发送、订阅', async () => {
   const other = client();
   await other('POST', '/auth/register', { email: 'other@example.com', password: 'password123' });
   assert.equal((await other('DELETE', `/account/channels/${ch.body.data.id}`, {})).status, 404);
+});
+
+test('新推送渠道按账号隔离且凭据加密保存', async () => {
+  const previous = process.env.NOTIFY_ENCRYPTION_KEY;
+  process.env.NOTIFY_ENCRYPTION_KEY = 'ab'.repeat(32);
+  try {
+    const owner = client();
+    const other = client();
+    await owner('POST', '/auth/register', { email: 'secure-owner@example.com', password: 'password123' });
+    await other('POST', '/auth/register', { email: 'secure-other@example.com', password: 'password123' });
+    const secret = 'Z'.repeat(32);
+    const created = await owner('POST', '/account/channels', { type: 'wecom', name: '工作群', config: {
+      channelId: 'work', webhook: `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${secret}`, format: 'text',
+    } });
+    assert.equal(created.status, 200);
+    const id = created.body.data.id;
+    const raw = sql('SELECT config FROM channels WHERE id = ?').get(id).config;
+    assert.ok(!raw.includes(secret));
+    assert.equal(created.body.data.config.credentials, '已加密保存');
+    assert.equal((await other('POST', `/account/channels/${id}/test`, {})).status, 404);
+    assert.equal((await other('PUT', '/account/subscriptions', { topic: 'epic-free', channelId: id, enabled: true })).status, 404);
+    assert.equal((await other('POST', `/account/channels/${id}/send`, { title: 'x', text: 'y' })).status, 404);
+    const send = await owner('POST', `/account/channels/${id}/send`, { title: '标题', text: '内容', targetOpenid: 'ignored' });
+    assert.equal(send.status, 200);
+    assert.equal(send.body.data.status, 'sent');
+    assert.equal((await owner('POST', `/account/channels/${id}/send`, { title: '标题', text: '内容' })).body.data.status, 'deduplicated');
+  } finally { if (previous == null) delete process.env.NOTIFY_ENCRYPTION_KEY; else process.env.NOTIFY_ENCRYPTION_KEY = previous; }
 });
 
 test('管理后台仅管理员可访问，可调整用户额度', async () => {

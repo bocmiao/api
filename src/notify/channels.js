@@ -3,6 +3,9 @@ import { HttpError } from '../lib/http.js';
 import { assertPublicUrl, safePostJson } from '../lib/netguard.js';
 import { config } from '../config.js';
 import { sendMail } from './smtp.js';
+import { openChannel, encryptionAvailable } from './secrets.js';
+import { qqBotChannel } from './qq-bot.js';
+import { guardedDelivery } from './delivery-guard.js';
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 
@@ -33,7 +36,7 @@ async function post(url, body, { form = false } = {}) {
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch {}
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${text.slice(0, 200)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return json;
 }
 
@@ -129,14 +132,26 @@ export const channelTypes = {
   },
   wecom: {
     title: '企业微信机器人',
-    fields: [{ name: 'webhook', label: 'Webhook 地址', placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }],
-    validate: (c) => ({ webhook: hostIn(str(c.webhook, 'Webhook 地址'), 'Webhook 地址', ['qyapi.weixin.qq.com']) }),
-    async send({ webhook }, m) {
-      const content = `**${m.title}**\n${m.text}${m.url ? `\n[查看详情](${m.url})` : ''}`;
-      const r = await post(webhook, { msgtype: 'markdown', markdown: { content } });
-      if (r?.errcode !== 0) throw new Error(r?.errmsg || '企业微信返回错误');
+    get available() { return encryptionAvailable(); },
+    fields: [
+      { name: 'channelId', label: '本渠道标识' },
+      { name: 'webhook', label: 'Webhook 地址', placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' },
+      { name: 'format', label: '格式：text / markdown', required: false },
+    ],
+    validate: (c) => {
+      const webhook = hostIn(str(c.webhook, 'Webhook 地址'), 'Webhook 地址', ['qyapi.weixin.qq.com']);
+      const u = new URL(webhook);
+      if (u.pathname !== '/cgi-bin/webhook/send' || [...u.searchParams.keys()].join() !== 'key' || !/^[A-Za-z0-9_-]{8,128}$/.test(u.searchParams.get('key') ?? '')) throw new HttpError(400, '企业微信 Webhook 地址不合法');
+      return { channelId: str(c.channelId, '渠道标识', { max: 64, pattern: /^[A-Za-z0-9_-]+$/ }), webhook,
+        format: c.format == null ? 'markdown' : str(c.format, '格式', { pattern: /^(text|markdown)$/ }) };
+    },
+    async send({ webhook, format = 'markdown' }, m) {
+      const content = format === 'text' ? plain(m) : `**${m.title}**\n${m.text}${m.url ? `\n[查看详情](${m.url})` : ''}`;
+      const r = await post(webhook, { msgtype: format, [format]: { content } });
+      if (r?.errcode !== 0) throw new Error(`企业微信返回错误码 ${Number.isInteger(r?.errcode) ? r.errcode : 'unknown'}`);
     },
   },
+  'qq-bot': qqBotChannel,
   webhook: {
     title: '自定义 Webhook',
     fields: [{ name: 'url', label: 'POST 地址', placeholder: 'https://example.com/hook' }],
@@ -176,12 +191,16 @@ export async function validateChannel(type, cfg) {
 
 export async function sendToChannel(channel, message) {
   const t = channelTypes[channel.type];
-  await t.send(JSON.parse(channel.config), message);
+  const cfg = openChannel(channel.type, JSON.parse(channel.config));
+  if (channel.type === 'wecom' || channel.type === 'qq-bot')
+    return guardedDelivery(channel, message, () => t.send(cfg, message));
+  await t.send(cfg, message);
 }
 
 // 前端展示用：隐藏密钥类字段。URL 保留域名与路径，只遮住查询参数和 Bot Token 等敏感部分。
 const maskStr = (v) => (v.length > 10 ? `${v.slice(0, 4)}…${v.slice(-4)}` : '••••');
 export function maskConfig(type, cfg) {
+  if (cfg?.sealed) return { credentials: '已加密保存' };
   const out = {};
   for (const [k, v] of Object.entries(cfg)) {
     if (v == null) continue;

@@ -985,7 +985,7 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
     <p>每个接口详情页的「状态码」一节列出了该接口可能返回的状态码，以及近 7 天实际出现的次数。</p>
 
     <h2>订阅推送</h2>
-    <p>在 <a href="/console/notify">控制台 → 推送通知</a> 中添加推送渠道（Server酱、Bark、Telegram、钉钉、飞书、企业微信、自定义 Webhook、邮件），然后勾选想订阅的主题。内容更新时会自动推送。</p>
+    <p>在 <a href="/console/notify">控制台 → 推送通知</a> 中添加推送渠道（Server酱、Bark、Telegram、钉钉、飞书、企业微信、QQ 官方机器人、自定义 Webhook、邮件），然后勾选想订阅的主题。内容更新时会自动推送。</p>
     <p>自定义 Webhook 会收到如下 POST 请求：</p>
     <pre>{ "topic": "epic-free", "title": "...", "text": "Markdown 正文", "url": "...", "sentAt": "..." }</pre>
 
@@ -1407,7 +1407,7 @@ async function consoleNotify(panel) {
       const drawFields = () => {
         const t = typeOf($('#ct', root).value);
         $('#cfields', root).innerHTML = t.fields.map((f) => `<div class="field"><label for="f-${f.name}">${esc(f.label)}</label>
-          <input class="input mono" id="f-${f.name}" name="cfg.${f.name}" placeholder="${esc(f.placeholder ?? '')}" ${f.required ? 'required' : ''}></div>`).join('');
+          <input class="input mono" type="${/secret|webhook/i.test(f.name) ? 'password' : 'text'}" id="f-${f.name}" name="cfg.${f.name}" placeholder="${esc(f.placeholder ?? '')}" ${f.required ? 'required' : ''}></div>`).join('');
       };
       $('#ct', root).onchange = drawFields;
       drawFields();
