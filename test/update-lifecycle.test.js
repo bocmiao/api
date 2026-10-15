@@ -51,7 +51,7 @@ function fixture() {
 
 const worker = String.raw`
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
@@ -61,9 +61,15 @@ process.env.DATA_DIR = join(meta.root, 'data');
 process.env.MIAO_LAUNCHER = mode === 'manual' ? '' : '1';
 process.env.UPDATE_REPO = 'fixture/api'; process.env.UPDATE_BRANCH = 'Miao-API';
 process.env.UPDATE_UPLOAD_VERIFY = mode === 'unverified' ? '0' : '1';
+const unknown = ['online-unknown','online-legacy'].includes(mode);
+if (unknown) {
+  rmSync(join(meta.root,'.git'),{recursive:true,force:true});
+  if (mode==='online-unknown') rmSync(join(meta.root,'data/version.json'));
+  else writeFileSync(join(meta.root,'data/version.json'),JSON.stringify({version:'0.11.1',sha:meta.oldSha,updatedAt:'2026-10-13T00:00:00Z'}));
+}
 const u = await import(pathToFileURL(join(meta.root, 'src/lib/updater.js')));
 const before = u.versionInfo();
-assert.equal(before.runningIdentity.sha, meta.oldSha);
+assert.equal(before.runningIdentity.sha, unknown ? null : meta.oldSha);
 assert.equal(before.restartNeeded, false);
 globalThis.fetch = async (input) => {
   const url = String(input);
@@ -75,6 +81,15 @@ globalThis.fetch = async (input) => {
   if (path && meta.files[path]) return new Response(Buffer.from(meta.files[path], 'base64'));
   throw new Error('Unmocked network: '+url);
 };
+if (unknown) {
+  const check = await u.checkUpdate({maxAgeMs:0});
+  assert.equal(check.current.sha,null);
+  assert.equal(check.current.updatedAt,null);
+  assert.equal(check.hasUpdate,false);
+  assert.equal(check.upToDate,false);
+  assert.equal(check.comparisonUnknown,true);
+  assert.equal(check.canInstall,true, '允许按明确目标重新安装建立身份');
+}
 if (mode === 'pin-mismatch') {
   await assert.rejects(u.applyUpdate({sha:'f'.repeat(40)}), /远端已有更新/);
   assert.equal(u.versionInfo().diskIdentity.sha, meta.oldSha);
@@ -92,7 +107,7 @@ const installed = callback.version;
 assert.equal(progress.target.installationId, installed.installationId);
 assert.equal(progress.target.sha, mode==='unverified' ? null : meta.sha);
 const oldProcess = u.versionInfo();
-assert.equal(oldProcess.runningIdentity.sha, meta.oldSha);
+assert.equal(oldProcess.runningIdentity.sha, unknown ? null : meta.oldSha);
 assert.equal(oldProcess.diskIdentity.sha, mode==='unverified' ? null : meta.sha);
 assert.equal(oldProcess.diskIdentity.installationId, installed.installationId);
 assert.equal(oldProcess.restartNeeded, true);
@@ -145,6 +160,8 @@ console.log(JSON.stringify({mode, old:meta.oldSha, target:meta.sha, installation
 
 for (const [mode, title] of [
   ['online', '在线增量更新'], ['online-full', '在线完整更新'], ['upload', '已核验上传'],
+  ['online-unknown', '无 Git 的未知手动部署不会宣称最新，允许重新安装'],
+  ['online-legacy', '无 Git 的同版本旧记录不能冒认 SHA，允许重新安装'],
   ['unverified', '关闭官方核验的上传仍可核对安装指纹，但不冒认 SHA'],
   ['manual', '手动启动安装仍待重启'], ['rollback', '同版本新代码失败回滚'],
   ['legacy-pending', '旧更新器首次安装保持未知身份且兼容健康标记'],

@@ -4,6 +4,7 @@ import { gzipSync } from 'node:zlib';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const tmp = mkdtempSync(join(tmpdir(), 'miao-update-'));
 process.env.DATA_DIR = join(tmp, 'data');
@@ -325,17 +326,20 @@ test('检查结果缓存 1 分钟；文件优先从 raw.githubusercontent.com �
   }
 });
 
-test('手动上传了新代码后，旧的版本记录不再用来判断「小修复」', async () => {
+test('过期记录不能覆盖实际文件核验出的身份（未知或干净 Git 提交）', async () => {
   const { localVersion } = await import('../src/lib/updater.js');
   writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ version: '0.0.1', sha: 'aaa1111', updatedAt: '2026-01-01T00:00:00Z' }));
   mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222' });
   const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
-  assert.equal(u.current.sha, null);
-  assert.equal(u.hasUpdate, false);
-  assert.equal(u.upToDate, false, '无法确认提交时不能宣称已是最新');
-  assert.equal(u.comparisonUnknown, true);
-  assert.equal(u.canInstall, true, '允许重新安装明确目标建立身份');
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], {encoding:'utf8'}).trim();
+  assert.ok(u.current.sha === null || u.current.sha === head, '只接受未知或经内容核验的真实 Git HEAD');
+  assert.notEqual(u.current.sha, 'aaa1111', '不能沿用过期安装记录');
+  assert.equal(u.current.updatedAt, null);
+  assert.equal(u.upToDate, false);
+  assert.equal(u.comparisonUnknown, u.current.sha === null);
+  assert.equal(u.hasUpdate, u.current.sha !== null);
+  assert.equal(u.canInstall, true);
   assert.ok(u.current.running, '带上正在运行的版本');
 });
 
