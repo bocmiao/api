@@ -12,12 +12,15 @@ const AS_STACK = [
 const AS_VIA = { anon: '未登录', session: '网页登录', apikey: 'API Key' };
 const AS_WEEK = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const AS_PAGE_SIZE = 20;
+const AS_SOURCE_BASIS = { origin: 'Origin', referer: 'Referer', unknown: '未知', legacy: '旧版回填' };
+const AS_SOURCE_STATE = { matched: '两头一致', conflict: '来源冲突', single: '单一有效头', fallback: 'Referer 兜底', missing: '未提供来源', opaque: 'null 来源', invalid: '来源无效', legacy: '旧版（依据缺失）', legacy_unverifiable: '旧版域名无法核实' };
 
 const asState = {
   range: { key: '7d', from: '', to: '' },
   token: 0,
   overlay: { line: true, lower: false },
   ep: { items: [], sort: 'calls', dir: -1, q: '', cat: '', page: 1 },
+  source: { q: '', user: '', key: '', path: '', basis: '', state: '', sort: 'calls', size: '20', page: 1 },
 };
 
 // ---------- 小工具 ----------
@@ -34,6 +37,7 @@ const asPad = (n) => String(n).padStart(2, '0');
 const asYmd = (t) => { const b = asBj(t); return `${b.y}-${asPad(b.M)}-${asPad(b.D)}`; };
 const asHm = (b) => `${asPad(b.h)}:${asPad(b.m)}`;
 const asMd = (t) => { const b = asBj(t); return `${b.M}/${b.D} ${asHm(b)}`; };
+const asSourceDate = (t) => `${asYmd(t)} ${asHm(asBj(t))}`;
 function asAxisLabel(t, gran) {
   const b = asBj(t);
   if (gran === '5m') return asHm(b);
@@ -171,6 +175,21 @@ function asInjectCss() {
 .as-tools .input { height: 32px; }
 .as-tools input.input { width: 200px; }
 .as-tools select.input { width: auto; padding: 0 8px; }
+.as-source-form { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; width:100%; padding:10px 0; }
+.as-source-form label { display:grid; gap:4px; font-size:12px; color:var(--text-2); min-width:0; }
+.as-source-form .input { width:100%; min-width:0; height:36px; }
+.as-source-form .actions { margin:0; align-self:end; flex-wrap:wrap; }
+.as-source-host { overflow-wrap:anywhere; min-width:160px; max-width:300px; }
+.as-source-detail { max-width:100%; }
+.as-source-detail h2 { overflow-wrap:anywhere; }
+.modal:has(.as-source-detail) { width:min(1100px,100%); max-width:1100px; }
+.as-source-detail .table-wrap { max-width:100%; }
+.as-source-detail .table { min-width:760px; }
+.as-source-detail td { min-width:80px; }
+.as-source-detail td:nth-child(2) { min-width:180px; }
+.as-mobile-note { display:none; }
+@media (max-width:700px) { .as-source-form { grid-template-columns:repeat(2,minmax(0,1fr)); } .as-source-form .actions { grid-column:1/-1; } .as-mobile-note { display:block; } }
+@media (prefers-reduced-motion:reduce) { .as-skel, .modal-back:has(.as-source-detail) { animation:none; } }
 .as-ep-table th[data-sort] { cursor: pointer; user-select: none; }
 .as-ep-table th[data-sort]:hover { color: var(--text); }
 .as-ep-table th .arr { font-size: 10px; margin-left: 2px; }
@@ -428,8 +447,9 @@ async function pageAdminStats() {
     ${card('ep', '接口明细', `<div class="as-tools"><input class="input" type="search" id="as-ep-q" placeholder="搜索接口名称或地址" aria-label="搜索接口">
       <select class="input" id="as-ep-cat" aria-label="按分类筛选"><option value="">全部分类</option></select></div>`, 320)}
     ${card('callers', '调用方', '', 260)}
+    ${card('websites', '来源网站', asSourceForm(), 320)}
     <div class="as-grid2">
-      ${card('sources', '来源与客户端', '', 220)}
+      ${card('sources', '客户端', '', 220)}
       ${card('geo', '地域', '', 220)}
     </div>
     ${card('growth', '用户增长', '', 260)}
@@ -448,7 +468,22 @@ function asKpiSkeleton() {
 const asSlot = (root, id) => $(`#as-${id} .as-slot`, root);
 
 function asBind(root) {
+  root.addEventListener('submit', (e) => {
+    if (e.target.id !== 'as-source-form') return;
+    e.preventDefault();
+    asState.source = { ...Object.fromEntries(new FormData(e.target)), page: 1 };
+    asLoadSources(root);
+  });
   root.addEventListener('click', (e) => {
+    const sourcePage = e.target.closest('[data-source-page]');
+    if (sourcePage) { asState.source.page = Number(sourcePage.dataset.sourcePage); return asLoadSources(root); }
+    const sourceHost = e.target.closest('[data-source-host]');
+    if (sourceHost) return asOpenSource(sourceHost.dataset.sourceHost);
+    if (e.target.closest('[data-source-reset]')) {
+      asState.source = { q: '', user: '', key: '', path: '', basis: '', state: '', sort: 'calls', size: '20', page: 1 };
+      $('#as-source-form', root).outerHTML = asSourceForm();
+      return asLoadSources(root);
+    }
     const rb = e.target.closest('[data-range]');
     if (rb) {
       const key = rb.dataset.range;
@@ -543,6 +578,7 @@ function asToggleMore(e) {
 
 // 各卡片的加载函数：并行请求，各自显示加载中 / 出错
 const asLoaders = {
+  websites: (root) => asLoadSources(root),
   overview: (root, tok) => asLoad(root, tok, ['kpi', 'trend', 'heat', 'cats'], `/admin/analytics/overview?${asQs()}`, asRenderOverview),
   endpoints: (root, tok) => asLoad(root, tok, ['ep'], `/admin/analytics/endpoints?${asQs()}`, asRenderEndpoints),
   audience: (root, tok) => asLoad(root, tok, ['callers', 'sources', 'geo'], `/admin/analytics/audience?${asQs()}`, asRenderAudience),
@@ -550,9 +586,10 @@ const asLoaders = {
   issues: (root, tok) => asLoad(root, tok, ['issues'], `/admin/analytics/issues?${asQs()}`, asRenderIssues),
   health: (root, tok) => asLoad(root, tok, ['health'], '/admin/health', asRenderHealth),
 };
-const asSecOf = { kpi: 'overview', trend: 'overview', heat: 'overview', cats: 'overview', ep: 'endpoints', callers: 'audience', sources: 'audience', geo: 'audience', growth: 'users', issues: 'issues', health: 'health' };
+const asSecOf = { websites: 'websites', kpi: 'overview', trend: 'overview', heat: 'overview', cats: 'overview', ep: 'endpoints', callers: 'audience', sources: 'audience', geo: 'audience', growth: 'users', issues: 'issues', health: 'health' };
 
 function asLoadAll(root) {
+  asState.source.page = 1;
   const tok = ++asState.token;
   for (const fn of Object.values(asLoaders)) fn(root, tok);
 }
@@ -772,7 +809,7 @@ function asExportCsv() {
 const asCappedNote = (w) => {
   if (!w?.capped) return '';
   const days = Math.max(1, Math.round((w.to - w.from) / AS_DAY));
-  return `<div class="as-note warn">来源、地域等明细只保留最近 ${days} 天，这里只统计 ${asYmd(w.from)} 之后的调用</div>`;
+  return `<div class="as-note warn">这部分按尚存调用明细统计，仅覆盖 ${asYmd(w.from)} 之后约 ${days} 天的调用。来源网站的完整日汇总见「来源网站」筛选表。</div>`;
 };
 // limit：超出的行先收起，点「展开全部」再显示
 const asTable = (head, rows, empty = '暂无数据', limit = Infinity) => (rows.length
@@ -781,6 +818,101 @@ const asTable = (head, rows, empty = '暂无数据', limit = Infinity) => (rows.
     ${rows.length > limit ? `<div class="as-pager"><button class="btn sm ghost" type="button" data-as-more>展开全部 ${rows.length} 条</button></div>` : ''}</div>`
   : asEmpty(empty));
 const asIpWhere = (x) => [x.region, x.isp].filter(Boolean).map(esc).join(' · ') || '<span class="faint">未知</span>';
+
+function asSourceForm() {
+  const s = asState.source;
+  const field = (key, title, placeholder, type = 'text') => `<label>${title}<input class="input" type="${type}" name="${key}" value="${esc(s[key])}" placeholder="${placeholder}" ${type === 'number' ? 'min="0" step="1"' : ''}></label>`;
+  const select = (key, title, options) => `<label>${title}<select class="input" name="${key}" aria-label="${title}">${options.map(([v,t]) => `<option value="${esc(v)}" ${s[key] === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  return `<form id="as-source-form" class="as-source-form">
+    ${field('q','网站域名','搜索域名')}${field('user','用户 ID','全部用户','number')}${field('key','Key ID','全部 Key','number')}${field('path','接口路径','如 /api/tools/uuid')}
+    ${select('basis','来源依据',[['','全部依据'],...Object.entries(AS_SOURCE_BASIS)])}${select('state','来源状态',[['','全部状态'],...Object.entries(AS_SOURCE_STATE)])}
+    ${select('sort','排序',[['calls','调用次数'],['errors','失败次数'],['lastAt','最后调用时间']])}${select('size','每页条数',[['10','10 条'],['20','20 条'],['50','50 条'],['100','100 条']])}
+    <div class="actions"><button class="btn sm primary" type="submit">查询来源</button><button class="btn sm" type="button" data-source-reset>重置筛选</button></div>
+  </form>`;
+}
+
+function asSourceQs(extra = {}) {
+  const q = new URLSearchParams(asQs());
+  for (const [k,v] of Object.entries({ ...asState.source, ...extra })) if (v !== '' || k === 'host') q.set(k,String(v));
+  return q;
+}
+let asSourceToken = 0;
+async function asLoadSources(root) {
+  const tok = ++asSourceToken, rangeTok = asState.token, slot = asSlot(root,'websites');
+  slot.setAttribute('aria-busy','true'); slot.innerHTML = asSkel(180);
+  try {
+    const d = await api('GET',`/admin/analytics/sources?${asSourceQs()}`);
+    if (tok !== asSourceToken || rangeTok !== asState.token || !root.isConnected) return;
+    asState.source.page = d.page;
+    asRenderSources(root,d);
+  } catch (err) {
+    if (tok === asSourceToken && rangeTok === asState.token && root.isConnected) slot.innerHTML = asErr(err,'websites');
+  } finally { if (tok === asSourceToken) slot.setAttribute('aria-busy','false'); }
+}
+function asSourceCoverage(c) {
+  return `<div class="as-note">日汇总保留 ${fmtNum(c.retentionDays)} 天，起于 ${esc(asYmd(c.retainedFrom))}；请求明细可查 ${esc(asMd(c.rawFrom))} 之后。失败为已记录调用中 HTTP ≥ 400 的次数，429 沿用单独限流统计。</div>
+    ${!c.complete ? `<div class="as-note warn">${esc(asSourceDate(c.startedAt))} 之前的历史可能不完整。${c.backfilledFrom ? `已回填尚存日志：${esc(asSourceDate(c.backfilledFrom))} 至 ${esc(asSourceDate(c.backfilledTo))}。` : '迁移时没有可回填的旧日志。'}旧版仅留域名，无法恢复来源依据或冲突；可能截断的域名归入未知。</div>` : ''}
+    ${c.missing.length ? `<div class="as-note warn">以下区间覆盖不足，缺失记录无法计入：${c.missing.map(m=>`${esc(asSourceDate(m.from))} 至 ${esc(asSourceDate(m.to))}（${m.reason === 'retention' ? '超出汇总保留期' : m.reason === 'before_backfill' ? '早于可回填的历史记录' : '非整日边界的明细已过期'}）`).join('；')}</div>` : ''}`;
+}
+function asSourcePager(d, attr) {
+  return `<div class="as-pager"><button class="btn sm" type="button" ${attr}="${d.page-1}" ${d.page<=1?'disabled':''}>上一页</button><span class="small faint" aria-live="polite">第 ${d.page} / ${d.pages} 页 · 共 ${fmtNum(d.total)} 组</span><button class="btn sm" type="button" ${attr}="${d.page+1}" ${d.page>=d.pages?'disabled':''}>下一页</button></div>`;
+}
+function asRenderSources(root,d) {
+  const rows = d.items.map(r=>`<tr><td class="as-source-host"><button class="btn sm ghost" type="button" data-source-host="${esc(r.host ?? '')}" title="查看用户、Key 标签与请求明细">${esc(r.host ?? '未知来源')}</button>${r.conflicts ? ' <span class="badge danger">有冲突</span>':''}${r.legacy ? ' <span class="badge">旧版</span>':''}</td>
+    <td class="num">${fmtNum(r.calls)}</td><td class="num">${asPct(r.share)}</td><td class="num">${fmtNum(r.errors)}</td><td class="num">${fmtNum(r.users)} / ${fmtNum(r.keys)}</td><td class="small nowrap" title="${esc(shortDate(r.lastAt))}">${esc(asMd(r.lastAt))}</td></tr>`);
+  asSlot(root,'websites').innerHTML = `<div class="as-body"><div class="as-sub" aria-live="polite">${fmtNum(d.totals.calls)} 次调用 · ${fmtNum(d.totals.errors)} 次失败 · ${fmtNum(d.totals.unknown)} 次未知 · ${fmtNum(d.totals.conflicts)} 次冲突</div>
+    <div class="as-note">有效 Origin 优先，Referer 兜底；只记录域名。两头不同时标记冲突。请求头可伪造，不能作为身份认证。Key 标签用于辅助归属。</div>
+    <div class="as-note as-mobile-note">表格可左右滑动，点击网站查看归属与请求。</div>
+    ${asTable([['网站（点击查看明细）'],['调用','num'],['占筛选结果','num'],['失败','num'],['用户 / Key','num'],['最后调用','nowrap']],rows,'没有符合条件的来源，请调整筛选或时间范围')}
+    ${asSourcePager(d,'data-source-page')}
+    <div class="as-note">占比以全部筛选结果 ${fmtNum(d.totals.calls)} 次为分母；本页以外来源 ${fmtNum(d.otherCalls)} 次（含其他页的未知来源）。</div>
+    <div class="as-note">${d.basis.map(b=>`${esc(AS_SOURCE_BASIS[b.basis] ?? b.basis)} / ${esc(AS_SOURCE_STATE[b.state] ?? b.state)} ${fmtNum(b.calls)} 次`).join(' · ')}</div>
+    ${asSourceCoverage(d.coverage)}</div>`;
+}
+
+function asOpenSource(host) {
+  const returnFocus = document.activeElement;
+  // Snapshot filters so a detail pager always refers to the same query.
+  const query = asSourceQs({ host, page:1 }), rangeQuery = query.toString();
+  modal(`<div class="as-source-detail"><h2>${esc(host || '未知来源')}</h2><p class="small faint">按当前时间与筛选查看归属。请求头可伪造；Key 标签来自当前记录，只作辅助，旧 Key 改名、删除或编号复用时无法恢复历史标签。</p>
+    <div class="as-note as-mobile-note">表格可左右滑动查看全部字段。</div>
+    <h3>用户、Key 与接口</h3><div data-source-attribution></div><h3>尚存请求明细</h3><div data-source-requests></div><div class="actions"><button class="btn" data-close>关闭</button></div></div>`, (root,close)=>{
+    $('[data-close]',root).onclick=close;
+    $('.modal',root).setAttribute('aria-label',`${host || '未知来源'}的调用明细`);
+    $('[data-close]',root).focus();
+    root.addEventListener('keydown',e=>{
+      if(e.key !== 'Tab') return;
+      const buttons=[...root.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled])')];
+      const first=buttons[0],last=buttons.at(-1);
+      if(e.shiftKey && document.activeElement===first){e.preventDefault();last?.focus();}
+      else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first?.focus();}
+    });
+    let generation=0;
+    const load = async (section,page=1) => {
+      const el=$(`[data-source-${section}]`,root), tok=++generation;
+      el.dataset.generation=String(tok);
+      const q=new URLSearchParams(rangeQuery); q.set('page',String(page));
+      el.innerHTML=asSkel(100); el.setAttribute('aria-busy','true');
+      try {
+        const d=await api('GET',`/admin/analytics/source-${section}?${q}`);
+        if (!root.isConnected || tok !== Number(el.dataset.generation)) return;
+        const rows=d.items.map(r=>section==='attribution' ? `<tr><td>${esc(r.email || (r.user_id ? `已删除用户 #${r.user_id}`:'未登录'))}</td><td>${esc(r.keyName || (r.key_id ? `已删除 Key #${r.key_id}`:'无 Key'))}<span class="faint small">${r.key_id ? ` #${r.key_id}`:''}</span></td><td class="mono small">${esc(r.path)}</td><td class="num">${fmtNum(r.calls)}</td><td class="num">${fmtNum(r.errors)}</td><td class="nowrap small">${esc(asMd(r.lastAt))}</td></tr>`
+          : `<tr><td class="small nowrap">${esc(asMd(r.ts))}</td><td class="mono small">${esc(r.path)}</td><td>${r.status}</td><td>${esc(AS_SOURCE_BASIS[r.basis] || r.basis)} / ${esc(AS_SOURCE_STATE[r.state] || r.state)}</td><td>${r.rid ? `<button class="btn sm" data-source-rid="${esc(r.rid)}">查看请求</button>`:'旧日志无请求 ID'}</td></tr>`);
+        el.innerHTML=asTable(section==='attribution' ? [['用户'],['Key 标签'],['接口'],['调用','num'],['失败','num'],['最后时间']] : [['时间'],['接口'],['状态'],['来源依据 / 状态'],['详情']], rows, section==='attribution'?'没有符合条件的归属记录':'没有尚存的请求明细，日汇总仍按保留期保存')
+          +asSourcePager(d,`data-source-${section}-page`)+(section==='attribution'?asSourceCoverage(d.coverage):`<div class="as-note">仅展示保留期内的原始明细；旧日志或未记录的调用可能没有请求 ID。${d.capped?'所选范围已超出明细保留期。':''}</div>`);
+      } catch(err) { if(root.isConnected && tok===Number(el.dataset.generation))el.innerHTML=`<div class="form-error">${esc(err.message)} <button class="btn sm" data-source-${section}-page="${page}">重试</button></div>`; }
+      finally {if(tok===Number(el.dataset.generation))el.setAttribute('aria-busy','false');}
+    };
+    root.addEventListener('click',e=>{
+      for(const section of ['attribution','requests']) {
+        const b=e.target.closest(`[data-source-${section}-page]`);
+        if(b)return load(section,Number(b.getAttribute(`data-source-${section}-page`)));
+      }
+      const rid=e.target.closest('[data-source-rid]'); if(rid) {close();lookupRequest(rid.dataset.sourceRid);}
+    });
+    load('attribution'); load('requests');
+  },()=>{if(returnFocus?.isConnected)returnFocus.focus();});
+}
 
 function asRenderAudience(root, d) {
   const via = ['anon', 'session', 'apikey'].map((k) => ({ k, calls: d.via.find((v) => v.via === k)?.calls ?? 0 }));
@@ -808,13 +940,9 @@ function asRenderAudience(root, d) {
           <td class="num">${fmtNum(x.users)}</td><td class="num">${fmtNum(x.calls)}</td></tr>`), '暂无数据', 10)}</div>
     </div>${asCappedNote(d.window)}</div>`;
 
-  const refTotal = d.referers.reduce((s, r) => s + r.calls, 0) + d.noReferer;
   const cliTotal = d.clients.reduce((s, r) => s + r.calls, 0);
   asSlot(root, 'sources').innerHTML = `<div class="as-body">
-    <div class="as-sub">来源网站 <span class="faint">按 Referer 的域名</span></div>
-    ${d.referers.length || d.noReferer ? asHBars([...d.referers.map((r) => ({ label: esc(r.host), title: r.host, value: r.calls })),
-      ...(d.noReferer ? [{ label: '<span class="faint">无来源（直接调用 / 程序调用）</span>', value: d.noReferer, color: 'var(--text-3)' }] : [])], { total: refTotal }) : asEmpty()}
-    <div class="as-sub" style="margin-top:18px">客户端类型 <span class="faint">按 User-Agent 判断</span></div>
+    <div class="as-sub">客户端类型 <span class="faint">按 User-Agent 判断</span></div>
     ${asHBars(d.clients.map((c) => ({ label: esc(c.name), value: c.calls, color: 'var(--series-2)' })), { total: cliTotal })}
     ${asCappedNote(d.window)}</div>`;
 
@@ -979,7 +1107,9 @@ function asOpenDrill(path) {
         <div><div class="as-sub">调用最多的 IP</div>${asHBars(d.topIps.map((x) => ({ label: `<span class="mono small">${esc(x.ip ?? '未知')}</span>`, sub: asIpWhere(x), value: x.calls, color: 'var(--series-2)' })))}</div>
       </div>
       <div class="as-grid2 as-dsec">
-        <div><div class="as-sub">来源网站</div>${asHBars(d.referers.map((r) => ({ label: esc(r.host), title: r.host, value: r.calls })))}</div>
+        <div><div class="as-sub">来源网站 <span class="faint">占这段时间全部调用</span></div>${asHBars([...d.referers.map((r) => ({ label: esc(r.host), title: r.host, value: r.calls })),
+          ...(d.otherReferer ? [{ label: '其他来源网站', value: d.otherReferer }] : []), ...(d.noReferer ? [{ label: '未知来源', value: d.noReferer }] : [])], { total: d.refererTotal })}
+          <div class="as-note">有效 Origin 优先，Referer 兜底。请求头可伪造，不能作为身份认证。</div></div>
         <div><div class="as-sub">客户端</div>${asHBars(d.clients.map((c) => ({ label: esc(c.name), value: c.calls, color: 'var(--series-2)' })))}</div>
       </div>
       <div class="as-dsec"><div class="as-sub">最近的自动检测</div>${asTable([['时间', 'nowrap'], ['结果'], ['状态'], ['耗时', 'num'], ['说明']], d.health.map((h) => `<tr>

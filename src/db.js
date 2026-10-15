@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { dataDir } from './lib/paths.js';
+import { migrateSources } from './lib/source-migration.js';
 
 // node:sqlite 仍标记为实验特性，屏蔽其启动警告
 const emit = process.emitWarning;
@@ -330,3 +331,5 @@ try {
   db.exec('ROLLBACK');
   throw e;
 }
+
+migrateSources(db);

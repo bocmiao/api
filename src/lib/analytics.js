@@ -42,6 +42,7 @@ export function parseRange(query, now = Date.now()) {
     const t = query.get('to');
     if (!DATE_RE.test(f ?? '') || !DATE_RE.test(t ?? '')) throw new HttpError(400, '自定义范围需要 from 和 to，格式 YYYY-MM-DD');
     from = Date.parse(`${f}T00:00:00+08:00`);
+    if (!Number.isFinite(from) || bjDay(from) !== f || !Number.isFinite(Date.parse(`${t}T00:00:00+08:00`)) || bjDay(Date.parse(`${t}T00:00:00+08:00`)) !== t) throw new HttpError(400, '请选择有效日期');
     to = Math.min(Date.parse(`${t}T00:00:00+08:00`) + DAY, now);
     if (!(to > from)) throw new HttpError(400, '结束日期不能早于开始日期');
     if (to - from > 3660 * DAY) throw new HttpError(400, '时间范围最长 10 年');
@@ -239,7 +240,7 @@ function rawWindow(range) {
   return { from, to: range.to, capped: from > range.from };
 }
 const topBy = (col, from, to, limit, extra = '', args = []) => sql(`SELECT ${col} AS k, COUNT(*) AS calls FROM request_log
-  WHERE ts >= ? AND ts < ? AND ${col} IS NOT NULL ${extra} GROUP BY ${col} ORDER BY calls DESC LIMIT ?`).all(from, to, ...args, limit);
+  WHERE ts >= ? AND ts < ? AND ${col} IS NOT NULL ${extra} GROUP BY ${col} ORDER BY calls DESC, ${col} LIMIT ?`).all(from, to, ...args, limit);
 
 export function audience(range) {
   flushStats();
@@ -268,6 +269,9 @@ export function audience(range) {
     ips: { total: ipTotal, new: newIps, returning: ipTotal - newIps },
     referers: topBy('referer', from, to, 20).map((r) => ({ host: r.k, calls: r.calls })),
     noReferer: sql('SELECT COUNT(*) AS n FROM request_log WHERE ts >= ? AND ts < ? AND referer IS NULL').get(from, to).n,
+    refererTotal: sql('SELECT COUNT(*) AS n FROM request_log WHERE ts >= ? AND ts < ?').get(from, to).n,
+    otherReferer: sql(`SELECT COUNT(*) AS n FROM request_log WHERE ts >= ? AND ts < ? AND referer IS NOT NULL
+      AND referer NOT IN (SELECT referer FROM request_log WHERE ts >= ? AND ts < ? AND referer IS NOT NULL GROUP BY referer ORDER BY COUNT(*) DESC, referer LIMIT 20)`).get(from, to, from, to).n,
     clients: topBy('client', from, to, 20).map((r) => ({ client: r.k, name: CLIENT_NAMES[r.k] ?? r.k, calls: r.calls })),
     regions: regions.map((r) => ({ region: r.k, calls: r.calls, ips: r.ips })),
     unknownRegion,
@@ -376,6 +380,10 @@ export function endpointDetail(range, path) {
     topIps: sql(`SELECT ip, MAX(region) AS region, MAX(isp) AS isp, COUNT(*) AS calls FROM request_log WHERE ${where}
       GROUP BY ip ORDER BY calls DESC LIMIT 10`).all(...args),
     referers: topBy('referer', w.from, w.to, 10, 'AND path = ?', [path]).map((r) => ({ host: r.k, calls: r.calls })),
+    refererTotal: sql(`SELECT COUNT(*) AS n FROM request_log WHERE ${where}`).get(...args).n,
+    noReferer: sql(`SELECT COUNT(*) AS n FROM request_log WHERE ${where} AND referer IS NULL`).get(...args).n,
+    otherReferer: sql(`SELECT COUNT(*) AS n FROM request_log WHERE ${where} AND referer IS NOT NULL
+      AND referer NOT IN (SELECT referer FROM request_log WHERE ${where} AND referer IS NOT NULL GROUP BY referer ORDER BY COUNT(*) DESC, referer LIMIT 10)`).get(...args, ...args).n,
     clients: topBy('client', w.from, w.to, 10, 'AND path = ?', [path]).map((r) => ({ client: r.k, name: CLIENT_NAMES[r.k] ?? r.k, calls: r.calls })),
     health: sql('SELECT ts, ok, status, ms, error FROM health_checks WHERE path = ? ORDER BY ts DESC LIMIT 20').all(path),
   };

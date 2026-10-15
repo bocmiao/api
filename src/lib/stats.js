@@ -3,6 +3,7 @@
 import { db, sql, STAT_COLS } from '../db.js';
 import { today } from './day.js';
 import { lookupIpOffline } from '../apis/life/offline-db.js';
+import { requestSource } from './source.js';
 
 // 耗时分桶上限（毫秒），最后一桶为 >5000
 export const LAT_EDGES = [50, 100, 200, 300, 500, 800, 1200, 2000, 5000];
@@ -55,13 +56,7 @@ export const CLIENT_NAMES = {
 
 // 来源网站：只记 Referer / Origin 的域名，不记完整网址
 export function refererHost(headers = {}) {
-  const raw = headers.referer || headers.origin || '';
-  try {
-    const u = new URL(raw);
-    return /^https?:$/.test(u.protocol) ? u.hostname.toLowerCase().slice(0, 100) : null;
-  } catch {
-    return null;
-  }
+  return requestSource(headers).host;
 }
 
 // IP 属地：离线 IP 库，结果缓存，避免重复查询

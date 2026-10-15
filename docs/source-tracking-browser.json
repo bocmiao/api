@@ -1,0 +1,16 @@
+{
+  "browser": "153.0.8010.12",
+  "checks": [
+    "desktop pagination",
+    "combined website/user/key/path/state filters",
+    "key label escaped",
+    "request detail source provenance",
+    "empty state",
+    "error and retry",
+    "390px and 320px layouts, reduced motion",
+    "keyboard submit",
+    "mobile dialog, focus trap/return and Escape",
+    "admin authorization in browser"
+  ],
+  "pageErrors": []
+}

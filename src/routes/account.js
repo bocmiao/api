@@ -32,6 +32,7 @@ import { loadIpInfo, normalizeIp } from '../apis/life/ip.js';
 import { parseRange, overview, endpoints, endpointDetail, audience, userGrowth, issues, statusData } from '../lib/analytics.js';
 import { healthStatus, runHealthCheck } from '../lib/health.js';
 import { normalizeRules } from '../lib/keysource.js';
+import { sources, sourceAttribution, sourceRequests } from '../lib/source-analytics.js';
 import { audit, requireReason, recordLogin } from '../lib/audit.js';
 import { moduleOptions, setModuleOptions } from '../lib/modules.js';
 import { clearModuleCache } from '../lib/cache.js';
@@ -770,6 +771,9 @@ analyticsRoute('endpoint', (range, ctx) => endpointDetail(range, String(ctx.quer
 analyticsRoute('audience', (range) => audience(range));
 analyticsRoute('users', (range) => userGrowth(range));
 analyticsRoute('issues', (range) => issues(range));
+analyticsRoute('sources', (range, ctx) => sources(range, ctx.query));
+analyticsRoute('source-attribution', (range, ctx) => sourceAttribution(range, ctx.query));
+analyticsRoute('source-requests', (range, ctx) => sourceRequests(range, ctx.query));
 
 r('GET', '/admin/health', (ctx) => {
   requireAdmin(ctx);

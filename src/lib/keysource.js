@@ -1,4 +1,4 @@
-// API Key 来源限制：Key 写在网页里难免被人看到，限制只能从指定网站或服务器 IP 调用后，别人拿去也用不了。
+// API Key 来源限制：域名头可以伪造，只是调用策略，不能代替 Key 保密和身份认证。
 // 每行一条规则：
 //   example.com      该域名（不含子域名）的网页
 //   *.example.com    所有子域名（不含 example.com 本身）
@@ -7,6 +7,7 @@
 import net from 'node:net';
 import { HttpError } from './http.js';
 import { parseIPv6 } from './netguard.js';
+import { requestSource, websiteHost } from './source.js';
 
 export const MAX_RULES = 20;
 const DOMAIN_RE = /^(\*\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -19,7 +20,8 @@ export function parseRule(raw) {
   if (!s) return null;
   // 允许直接粘贴网址：https://www.example.com/path → www.example.com
   if (/^https?:\/\//.test(s)) {
-    try { s = new URL(s).hostname; } catch { return null; }
+    s = websiteHost(s);
+    if (!s) return null;
   }
   const [addr, bitsRaw] = s.split('/');
   if (net.isIPv4(addr)) {
@@ -73,11 +75,7 @@ function hostMatches(rule, host) {
 
 // 请求来自哪个网站：优先 Origin，其次 Referer
 export function sourceHost(headers = {}) {
-  for (const h of [headers.origin, headers.referer]) {
-    if (!h || h === 'null') continue;
-    try { return new URL(h).hostname.toLowerCase(); } catch { /* 忽略格式不对的头 */ }
-  }
-  return null;
+  return requestSource(headers).host;
 }
 
 // 不满足来源限制时抛 403

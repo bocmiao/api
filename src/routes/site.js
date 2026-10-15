@@ -378,12 +378,13 @@ r('GET', '/admin/request', (ctx) => {
   const rid = String(ctx.query.get('rid') ?? '').trim();
   if (!/^[a-z0-9]{6,12}-[0-9a-f]{10}$/.test(rid)) throw new HttpError(400, '请求 ID 格式不正确，形如 mfx3k2a1-9f3c2b1a0d');
   const row = sql(`SELECT l.*, u.email, k.name AS keyName, k.prefix AS keyPrefix FROM request_log l
-                   LEFT JOIN users u ON u.id = l.user_id LEFT JOIN api_keys k ON k.id = l.key_id WHERE l.rid = ?`).get(rid);
+                   LEFT JOIN users u ON u.id = l.user_id LEFT JOIN api_keys k ON k.id = l.key_id AND k.user_id = l.user_id WHERE l.rid = ?`).get(rid);
   if (!row) throw new HttpError(404, '没有找到这个请求：可能已超过调用明细保留天数，或这次请求没有记录（如被限流、调用的是非接口地址）');
   return {
     data: {
       rid: row.rid, at: new Date(row.ts).toISOString(), path: row.path, status: row.status, ms: row.ms, error: row.error,
       cached: row.cached, bytes: row.bytes, via: row.via, ip: row.ip, region: row.region, isp: row.isp, referer: row.referer, client: row.client,
+      source: { host: row.referer, basis: row.source_basis, state: row.source_state, originHost: row.origin_host, refererHost: row.referer_host },
       user: row.user_id ? { id: row.user_id, email: row.email } : null,
       key: row.key_id ? { id: row.key_id, name: row.keyName, prefix: row.keyPrefix } : null,
     },

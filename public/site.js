@@ -425,6 +425,8 @@ async function lookupRequest(rid) {
       ${row('调用方', r.user ? `${esc(r.user.email)}${r.key ? ` · Key「${esc(r.key.name)}」<span class="mono faint">${esc(r.key.prefix)}…</span>` : ' · 网页登录'}` : '未登录访客')}
       ${row('IP', `<span class="mono">${esc(r.ip ?? '—')}</span> ${esc([r.region, r.isp].filter(Boolean).join(' · '))}`)}
       ${row('来源网站', esc(r.referer ?? '—'))}
+      ${r.source ? row('来源依据 / 状态', `${esc(({ origin: 'Origin', referer: 'Referer', unknown: '未知', legacy: '旧版回填（依据不可恢复）' })[r.source.basis] ?? r.source.basis)} / ${esc(({ matched: '两头一致', conflict: '来源冲突', single: '单一有效头', fallback: 'Referer 兜底', missing: '未提供来源', opaque: 'null 来源', invalid: '来源无效', legacy: '旧版（依据缺失）', legacy_unverifiable: '旧版域名无法核实' })[r.source.state] ?? r.source.state)}`) : ''}
+      ${r.source ? row('来源头中的域名', `Origin：${esc(r.source.originHost ?? '—')}<br>Referer：${esc(r.source.refererHost ?? '—')}<br><span class="faint small">请求头可伪造，不能作为身份认证；仅保留域名。</span>`) : ''}
       ${row('客户端', esc(r.client ?? '—'))}
       ${row('返回大小', r.bytes != null ? `${fmtNum(r.bytes)} 字节` : '—')}
     </tbody></table></div>

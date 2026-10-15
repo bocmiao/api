@@ -44,6 +44,7 @@ export const config = {
 
   get logRetentionDays() { return int('LOG_RETENTION_DAYS', 30); },
   get statsHourlyDays() { return int('STATS_HOURLY_DAYS', 90); },
+  get sourceRetentionDays() { return Math.min(3660, Math.max(1, int('SOURCE_RETENTION_DAYS', 365))); },
   get healthCheckMinutes() { return int('HEALTH_CHECK_INTERVAL_MIN', 30); },
   get notifyIntervalMin() { return int('NOTIFY_INTERVAL_MIN', 15); },
 
