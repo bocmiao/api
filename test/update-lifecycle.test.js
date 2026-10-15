@@ -74,7 +74,7 @@ assert.equal(before.restartNeeded, false);
 globalThis.fetch = async (input) => {
   const url = String(input);
   if (url.includes('/commits/')) return Response.json({ sha: meta.sha, commit: { message: 'target\n\n- fixture change', committer: { date: '2026-10-15T10:00:00Z' } } });
-  if (url.includes('/compare/')) return Response.json({ status: url.includes(meta.sha+'...Miao-API') ? 'identical' : 'ahead', ahead_by: 1, commits: [{ sha: meta.sha, commit: { message: 'target\n\n- fixture change' } }] });
+  if (url.includes('/compare/')) return Response.json({ status: url.includes(meta.sha+'...Miao-API') ? 'identical' : 'ahead', merge_base_commit:{sha:url.includes(meta.sha+'...Miao-API')?meta.sha:meta.oldSha}, ahead_by: 1, commits: [{ sha: meta.sha, commit: { message: 'target\n\n- fixture change' } }] });
   if (url.includes('/git/trees/')) return Response.json(mode === 'online-full' ? { truncated: true } : meta.tree);
   if (url.includes('/tarball/')) return new Response(readFileSync(join(dir, 'update.tar.gz')));
   const path = url.split('/'+meta.sha+'/')[1];

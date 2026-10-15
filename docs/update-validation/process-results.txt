@@ -1,0 +1,11 @@
+✔ 进程端到端：替换后旧 HTTP 进程保持旧身份并等待重启 (4430.15637ms)
+✔ 进程端到端：分支前进后的合法旧 ZIP 由真实 launcher 重启并通过实际 20 秒观察 (26493.429915ms)
+✔ 进程端到端：真实新进程崩溃后 launcher 自动恢复旧代码与安装记录 (8538.160677ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42575.254621

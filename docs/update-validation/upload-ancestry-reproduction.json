@@ -1,0 +1,34 @@
+[
+  {
+    "name": "ancestor",
+    "status": "ahead",
+    "ahead": 1,
+    "behind": 0,
+    "before": false,
+    "after": true
+  },
+  {
+    "name": "current",
+    "status": "identical",
+    "ahead": 0,
+    "behind": 0,
+    "before": true,
+    "after": true
+  },
+  {
+    "name": "successor",
+    "status": "behind",
+    "ahead": 0,
+    "behind": 1,
+    "before": true,
+    "after": false
+  },
+  {
+    "name": "diverged",
+    "status": "diverged",
+    "ahead": 1,
+    "behind": 1,
+    "before": false,
+    "after": false
+  }
+]

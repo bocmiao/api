@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { deflateRawSync } from 'node:zlib';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -92,17 +92,75 @@ test('核对官方代码：必须是本仓库分支上的提交，且每个文�
   }) };
   const fakeGh = (status) => async (p) => {
     if (p.endsWith('/repos/bocmiao/api')) return { default_branch: 'Miao-API' };
-    if (p.includes('/compare/')) return { status };
+    if (p.includes('/compare/')) return { status, merge_base_commit: { sha } };
     if (p.includes('/git/trees/')) return tree;
     throw new Error('unexpected ' + p);
   };
   await verifyUploadOfficial(entries, sha, { gh: fakeGh('identical') });
-  await verifyUploadOfficial(entries, sha, { gh: fakeGh('behind') }); // 旧版本也可以
+  await verifyUploadOfficial(entries, sha, { gh: fakeGh('ahead') }); // HEAD（配置分支）领先上传 SHA
+  await assert.rejects(verifyUploadOfficial(entries, sha, { gh: fakeGh('behind') }), /不是 .* 分支上的代码/);
   await assert.rejects(verifyUploadOfficial(entries, sha, { gh: fakeGh('diverged') }), /不是 .* 分支上的代码/);
   await assert.rejects(verifyUploadOfficial(entries, null, { gh: fakeGh('identical') }), /没有 GitHub 提交记录/);
   const tampered = entries.map((e) => (e.path.endsWith('src/app.js') ? { ...e, data: Buffer.from('evil') } : e));
   await assert.rejects(verifyUploadOfficial(tampered, sha, { gh: fakeGh('identical') }), /与 GitHub 官方不一致（src\/app\.js）/);
   await assert.rejects(verifyUploadOfficial(entries, sha, { gh: async () => { throw Object.assign(new Error('无法连接 GitHub'), { status: 502 }); } }), /无法连接 GitHub 核对更新包/);
+});
+
+test('真实 Git 提交图：上传包可为分支祖先/当前，后继/分叉拒绝，祖先关系与文件核验同时满足', async () => {
+  const root = mkdtempSync(join(tmp, 'ancestry-'));
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], {encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
+  git('init', '-q');
+  const commit = (value) => {
+    writeFileSync(join(root,'package.json'),JSON.stringify({name:'fixture',version:'0.11.1',marker:value}));
+    git('add','.'); git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm',value);
+    return git('rev-parse','HEAD');
+  };
+  const ancestor=commit('ancestor');
+  const current=commit('current'); git('branch','Miao-API',current);
+  const successor=commit('successor'); git('branch','unmerged-successor',successor);
+  git('checkout','-q','--detach',ancestor); const diverged=commit('diverged');
+  const compare = (base, head) => {
+    // GitHub BASE...HEAD 的计数来自真实 Git，不手写关系状态。
+    const [behind,ahead]=git('rev-list','--left-right','--count',`${base}...${head}`).split(/\s+/).map(Number);
+    return {status:!behind&&!ahead?'identical':!behind?'ahead':!ahead?'behind':'diverged',
+      ahead_by:ahead,behind_by:behind,merge_base_commit:{sha:git('merge-base',base,head)}};
+  };
+  const relations = [[ancestor,'ahead',true],[current,'identical',true],[successor,'behind',false],[diverged,'diverged',false]];
+  const previousBranch=process.env.UPDATE_BRANCH; process.env.UPDATE_BRANCH='Miao-API';
+  try {
+    for (const [sha,status,allowed] of relations) {
+      const archive=execFileSync('git',['-C',root,'archive','--format=zip','--prefix=fixture/',sha]);
+      const {entries,sha:archiveSha}=unpackUpload(archive,join(tmp,'ancestry-package'));
+      assert.equal(archiveSha,sha);
+      const expected=compare(sha,'Miao-API'); assert.equal(expected.status,status);
+      // 独立用 Git 的祖先退出码判定许可，防止计数映射与被测实现互相掩盖。
+      const {status:ancestryExit}= (await import('node:child_process')).spawnSync('git',['-C',root,'merge-base','--is-ancestor',sha,'Miao-API']);
+      assert.equal(ancestryExit===0,allowed);
+      let trees=0;
+      const api=async path=>{
+        if(path.includes('/compare/')) {
+          assert.ok(path.endsWith(`/compare/${sha}...Miao-API`));
+          return expected;
+        }
+        if(path.includes('/git/trees/')) {
+          trees++;
+          return {truncated:false,tree:git('ls-tree','-r',sha).split('\n').map(line=>{const [meta,path]=line.split('\t'),[mode,type,blob]=meta.split(' ');return {path,mode,type,sha:blob};})};
+        }
+        throw new Error('unexpected '+path);
+      };
+      if(allowed) {
+        await verifyUploadOfficial(entries,sha,{gh:api});
+        assert.equal(trees,1);
+        const tampered=entries.map(e=>e.type==='file'?{...e,data:Buffer.from('tampered')}:e);
+        await assert.rejects(verifyUploadOfficial(tampered,sha,{gh:api}),/与 GitHub 官方不一致/);
+        await assert.rejects(verifyUploadOfficial(entries,sha,{gh:async path=>path.includes('/compare/')?{...expected,merge_base_commit:{sha:successor}}:api(path)}),/不是 .* 分支上的代码/);
+        await assert.rejects(verifyUploadOfficial(entries,sha,{gh:async path=>path.includes('/compare/')?{status:expected.status}:api(path)}),/不是 .* 分支上的代码/);
+      } else {
+        await assert.rejects(verifyUploadOfficial(entries,sha,{gh:api}),/不是 .* 分支上的代码/);
+        assert.equal(trees,0,'不合法祖先关系在读取文件树前拒绝');
+      }
+    }
+  } finally {if(previousBranch==null)delete process.env.UPDATE_BRANCH;else process.env.UPDATE_BRANCH=previousBranch;}
 });
 
 test('上传前必须再输一次密码：确认码 5 分钟内有效、只能用一次、错误密码被拒', async () => {

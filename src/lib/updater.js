@@ -124,7 +124,11 @@ export async function verifyUploadOfficial(entries, sha, { gh: api = gh } = {}) 
   try {
     branch ||= (await api(`/repos/${cfg.repo}`)).default_branch;
     const cmp = await api(`/repos/${cfg.repo}/compare/${sha}...${encodeURIComponent(branch)}`);
-    if (!['identical', 'behind'].includes(cmp?.status)) throw new HttpError(400, `这个更新包不是 ${cfg.repo} 仓库 ${branch} 分支上的代码，已拒绝`);
+    // GitHub 比较的是 BASE...HEAD：HEAD（配置分支）领先上传提交才是合法旧包。
+    // 同时核对 merge base 就是上传 SHA，拒绝后继、分叉及缺失祖先证据的响应。
+    if (!['identical', 'ahead'].includes(cmp?.status) || cmp.merge_base_commit?.sha !== sha) {
+      throw new HttpError(400, `这个更新包不是 ${cfg.repo} 仓库 ${branch} 分支上的代码，已拒绝`);
+    }
     verifyEntriesAgainstTree(entries, await api(`/repos/${cfg.repo}/git/trees/${sha}?recursive=1`), '上传');
   } catch (err) {
     if (err.status === 400) throw err;
