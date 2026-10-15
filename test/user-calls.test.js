@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { db, sql } from '../src/db.js';
 import { logRequest, pruneLogs, today } from '../src/lib/limits.js';
 import { createSession, generateApiKey } from '../src/lib/auth.js';
@@ -172,7 +173,7 @@ test('注销最高 ID 后再注册不复用账号 ID、不继承原账号调用�
 });
 
 test('持久数据库首次事务回填，重启迁移幂等，清理原日志后汇总不丢', () => {
-  const dir=mkdtempSync(join(process.cwd(),'data/onboarding/migration-'));
+  const dir=mkdtempSync(join(tmpdir(),'miao-user-calls-migration-'));
   const file=join(dir,'fixture.db');
   const run=code=>{
     const r=spawnSync(process.execPath,['--input-type=module','-e',code],{cwd:process.cwd(),env:{...process.env,DB_FILE:file},encoding:'utf8'});

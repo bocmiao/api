@@ -12,6 +12,13 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 const { extractTar } = await import('../src/lib/tar.js');
 const { unpackTo, checkUpdate, verifyAgainstGitHub, mirrorUrl, buildStagingIncremental, makeFileFetcher, fileSources } = await import('../src/lib/updater.js');
 const { swapIn, writePending, readPending, rollbackPending } = await import('../src/lib/swap.js');
+const { codeDigest, packageVersion } = await import('../src/lib/deployment.js');
+
+function recordInstallation(sha = 'a'.repeat(40)) {
+  mkdirSync(process.env.DATA_DIR, { recursive: true });
+  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ schema: 2,
+    version: packageVersion(), sha, codeDigest: codeDigest(), installationId: '11111111-1111-4111-8111-111111111111' }));
+}
 
 // 构造 GitHub 风格的 tar.gz：pax 全局头带提交 SHA，所有文件位于 "owner-repo-sha/" 之下
 function header(name, size, type) {
@@ -109,8 +116,8 @@ test('替换中途失败时恢复原样', () => {
   assert.equal(readFileSync(join(root, 'src/a.js'), 'utf8'), 'old');
 });
 
-function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200, compareCount = 1, aheadBy = compareCount, updateNotes = null }) {
-  const commit = (h, msg) => ({ sha: h, commit: { message: `${msg} [skip ci]\n\n- 修复 QQ 昵称编码\n- 头像接口保持兼容`, author: { name: 'bocmiao', date: '2026-09-25T10:00:00Z' }, committer: { date: '2026-09-25T10:00:00Z' } } });
+function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200, compareCount = 1, aheadBy = compareCount, updateNotes = null, body = '- 修复 QQ 昵称编码\n- 头像接口保持兼容', rangeStatus = 'ahead' }) {
+  const commit = (h, msg) => ({ sha: h, commit: { message: `${msg} [skip ci]\n\n${body}`, author: { name: 'bocmiao', date: '2026-09-25T10:00:00Z' }, committer: { date: '2026-09-25T10:00:00Z' } } });
   mock.method(globalThis, 'fetch', async (url) => {
     const u = String(url);
     if (u.endsWith('/repos/bocmiao/api')) return Response.json({ default_branch: 'Miao-API' });
@@ -119,7 +126,7 @@ function mockGitHub({ version, changelog, sha = 'ccc3333', compareStatus = 200, 
     if (u.includes('/contents/CHANGELOG.md') || u.endsWith('/CHANGELOG.md')) return changelog == null ? new Response('', { status: 404 }) : new Response(changelog);
     if (u.includes('/contents/UPDATE_NOTES.json') || u.endsWith('/UPDATE_NOTES.json')) return new Response(updateNotes ?? '[]');
     if (u.includes('/compare/')) return compareStatus === 200
-      ? Response.json({ ahead_by: aheadBy, commits: Array.from({ length: compareCount }, (_, i) => commit(i === compareCount - 1 ? sha : `commit${i}`, `Change ${i}`)) })
+      ? Response.json({ status: rangeStatus, ahead_by: aheadBy, commits: Array.from({ length: compareCount }, (_, i) => commit(i === compareCount - 1 ? sha : `commit${i}`, `Change ${i}`)) })
       : new Response('', { status: compareStatus });
     return new Response('', { status: 404 });
   });
@@ -174,7 +181,7 @@ test('检查更新：仓库中的版本比当前旧时不提示更新', async ()
 
 test('检查更新：版本号相同但代码不同视为小修复', async () => {
   const { localVersion } = await import('../src/lib/updater.js');
-  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  recordInstallation();
   mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222' });
   const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
@@ -190,9 +197,9 @@ test('同版本用户说明按实际功能提交筛选，并覆盖回顾性提�
   const { localVersion, parseUpdateNotes, localChangelog } = await import('../src/lib/updater.js');
   const notes = readFileSync(join(process.cwd(), 'UPDATE_NOTES.json'), 'utf8');
   const entries = parseUpdateNotes(notes);
-  assert.deepEqual(entries.map((e) => e.sha.slice(0, 7)), ['037984b', 'ed78af3', 'eb118ed', '142a564', '5d89286']);
-  assert.deepEqual(localChangelog().filter((e) => e.date?.includes('同版本更新')).map((e) => e.date.match(/[0-9a-f]{7}$/)[0]), ['5d89286', '142a564', 'eb118ed', 'ed78af3', '037984b']);
-  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  assert.deepEqual(entries.map((e) => e.sha.slice(0, 7)), ['037984b', 'ed78af3', 'eb118ed', '142a564', '5d89286', '896407b', '76b1c61', '2f0ded7']);
+  assert.deepEqual(localChangelog().filter((e) => e.date?.includes('同版本更新')).map((e) => e.date.match(/[0-9a-f]{7}$/)[0]), entries.map((e) => e.sha.slice(0, 7)).reverse());
+  recordInstallation();
   mockGitHub({ version: localVersion(), changelog: null, sha: entries[2].sha, updateNotes: notes });
   const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
@@ -208,7 +215,7 @@ test('同版本用户说明按实际功能提交筛选，并覆盖回顾性提�
 
 test('同版本提交超出展示上限或比较响应未覆盖全部提交时标记说明不完整', async () => {
   const { localVersion } = await import('../src/lib/updater.js');
-  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  recordInstallation();
   mockGitHub({ version: localVersion(), changelog: null, sha: 'bbb2222', compareCount: 51 });
   const capped = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
@@ -222,7 +229,7 @@ test('同版本提交超出展示上限或比较响应未覆盖全部提交时�
 
 test('同版本提交比较失败时不伪造更新条目', async () => {
   const { localVersion } = await import('../src/lib/updater.js');
-  writeFileSync(join(process.env.DATA_DIR, 'version.json'), JSON.stringify({ sha: 'aaa1111' }));
+  recordInstallation();
   mockGitHub({ version: localVersion(), changelog: CHANGELOG, sha: 'bbb2222', compareStatus: 500 });
   const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
@@ -230,6 +237,46 @@ test('同版本提交比较失败时不伪造更新条目', async () => {
   assert.equal(u.patch, true);
   assert.deepEqual(u.changes, []);
   assert.deepEqual(u.commits, []);
+  assert.equal(u.commitRangeUnavailable, true);
+  assert.equal(u.notesScope, 'target');
+  assert.ok(u.targetNotes.length);
+});
+
+test('来源追踪普通段落能展示；验证/交付段落不混入功能说明', async () => {
+  recordInstallation();
+  mockGitHub({ version: packageVersion(), changelog: null,
+    body: '统一安全 Origin/Referer 解析。\n新增来源日汇总与筛选。\n\n验证：node --test 通过\n浏览器合成数据\n\n仅同步源码，不部署。' });
+  try {
+    const u = await checkUpdate({ maxAgeMs: 0 });
+    assert.deepEqual(u.commits[0].notes, ['统一安全 Origin/Referer 解析。', '新增来源日汇总与筛选。']);
+  } finally { mock.restoreAll(); }
+});
+
+test('比较范围分叉时仅展示目标说明，不将不明范围冒作本次全部更新', async () => {
+  recordInstallation();
+  mockGitHub({ version: packageVersion(), changelog: null, rangeStatus: 'diverged' });
+  try {
+    const u = await checkUpdate({ maxAgeMs: 0 });
+    assert.equal(u.commitRangeUnavailable, true);
+    assert.equal(u.notesScope, 'target');
+    assert.deepEqual(u.commits, []);
+  } finally { mock.restoreAll(); }
+});
+
+test('相同 SHA 不提示新修复；缓存随同版本磁盘身份改变失效', async () => {
+  recordInstallation();
+  mockGitHub({ version: packageVersion(), changelog: null, sha: 'a'.repeat(40) });
+  try {
+    const u = await checkUpdate({ maxAgeMs: 0 });
+    assert.equal(u.hasUpdate, false);
+    assert.equal(u.commits.length, 0);
+    const calls = globalThis.fetch.mock.callCount();
+    recordInstallation('b'.repeat(40));
+    const changed = await checkUpdate();
+    assert.ok(globalThis.fetch.mock.callCount() > calls);
+    assert.equal(changed.current.sha, 'b'.repeat(40));
+    assert.equal(changed.hasUpdate, true);
+  } finally { mock.restoreAll(); }
 });
 
 test('GitHub 不可达时给出明确错误', async () => {
@@ -285,7 +332,10 @@ test('手动上传了新代码后，旧的版本记录不再用来判断「小�
   const u = await checkUpdate({ maxAgeMs: 0 });
   mock.restoreAll();
   assert.equal(u.current.sha, null);
-  assert.equal(u.hasUpdate, false, '版本号相同且无法确认提交时视为已是最新');
+  assert.equal(u.hasUpdate, false);
+  assert.equal(u.upToDate, false, '无法确认提交时不能宣称已是最新');
+  assert.equal(u.comparisonUnknown, true);
+  assert.equal(u.canInstall, true, '允许重新安装明确目标建立身份');
   assert.ok(u.current.running, '带上正在运行的版本');
 });
 

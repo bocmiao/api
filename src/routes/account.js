@@ -751,7 +751,7 @@ r('GET', '/status', () => {
   const st = cachedStatus();
   return {
     data: {
-      version: RUNNING_VERSION ?? localVersion(),
+      version: RUNNING_VERSION,
       diskVersion: localVersion(),
       uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
       categories: apiCategories,

@@ -1,0 +1,22 @@
+{
+  "browser": "154.0.8037.57",
+  "checks": [
+    "three version/SHA identities, accurate install/commit labels, source tracking notes, escaped text, 390/320px",
+    "unknown identity remains unknown and offers explicit target installation",
+    "comparison failures and truncated note ranges visibly disclosed",
+    "same SHA is current; installed same-semver target waits for restart",
+    "new static UI with legacy server API never trusts old semver/SHA records",
+    "old-process-same-semver",
+    "old-instance-claims-target",
+    "missing-instance-id",
+    "health-pending",
+    "rollback",
+    "unknown-target",
+    "manual-restart",
+    "target-new-process-confirmed",
+    "progress-reset-keeps-target",
+    "unverified-upload-fingerprint-confirmed"
+  ],
+  "pageErrors": [],
+  "evidence": "/workspace/api/data/update-evidence"
+}

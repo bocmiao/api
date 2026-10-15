@@ -319,6 +319,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .chart { position: relative; padding: 12px 20px 16px; }
 .chart .plot { width: 100%; height: 200px; }
 .chart svg { display: block; overflow: visible; }
+.chart .plot > svg { width: 100%; max-width: 100%; }
 .chart .gridline { stroke: var(--border); stroke-width: 1; }
 .chart .axis { fill: var(--text-3); font-size: 11px; }
 .chart .bar { fill: var(--series-1); }
@@ -412,8 +413,10 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--warn-soft); color: var(--warn); padding: 10px 14px; border-radius: 9px; font-size: 14px; }
 
 /* 系统更新 */
+#update-card .card-head { flex-wrap: wrap; }
+#update-card .card-head h2 { white-space: nowrap; }
 .ver-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
-.ver-box { padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; min-width: 180px; }
+.ver-box { padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; min-width: 0; flex: 1 1 220px; overflow-wrap: anywhere; }
 .ver-box .ver { font-size: 22px; font-weight: 700; margin: 2px 0; }
 .ver-arrow { font-size: 20px; color: var(--text-3); }
 .upd-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-radius: 9px; font-size: 14px; }
@@ -484,6 +487,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .upd-progress.ok b { color: var(--ok); }
 .upd-progress.bad .upd-fill { background: var(--danger); }
 .upd-progress.bad b, .upd-progress.bad .faint { color: var(--danger); }
+.upd-progress.warn b { color: var(--warn); }
 
 /* AI 分析 */
 .modal:has(.diag) { max-width: 640px; }

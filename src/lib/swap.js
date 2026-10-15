@@ -69,7 +69,7 @@ export function rollbackPending({ root = ROOT } = {}) {
     if (p.previousVersion) writeFileSync(file, JSON.stringify(p.previousVersion, null, 2));
     else rmSync(file, { force: true });
   }
-  writeFileSync(join(dataDir(), 'update-rollback.json'), JSON.stringify({ at: new Date().toISOString(), failedSha: p.sha ?? null }));
+  writeFileSync(join(dataDir(), 'update-rollback.json'), JSON.stringify({ at: new Date().toISOString(), failedSha: p.sha ?? null, failedInstallationId: p.installationId ?? null }));
   clearPending();
   return true;
 }

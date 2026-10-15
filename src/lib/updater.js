@@ -1,14 +1,15 @@
 // 在线更新：从 GitHub 拉取指定分支的最新代码，校验后替换本地代码，由守护进程重启服务。
 import { gunzipSync } from 'node:zlib';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync, statSync, copyFileSync } from 'node:fs';
 import { dirname, join, normalize, sep } from 'node:path';
 import { HttpError } from './http.js';
 import { extractTar } from './tar.js';
 import { extractZip, isZip } from './zip.js';
 import { ROOT, KEEP, dataDir } from './paths.js';
-import { STAGING, BACKUPS, swapIn, writePending } from './swap.js';
+import { STAGING, BACKUPS, swapIn, writePending, readPending, clearPending } from './swap.js';
+import { RUNNING_IDENTITY, diskIdentity, packageVersion, readInstallation, codeDigest, restartState } from './deployment.js';
 
 const API = 'https://api.github.com';
 const MAX_DOWNLOAD = 50 * 1024 * 1024;
@@ -133,13 +134,7 @@ export async function verifyUploadOfficial(entries, sha, { gh: api = gh } = {}) 
 }
 
 const versionFile = () => join(dataDir(), 'version.json');
-export function currentVersion() {
-  try {
-    return JSON.parse(readFileSync(versionFile(), 'utf8'));
-  } catch {
-    return null;
-  }
-}
+export const currentVersion = () => readInstallation();
 
 function lastRollback() {
   try {
@@ -151,12 +146,14 @@ function lastRollback() {
 
 const commitInfo = (c) => {
   const [subject, ...body] = String(c.commit.message ?? '').split('\n');
-  const notes = body.filter((line) => /^\s*[-*]\s+\S/.test(line)).map((line) => line.replace(/^\s*[-*]\s+/, '').trim());
+  const notes = body.join('\n').trim().split(/\n\s*\n/).filter(Boolean)
+    .filter((paragraph) => !/^\s*(?:验证[：:]|仅同步源码)/.test(paragraph))
+    .flatMap((paragraph) => paragraph.split('\n').map((line) => line.replace(/^\s*[-*]\s+/, '').trim()).filter(Boolean));
   return {
     sha: c.sha,
     shortSha: c.sha.slice(0, 7),
     message: subject.replace(/\s*\[skip ci\]\s*$/i, ''),
-    // 同版本补丁没有新版本号：提交正文中的条目就是这次实际改动的说明。
+    // 优先使用 UPDATE_NOTES；缺少时接受提交正文的普通段落和列表，跳过验证/交付元信息。
     notes: notes.slice(0, 12),
     notesTruncated: notes.length > 12,
     author: c.commit.author?.name ?? null,
@@ -177,28 +174,38 @@ export function compareVersions(a, b) {
 }
 
 // 进程启动时加载的版本：硬盘上的代码被替换后，只有重启服务才会生效
-export const RUNNING_VERSION = localVersion();
+export const RUNNING_VERSION = RUNNING_IDENTITY.version;
+export { RUNNING_IDENTITY };
 
-export function localVersion() {
-  try {
-    return JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version ?? null;
-  } catch {
-    return null;
-  }
-}
+export const localVersion = () => packageVersion();
 
 // 本地版本信息：正在运行的版本、硬盘上的代码版本、最近一次在线更新的记录
 export function versionInfo() {
-  const disk = localVersion();
-  const deployed = currentVersion();
-  const valid = deployed && (!deployed.version || deployed.version === disk);
+  const disk = diskIdentity();
   return {
     running: RUNNING_VERSION,
-    disk,
-    restartNeeded: Boolean(RUNNING_VERSION && disk && RUNNING_VERSION !== disk),
-    updatedAt: valid ? deployed.updatedAt ?? null : null,
-    sha: valid ? deployed.sha ?? null : null,
+    disk: disk.version,
+    runningIdentity: RUNNING_IDENTITY,
+    diskIdentity: disk,
+    ...restartState(RUNNING_IDENTITY, disk),
+    updatedAt: disk.installedAt,
+    sha: disk.sha,
+    health: readPending() ? 'pending' : 'confirmed',
+    lastRollback: lastRollback(),
   };
+}
+
+// 只由启动后的健康定时器调用；旧进程或后来被替换的磁盘不能确认新安装。
+export function confirmRunningUpdate() {
+  const pending = readPending();
+  if (!pending) return false;
+  const state = restartState(RUNNING_IDENTITY, diskIdentity());
+  const matches = pending.installationId
+    ? pending.installationId === RUNNING_IDENTITY.installationId
+    : Date.parse(pending.at) <= Date.parse(RUNNING_IDENTITY.startedAt); // 兼容旧更新器的待确认标记，SHA 仍保持未知
+  if (!matches || state.restartNeeded || state.restartUnknown) return false;
+  clearPending();
+  return true;
 }
 
 // 本地 CHANGELOG.md 的全部版本记录（新的在前）
@@ -208,7 +215,7 @@ export function localChangelog() {
     const patches = parseUpdateNotes(readFileSync(join(ROOT, 'UPDATE_NOTES.json'), 'utf8'));
     for (const patch of patches) {
       const index = versions.findIndex((entry) => entry.version === patch.version);
-      if (index >= 0) versions.splice(index, 0, { version: patch.version, date: `${patch.date} · 同版本更新 ${patch.sha.slice(0, 7)}`, items: patch.items });
+      if (index >= 0) versions.splice(index, 0, { version: patch.version, sha: patch.sha, date: `${patch.date} · 同版本更新 ${patch.sha.slice(0, 7)}`, items: patch.items });
     }
     return versions;
   } catch {
@@ -268,14 +275,15 @@ let lastCheck = null;
 // 检查更新：按版本号比较，并附上中文更新日志
 export async function checkUpdate({ maxAgeMs = 60_000 } = {}) {
   const cfg = updateConfig();
-  const key = `${cfg.repo}#${cfg.branch}#${localVersion()}`;
+  const disk = diskIdentity();
+  const key = JSON.stringify([cfg.repo, cfg.branch, disk]);
   if (lastCheck && lastCheck.key === key && Date.now() - lastCheck.at < maxAgeMs) return { ...lastCheck.value, lastRollback: lastRollback() };
-  const value = await checkUpdateFresh(cfg);
+  const value = await checkUpdateFresh(cfg, disk);
   lastCheck = { key, at: Date.now(), value };
   return value;
 }
 
-async function checkUpdateFresh(cfg) {
+async function checkUpdateFresh(cfg, disk) {
   const branch = cfg.branch || (await gh(`/repos/${cfg.repo}`)).default_branch;
   const latestCommit = commitInfo(await gh(`/repos/${cfg.repo}/commits/${encodeURIComponent(branch)}`));
   const [pkgText, changelogText, updateNotesText] = await Promise.all([
@@ -286,14 +294,15 @@ async function checkUpdateFresh(cfg) {
   let remoteVersion = null;
   try { remoteVersion = JSON.parse(pkgText).version ?? null; } catch {}
 
-  const deployed = currentVersion();
-  // 版本记录是在线更新时写的；之后手动上传了别的版本时记录已过期，提交号当作未知
-  const recordValid = deployed && (!deployed.version || deployed.version === localVersion());
-  const current = { version: localVersion(), running: RUNNING_VERSION, sha: recordValid ? deployed.sha ?? null : null, updatedAt: recordValid ? deployed.updatedAt ?? null : null };
+  const current = { version: disk.version, running: RUNNING_VERSION, sha: disk.sha, updatedAt: disk.installedAt,
+    runningIdentity: RUNNING_IDENTITY, diskIdentity: disk, ...restartState(RUNNING_IDENTITY, disk) };
   const cmp = remoteVersion && current.version ? compareVersions(remoteVersion, current.version) : 0;
   const sameCode = current.sha === latestCommit.sha;
   // 版本号更高 → 新版本；版本号相同但代码不同 → 小修复；版本号更低 → 分支落后，不提示更新
-  const hasUpdate = cmp > 0 || (cmp === 0 && Boolean(current.sha) && !sameCode) || (!remoteVersion && !sameCode);
+  const hasUpdate = Boolean(remoteVersion && current.version && (cmp > 0 || (cmp === 0 && current.sha && !sameCode)));
+  const comparisonUnknown = !remoteVersion || !current.version || !current.sha;
+  const canInstall = Boolean(remoteVersion && current.version && cmp >= 0 && !current.restartNeeded
+    && (hasUpdate || comparisonUnknown));
   const changelog = parseChangelog(changelogText);
   const changes = cmp > 0 ? changelog.filter((e) => compareVersions(e.version, current.version) > 0) : [];
   const noteMap = new Map(parseUpdateNotes(updateNotesText).map((e) => [e.sha, e.items]));
@@ -301,9 +310,11 @@ async function checkUpdateFresh(cfg) {
   // 技术细节：两个版本之间的提交（仅当部署过的提交已知）
   let commits = [];
   let commitRangeIncomplete = false;
+  let commitRangeUnavailable = false;
   if (hasUpdate && current.sha && !sameCode) {
     try {
       const c = await gh(`/repos/${cfg.repo}/compare/${current.sha}...${latestCommit.sha}`);
+      if (!Array.isArray(c.commits) || !['ahead', 'identical'].includes(c.status)) throw new Error('无法确认提交范围');
       commitRangeIncomplete = Number(c.ahead_by) > c.commits.length || c.commits.length > 50;
       commits = c.commits.map(commitInfo).reverse().slice(0, 50);
       for (const commit of commits) if (noteMap.has(commit.sha)) {
@@ -311,8 +322,10 @@ async function checkUpdateFresh(cfg) {
         commit.notes = notes.slice(0, 12);
         commit.notesTruncated = notes.length > 12;
       }
-    } catch {}
+    } catch { commitRangeUnavailable = true; }
   }
+  // 无法确认范围时仅展示目标提交自身的说明，并明确它不代表完整差异。
+  const targetNotes = noteMap.get(latestCommit.sha) ?? latestCommit.notes;
 
   return {
     repo: cfg.repo,
@@ -320,12 +333,18 @@ async function checkUpdateFresh(cfg) {
     current,
     latest: { ...latestCommit, version: remoteVersion },
     hasUpdate,
-    upToDate: !hasUpdate,
+    upToDate: !comparisonUnknown && !hasUpdate && !current.restartNeeded && !current.restartUnknown && cmp === 0 && sameCode,
+    comparisonUnknown,
+    canInstall,
     patch: hasUpdate && cmp === 0,
     remoteOlder: cmp < 0,
     changes,
     commits,
     commitRangeIncomplete,
+    commitRangeUnavailable,
+    notesScope: changes.length ? 'versions' : !hasUpdate || !current.sha || commitRangeUnavailable ? 'target' : 'range',
+    targetNotes: targetNotes.slice(0, 12),
+    targetNotesTruncated: targetNotes.length > 12,
     managed: process.env.MIAO_LAUNCHER === '1',
     lastRollback: lastRollback(),
   };
@@ -537,7 +556,7 @@ function pruneBackups() {
 let running = false;
 
 // 更新进度：供后台轮询显示。percent 为 0~100；stage 为当前步骤的中文说明
-const idle = () => ({ state: 'idle', stage: '', percent: 0, detail: '', error: null, result: null, startedAt: null });
+const idle = () => ({ state: 'idle', stage: '', percent: 0, detail: '', error: null, result: null, startedAt: null, previousInstanceId: RUNNING_IDENTITY.instanceId });
 let progress = idle();
 export const updateProgress = () => ({ ...progress });
 function report(patch) { progress = { ...progress, ...patch }; }
@@ -563,20 +582,26 @@ async function installStaging(versionInfo, files, detail, managed) {
   const tick = setInterval(() => report({ percent: Math.min(90, progress.percent + 1) }), 800);
   try { await verifyStaging(STAGING); } finally { clearInterval(tick); }
 
+  const digest = codeDigest(STAGING);
+  if (!digest) throw new HttpError(502, '无法确认更新包的代码身份，已取消更新');
+  const version = { ...versionInfo, version: packageVersion(STAGING), schema: 2, codeDigest: digest,
+    installationId: randomUUID(), updatedAt: new Date().toISOString() };
+  report({ target: version });
+
   report({ stage: '正在备份并替换文件', percent: 92, detail: '' });
   const previousVersion = currentVersion();
   const backup = join(BACKUPS, new Date().toISOString().replace(/[:.]/g, '-'));
   swapIn(backup);
   rmSync(STAGING, { recursive: true, force: true });
 
-  const version = { ...versionInfo, updatedAt: new Date().toISOString() };
   mkdirSync(dataDir(), { recursive: true });
   writeFileSync(versionFile(), JSON.stringify(version, null, 2));
   rmSync(join(dataDir(), 'update-rollback.json'), { force: true });
-  writePending({ backup, sha: version.sha ?? null, previousVersion, at: version.updatedAt });
+  writePending({ backup, sha: version.sha ?? null, installationId: version.installationId, previousVersion, at: version.updatedAt });
   pruneBackups();
   report({ percent: 97 });
-  return { version, files, restart: managed };
+  lastCheck = null;
+  return { version, files, restart: managed, previousInstanceId: RUNNING_IDENTITY.instanceId };
 }
 
 // 手动上传的更新包（服务器下载 GitHub 太慢时使用）：解压后走同样的检查、备份、替换流程
@@ -599,8 +624,8 @@ export async function applyUploadedUpdate(buf) {
     if (pkg.name && pkg.name !== JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).name) {
       throw new HttpError(400, `更新包是「${pkg.name}」项目的代码，不是 Miao API`);
     }
-    report({ target: { version: pkg.version ?? null, sha: null } });
     const version = { version: pkg.version ?? null, sha: process.env.UPDATE_UPLOAD_VERIFY !== '0' ? sha : null, source: 'upload', message: '手动上传的更新包' };
+    report({ target: version });
     return await installStaging(version, files, `上传的更新包 · 共 ${files} 个文件`, process.env.MIAO_LAUNCHER === '1');
   } finally {
     rmSync(STAGING, { recursive: true, force: true });
@@ -628,7 +653,8 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
     const cfg = updateConfig();
     report({ stage: '正在检查新版本', percent: 3 });
     const info = await checkUpdate({ maxAgeMs: 5 * 60_000 });
-    if (!info.hasUpdate) throw new HttpError(409, info.remoteOlder ? '仓库中的版本比当前版本旧，已取消更新' : '已是最新版本');
+    if (info.current.restartNeeded) throw new HttpError(409, '磁盘代码已替换，请先重启服务再更新');
+    if (!info.canInstall) throw new HttpError(409, info.remoteOlder ? '仓库中的版本比当前版本旧，已取消更新' : info.comparisonUnknown ? '无法确认目标版本，已取消更新' : '已是最新版本');
     const target = info.latest;
     if (expectedSha && expectedSha !== target.sha) throw new HttpError(409, '远端已有更新的提交，请重新检查更新后再试');
     report({ stage: '正在下载新版本', percent: 5, target: { version: target.version, sha: target.sha } });
@@ -656,7 +682,7 @@ export async function applyUpdate({ sha: expectedSha } = {}) {
       mode = '完整更新';
       files = (await downloadFull(cfg, target, onBytes)).files;
     }
-    const version = { version: target.version, sha: target.sha, message: target.message, date: target.date, branch: info.branch, repo: cfg.repo };
+    const version = { version: target.version, sha: target.sha, message: target.message, commitDate: target.date, branch: info.branch, repo: cfg.repo };
     return await installStaging(version, files, `${mode} · 共 ${files} 个文件`, info.managed);
   } finally {
     rmSync(STAGING, { recursive: true, force: true });

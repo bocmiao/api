@@ -1567,11 +1567,11 @@ async function pageAdmin() {
     const el = $('#ver-now');
     if (!el) return;
     el.className = '';
-    el.innerHTML = `<div class="row" style="gap:10px;flex-wrap:wrap"><span class="small faint">当前版本</span><b style="font-size:18px">v${esc(v.running ?? v.disk ?? '?')}</b>
-      ${v.updatedAt ? `<span class="small faint">${shortDate(v.updatedAt)} 在线更新</span>` : ''}
+    el.innerHTML = `<div class="row" style="gap:10px;flex-wrap:wrap"><span class="small faint">正在运行</span><b style="font-size:18px">${esc(identityLabel(v.runningIdentity ?? {version:v.running}))}</b>
       <a class="small" href="/admin/changelog">查看更新记录</a>
       <span class="small faint" style="margin-left:auto">点击右上角「检查更新」，看看有没有新版本</span></div>
-      ${v.restartNeeded ? `<div class="form-error" style="margin-top:10px">服务器上的代码已经是 v${esc(v.disk)}，但正在运行的仍是 v${esc(v.running)}：请到 1Panel「网站 → 运行环境」重启 Miao API。</div>` : ''}`;
+      <p class="small faint">磁盘代码：${esc(identityLabel(v.diskIdentity ?? {version:v.disk}))} · ${esc(identityTime(v.diskIdentity))}</p>
+      ${restartNotice(v)}`;
   }).catch(() => { const el = $('#ver-now'); if (el) el.textContent = '点击右上角「检查更新」，看看有没有新版本'; });
   loadModuleSwitches();
 
@@ -1594,14 +1594,15 @@ async function pageAdminChangelog() {
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>更新记录</h1><p>每个版本改了什么；有新版本时到「管理」页的系统更新里一键更新</p></div>${adminTabs('changelog')}</div>
     <div class="card card-pad" style="margin-bottom:16px"><div class="row" style="gap:12px;flex-wrap:wrap">
-      <span class="small faint">当前版本</span><b style="font-size:20px">v${esc(cur ?? '?')}</b>
-      ${d.updatedAt ? `<span class="small faint">${shortDate(d.updatedAt)} 在线更新${d.sha ? ` · 提交 ${esc(d.sha.slice(0, 7))}` : ''}</span>` : ''}
+      <span class="small faint">正在运行</span><b style="font-size:20px">${esc(identityLabel(d.runningIdentity ?? {version:d.running}))}</b>
       <span style="margin-left:auto"></span><a class="btn sm" href="/admin">检查新版本</a></div>
-      ${d.restartNeeded ? `<div class="form-error" style="margin-top:12px">服务器上的代码已经是 v${esc(d.disk)}，但正在运行的仍是 v${esc(d.running)}：请到 1Panel 重启 Miao API 后生效。</div>` : ''}</div>
+      <p class="small faint">磁盘代码：${esc(identityLabel(d.diskIdentity ?? {version:d.disk}))} · ${esc(identityTime(d.diskIdentity))}</p>
+      ${restartNotice(d)}</div>
     <div class="card card-pad">${d.entries.length ? `<div class="upd-changes">${d.entries.map((c) => `<div class="upd-release">
         <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}
-          ${c.version === cur ? '<span class="badge ok">当前版本</span>' : ''}
-          ${d.restartNeeded && c.version === d.disk ? '<span class="badge warn">重启后生效</span>' : ''}</div>
+          ${c.sha && c.sha === d.runningIdentity?.sha ? '<span class="badge ok">正在运行此提交</span>' : ''}
+          ${!c.sha && c.version === cur ? '<span class="badge">运行语义版本</span>' : ''}
+          ${d.restartNeeded && c.sha && c.sha === d.diskIdentity?.sha ? '<span class="badge warn">重启后生效</span>' : ''}</div>
         <ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div>` : '<div class="empty">没有找到更新记录（CHANGELOG.md）</div>'}</div>
   </div>`;
 }
@@ -1934,6 +1935,11 @@ function keyBadge(k) {
 
 // ---------- 在线更新 ----------
 const shortDate = (d) => (d ? new Date(d).toLocaleString('zh-CN', { hour12: false }) : '—');
+const identityLabel = (id) => `${id?.version ? `v${id.version}` : '版本未知'} + ${id?.sha ? id.sha.slice(0, 7) : '提交未知'}`;
+const identityTime = (id) => `${id?.installedAt ? `${shortDate(id.installedAt)} 安装` : '安装时间未知'}${id?.commitDate ? ` · ${shortDate(id.commitDate)} 提交` : ''}`;
+const restartNotice = (v) => v.restartNeeded
+  ? '<div class="form-error" style="margin-top:10px">磁盘代码与正在运行的进程不同，请重启 Miao API 后生效。重启前不代表更新成功。</div>'
+  : v.restartUnknown ? '<p class="small muted">无法核实运行与磁盘代码是否一致，请检查文件和服务进程。</p>' : '';
 
 async function checkUpdate() {
   const body = $('#update-body');
@@ -1943,40 +1949,53 @@ async function checkUpdate() {
   try {
     const u = await api('GET', '/admin/update');
     const cur = u.current;
+    const legacyIdentity = !cur.runningIdentity || !cur.diskIdentity;
+    if (legacyIdentity) {
+      cur.runningIdentity = {version:cur.running}; cur.diskIdentity = {version:cur.version}; cur.restartUnknown = true;
+      u.hasUpdate = false; u.upToDate = false; u.canInstall = false; u.comparisonUnknown = true;
+      u.notesScope = 'target'; u.targetNotes ??= u.latest.notes ?? []; u.commits = [];
+    }
     const latestV = u.latest.version ? `v${u.latest.version}` : '最新代码';
     const verBox = (label, value, sub) => `<div class="ver-box"><div class="faint small">${label}</div><div class="ver">${value}</div><div class="faint small">${sub}</div></div>`;
 
     let status;
-    if (u.hasUpdate) status = `<div class="upd-status new">${icon('zap')}<b>${u.patch ? '有新的修复可以更新' : `发现新版本 ${esc(latestV)}`}</b></div>`;
+    if (legacyIdentity) status = '<div class="upd-status warn"><b>服务尚未提供可验证的运行身份，请重启后检查更新</b></div>';
+    else if (u.hasUpdate) status = `<div class="upd-status new">${icon('zap')}<b>${u.patch ? '有新的修复可以更新' : `发现新版本 ${esc(latestV)}`}</b></div>`;
     else if (u.remoteOlder) status = `<div class="upd-status warn">${icon('shield')}<b>GitHub 上的版本（${esc(latestV)}）比当前还旧</b>
         <span class="small">通常是更新分支设置不对：请到「系统设置 → 在线更新」确认分支，当前读取的是 <code>${esc(u.branch)}</code></span></div>`;
-    else status = `<div class="upd-status ok">${icon('check')}<b>已经是最新版本</b></div>`;
+    else if (cur.restartNeeded) status = '<div class="upd-status warn"><b>磁盘代码已就位，等待重启生效</b></div>';
+    else if (!u.latest.version) status = '<div class="upd-status warn"><b>GitHub 目标版本未知，无法确认更新</b><span class="small">请检查目标分支的 package.json 与服务器网络后重试。</span></div>';
+    else if (u.comparisonUnknown) status = '<div class="upd-status warn"><b>当前提交未知，无法确认是否最新</b><span class="small">旧安装记录或手动部署无法证明实际提交；可安装 GitHub 目标代码以建立可验证的安装记录。</span></div>';
+    else if (u.upToDate) status = `<div class="upd-status ok">${icon('check')}<b>已经是最新版本</b></div>`;
+    else status = '<div class="upd-status warn"><b>无法确认更新状态</b></div>';
 
-    const writtenNotes = u.commits.flatMap((c) => c.notes ?? []);
+    const showNotes = u.hasUpdate || u.comparisonUnknown;
+    const targetOnly = u.notesScope === 'target';
+    const writtenNotes = targetOnly ? u.targetNotes ?? [] : u.commits.flatMap((c) => c.notes ?? []);
     const changes = u.changes.length
       ? `<div class="upd-changes">${u.changes.map((c) => `<div class="upd-release">
           <div class="upd-release-head"><b>v${esc(c.version)}</b>${c.date ? `<span class="faint small">${esc(c.date)}</span>` : ''}</div>
           <ul>${c.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('')}</div>`
-      : u.hasUpdate && writtenNotes.length
+      : showNotes && writtenNotes.length
         ? `<div class="upd-changes"><div class="upd-release"><ul>${writtenNotes.map((note) => `<li>${esc(note)}</li>`).join('')}</ul></div></div>`
-        : u.hasUpdate ? '<p class="small muted">暂缺面向用户的更新说明；请查看下方技术细节中的提交记录。</p>' : '';
-    const noteCaveat = u.hasUpdate && !u.changes.length && u.commits.length && (u.commitRangeIncomplete || u.commits.some((c) => !c.notes?.length || c.notesTruncated))
-      ? `<p class="small muted">${u.commitRangeIncomplete ? '提交较多，当前只展示部分提交的说明。' : ''}${u.commits.some((c) => !c.notes?.length) ? '部分提交未提供面向用户的说明。' : ''}${u.commits.some((c) => c.notesTruncated) ? '有提交的说明条目被截断。' : ''}完整提交记录请到 GitHub 查看。</p>` : '';
+        : showNotes ? '<p class="small muted">暂缺面向用户的更新说明；请查看下方技术细节中的提交记录。</p>' : '';
+    const noteCaveat = showNotes
+      ? `<p class="small muted">${targetOnly ? '仅展示目标提交的说明，不代表本机到目标的完整改动。' : ''}${u.commitRangeUnavailable ? '提交比较失败，完整更新范围不可得。' : ''}${u.commitRangeIncomplete ? '提交较多，当前只展示部分提交的说明。' : ''}${u.commits.some((c) => !c.notes?.length) ? '部分提交未提供面向用户的说明。' : ''}${u.targetNotesTruncated && targetOnly || u.commits.some((c) => c.notesTruncated) ? '有提交的说明条目被截断。' : ''}完整提交记录请到 GitHub 查看。</p>` : '';
 
     body.innerHTML = `
-      ${cur.running && cur.version && cur.running !== cur.version ? `<div class="form-error">服务器上的代码已经是 v${esc(cur.version)}，但正在运行的仍是 v${esc(cur.running)}：代码替换后还没有重启服务。请到 1Panel「网站 → 运行环境」重启 Miao API，重启前在线更新可能失败。</div>` : ''}
+      ${restartNotice(cur)}
       ${u.lastRollback ? `<div class="form-error">上次更新后新版本没能正常启动，已于 ${shortDate(u.lastRollback.at)} 自动恢复到更新前的版本。</div>` : ''}
       <div class="ver-row">
-        ${verBox('当前版本', cur.version ? `v${esc(cur.version)}` : '—', cur.updatedAt ? `${shortDate(cur.updatedAt)} 更新` : '手动部署')}
-        <div class="ver-arrow">→</div>
-        ${verBox('GitHub 最新版本', esc(latestV), `${shortDate(u.latest.date)} 发布`)}
+        ${verBox('正在运行', esc(identityLabel(cur.runningIdentity)), esc(identityTime(cur.runningIdentity)))}
+        ${verBox('磁盘代码', esc(identityLabel(cur.diskIdentity)), esc(identityTime(cur.diskIdentity)))}
+        ${verBox('GitHub 目标代码', esc(identityLabel(u.latest)), `${shortDate(u.latest.date)} 提交`)}
       </div>
       ${status}
-      ${changes ? `<div class="small faint" style="margin:14px 0 6px">更新内容</div>${changes}` : ''}
+      ${changes ? `<div class="small faint" style="margin:14px 0 6px">${u.notesScope === 'versions' ? '版本更新说明' : targetOnly ? '目标提交说明' : '本次更新内容'}</div>${changes}` : ''}
       ${noteCaveat}
-      ${u.hasUpdate ? `
+      ${u.canInstall ? `
         ${!u.managed ? '<p class="small" style="color:var(--warn)">当前服务不是通过 npm start 启动的，更新完成后需要到服务器面板手动重启。</p>' : ''}
-        <button class="btn primary" id="do-update" data-sha="${esc(u.latest.sha)}">${icon('zap')}立即更新${u.patch ? '' : `到 ${esc(latestV)}`}</button>
+        <button class="btn primary" id="do-update" data-sha="${esc(u.latest.sha)}">${icon('zap')}${u.comparisonUnknown ? '安装 GitHub 目标代码' : `立即更新${u.patch ? '' : `到 ${esc(latestV)}`}`}</button>
         <p class="small faint" style="margin:10px 0 0">只替换程序代码，账号、API Key、调用记录和系统设置都不受影响。更新前会自动备份，新版本启动失败会自动恢复。</p>` : ''}
       <details class="upd-tech"><summary class="small faint">技术细节</summary>
         <div class="small faint mono" style="margin-top:6px">仓库 ${esc(u.repo)} · 分支 ${esc(u.branch)}<br>
@@ -2023,15 +2042,20 @@ async function followUpdate(p, body) {
   while (p.state === 'running') {
     updateBar(body, p);
     await sleep(700);
-    try { p = await api('GET', '/admin/update/progress'); fails = 0; } catch { if (++fails > 10) break; }
+    try {
+      const next = await api('GET', '/admin/update/progress');
+      if (next.state === 'idle') break; // 新进程的进度已重置，保留重启前目标和进程身份
+      p = next; fails = 0;
+    } catch { if (++fails > 10) break; }
   }
   if (p.state === 'error') {
     updateBar(body, { ...p, percent: p.percent, tone: 'bad', detail: p.error });
     return;
   }
-  const target = p.result?.version?.version ?? p.target?.version ?? '';
+  const target = p.result?.version ?? p.target ?? {};
+  const previousInstanceId = p.result?.previousInstanceId ?? p.previousInstanceId;
   if (p.state === 'done' && !p.result?.restart) {
-    updateBar(body, { percent: 100, stage: `新版本${target ? ` v${target}` : ''} 已下载完成`, detail: '当前不是通过守护进程启动的，请到服务器面板重启服务后生效', tone: 'ok' });
+    updateBar(body, { percent: 97, stage: '代码已安装，等待手动重启', detail: `${identityLabel(target)}；请到服务器面板重启服务后生效，当前进程仍在运行旧代码`, tone: 'warn' });
     return;
   }
   // 2. 等待服务重启：重启期间请求失败（包括 CDN 返回的 5xx）属于正常现象，继续等
@@ -2039,10 +2063,24 @@ async function followUpdate(p, body) {
   await sleep(3500);
   for (let i = 0; i < 90; i++) {
     try {
-      const res = await fetch('/status', { cache: 'no-store' });
+      const res = await fetch('/admin/version', { cache: 'no-store', headers: { accept: 'application/json' } });
       const st = res.ok ? (await res.json()).data : null;
-      if (st && (!target || st.version === target)) {
-        updateBar(body, { percent: 100, stage: `更新成功${st.version ? `，当前版本 v${st.version}` : ''}`, detail: '页面即将刷新以加载新版本', tone: 'ok' });
+      const rollback = st?.lastRollback;
+      if (rollback && (target.installationId && rollback.failedInstallationId === target.installationId
+        || target.sha && rollback.failedSha === target.sha && Date.parse(rollback.at) >= Date.parse(p.startedAt))) {
+        updateBar(body, { percent: 98, stage: '更新失败，已自动回滚', detail: `正在运行 ${identityLabel(st.runningIdentity)}；目标代码未能稳定启动`, tone: 'bad' });
+        return;
+      }
+      const live = st?.runningIdentity;
+      const identifiable = Boolean(target.sha || target.codeDigest && target.installationId);
+      const matches = live && identifiable && previousInstanceId && typeof live.instanceId === 'string' && live.instanceId
+        && live.instanceId !== previousInstanceId
+        && (!target.version || live.version === target.version)
+        && (!target.sha || live.sha === target.sha)
+        && (!target.codeDigest || live.codeDigest === target.codeDigest)
+        && (!target.installationId || live.installationId === target.installationId);
+      if (matches && st.health === 'confirmed' && !st.restartNeeded && !st.restartUnknown) {
+        updateBar(body, { percent: 100, stage: `更新成功，正在运行 ${identityLabel(live)}`, detail: '目标代码已在新进程运行并通过启动观察，页面即将刷新', tone: 'ok' });
         await sleep(1500);
         location.reload();
         return;
@@ -2051,7 +2089,7 @@ async function followUpdate(p, body) {
     updateBar(body, { percent: 98, stage: '正在重启服务', detail: `已等待 ${i + 4} 秒…` });
     await sleep(1000);
   }
-  updateBar(body, { percent: 98, stage: '服务长时间没有恢复', detail: '如果新版本启动失败，守护进程会自动恢复旧版本；请刷新页面查看，或到服务器面板查看运行日志', tone: 'bad' });
+  updateBar(body, { percent: 98, stage: '尚未确认目标代码运行', detail: '服务可能尚未重启、已回滚，或缺少可验证的目标身份；请刷新页面核对运行提交，或到服务器面板查看日志', tone: 'bad' });
 }
 
 // ---------- 一键巡检 ----------
