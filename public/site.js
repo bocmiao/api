@@ -420,6 +420,7 @@ async function lookupRequest(rid) {
     modal(`<h2>请求 ${esc(r.rid)}</h2><div class="table-wrap"><table class="table"><tbody>
       ${row('时间', esc(new Date(r.at).toLocaleString('zh-CN', { hour12: false })))}
       ${row('接口', `<span class="mono">${esc(r.path)}</span>`)}
+      ${row('统计分类', `${esc(({business:'业务',internal:'内部测试',legacy:'未分类历史'})[r.traffic] || '未分类历史')} · ${esc(({configured_user:'服务器配置账号',configured_key:'服务器配置的已有 Key',not_configured:'未列入内部配置',legacy_unclassified:'旧记录没有可信标记'})[r.trafficBasis] || '旧记录没有可信标记')}`)}
       ${row('状态', `<span class="badge ${r.status < 400 ? 'ok' : 'danger'}">${r.status}</span> ${fmtNum(r.ms)} ms${r.cached === 1 ? ' · 命中缓存' : r.cached === 2 ? ' · 上游故障返回旧数据' : ''}`)}
       ${r.error ? row('失败原因', `<span style="color:var(--danger)">${esc(r.error)}</span>`) : ''}
       ${row('调用方', r.user ? `${esc(r.user.email)}${r.key ? ` · Key「${esc(r.key.name)}」<span class="mono faint">${esc(r.key.prefix)}…</span>` : ' · 网页登录'}` : '未登录访客')}

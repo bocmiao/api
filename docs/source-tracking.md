@@ -34,6 +34,8 @@
 
 共同参数：`range=today|24h|7d|30d|90d|custom`（默认7d）；自定义使用 `from=YYYY-MM-DD&to=YYYY-MM-DD`，含结束日。来源筛选为 `q`（域名子串，LIKE 通配符按字面匹配）、`host`（精确域名，空值表示未知）、`user`/`key`（非负整数 ID）、`path`（精确接口路径）、`basis`/`state`。`page` 从1开始，`size` 为1–100（默认20），`sort=calls|errors|lastAt`。归属按该排序，原始请求固定按时间倒序。超出末页会夹到末页，排序并列时使用固定维度排序。所有值通过 SQL 参数绑定，列名和排序使用白名单。
 
+现支持 `traffic=business|internal|all`，默认业务；来源日汇总另按记录时的分类保留，明细展示分类及来源依据。未分类历史保留在业务和全部中，不按来源头猜测测试身份。详见 [内部测试隔离](internal-traffic.md)。
+
 ## 本地验证
 
 运行 `node --test test/source.test.js` 可验证解析、隐私、迁移、回滚、清理、排行、分页、参数与鉴权。完整回归使用 `node --test`。现有 `test/user-calls.test.js` 的迁移用例需要 `data/onboarding` 临时目录；Windows 的 `git archive` 字节核验需要本地克隆的 `core.autocrlf=false`。

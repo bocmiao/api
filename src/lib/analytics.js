@@ -1,7 +1,8 @@
 // 统计查询：后台「统计」页和公开的运行状态页的数据都从这里取。
 // 调用量、耗时、错误等按时间的数字读汇总表（stats_hourly 保留 90 天 / stats_daily 永久）；
 // 用户、IP、来源、地域这些维度读调用明细（request_log，默认保留 30 天），超出范围时自动截到可用的最早时间。
-import { sql, STAT_COLS } from '../db.js';
+import { STAT_COLS } from '../db.js';
+import { trafficSql as sql,registrationClause } from './traffic.js';
 import { config } from '../config.js';
 import { HttpError } from './http.js';
 import { today } from './limits.js';
@@ -163,7 +164,7 @@ function uniques(from, to) {
 
 const utcText = (ts) => new Date(ts).toISOString().replace('T', ' ').slice(0, 19);
 // 注册时间只精确到秒，结束时间取所在的那一秒（含）
-const newUsers = (from, to) => sql('SELECT COUNT(*) AS n FROM users WHERE created_at >= ? AND created_at <= ?').get(utcText(from), utcText(to)).n;
+const newUsers = (from, to) => sql(`SELECT COUNT(*) AS n FROM users WHERE created_at >= ? AND created_at <= ? AND ${registrationClause()}`).get(utcText(from), utcText(to)).n;
 
 function kpi(from, to) {
   const m = metrics(sumRows(rollupRows(from, to)));
@@ -250,7 +251,7 @@ export function audience(range) {
     FROM request_log l LEFT JOIN users u ON u.id = l.user_id WHERE l.ts >= ? AND l.ts < ? AND l.user_id IS NOT NULL
     GROUP BY l.user_id ORDER BY calls DESC LIMIT 20`).all(from, to);
   const topKeys = sql(`SELECT l.key_id AS id, k.name, k.prefix, u.email, COUNT(*) AS calls, MAX(l.ts) AS lastAt
-    FROM request_log l LEFT JOIN api_keys k ON k.id = l.key_id LEFT JOIN users u ON u.id = l.user_id
+    FROM request_log l LEFT JOIN api_keys k ON k.id = l.key_id AND k.user_id=l.user_id LEFT JOIN users u ON u.id = l.user_id
     WHERE l.ts >= ? AND l.ts < ? AND l.key_id IS NOT NULL GROUP BY l.key_id ORDER BY calls DESC LIMIT 20`).all(from, to);
   const topIps = sql(`SELECT ip, COUNT(*) AS calls, MAX(region) AS region, MAX(isp) AS isp, COUNT(DISTINCT user_id) AS users, MAX(ts) AS lastAt
     FROM request_log WHERE ts >= ? AND ts < ? AND ip IS NOT NULL GROUP BY ip ORDER BY calls DESC LIMIT 20`).all(from, to);
@@ -287,7 +288,7 @@ export function userGrowth(range) {
   const w = rawWindow(range);
   const days = [];
   for (let d = bjMidnight(range.from); d < range.to; d += DAY) days.push(bjDay(d));
-  const reg = new Map(sql(`SELECT date(created_at, '+8 hours') AS day, COUNT(*) AS n FROM users WHERE created_at >= ? AND created_at <= ? GROUP BY 1`)
+  const reg = new Map(sql(`SELECT date(created_at, '+8 hours') AS day, COUNT(*) AS n FROM users WHERE created_at >= ? AND created_at <= ? AND ${registrationClause()} GROUP BY 1`)
     .all(utcText(bjMidnight(range.from)), utcText(range.to)).map((r) => [r.day, r.n]));
   const dau = new Map(sql(`SELECT date(ts / 1000 + 28800, 'unixepoch') AS day, COUNT(DISTINCT user_id) AS n FROM request_log
     WHERE ts >= ? AND ts < ? AND user_id IS NOT NULL GROUP BY 1`).all(w.from, w.to).map((r) => [r.day, r.n]));
@@ -297,7 +298,7 @@ export function userGrowth(range) {
   // 留存：注册后第 1 天（24~48 小时内）、第 7 天之后一周内仍有调用的比例
   const retention = (afterMs, spanMs) => {
     const lo = now - config.logRetentionDays * DAY;
-    const cohort = sql('SELECT id, created_at FROM users WHERE created_at >= ? AND created_at < ?').all(utcText(lo), utcText(now - afterMs - spanMs));
+    const cohort = sql(`SELECT id, created_at FROM users WHERE created_at >= ? AND created_at < ? AND ${registrationClause()}`).all(utcText(lo), utcText(now - afterMs - spanMs));
     let kept = 0;
     for (const u of cohort) {
       const t = Date.parse(`${u.created_at.replace(' ', 'T')}Z`);
@@ -307,8 +308,8 @@ export function userGrowth(range) {
   };
   return {
     range: publicRange(range),
-    totalUsers: sql('SELECT COUNT(*) AS n FROM users').get().n,
-    disabledUsers: sql('SELECT COUNT(*) AS n FROM users WHERE disabled = 1').get().n,
+    totalUsers: sql(`SELECT COUNT(*) AS n FROM users WHERE ${registrationClause()}`).get().n,
+    disabledUsers: sql(`SELECT COUNT(*) AS n FROM users WHERE disabled = 1 AND ${registrationClause()}`).get().n,
     daily: days.map((day) => ({ day, registrations: reg.get(day) ?? 0, activeUsers: dau.get(day) ?? meta.get(day) ?? 0 })),
     dau: active(DAY),
     wau: active(7 * DAY),

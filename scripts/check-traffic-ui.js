@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+process.env.PREVIEW_PORT='0';
+const {server}=await import('./traffic-preview.js');
+if(!server.listening)await new Promise(r=>server.once('listening',r));
+const out=resolve(process.env.UI_EVIDENCE_DIR||'data/traffic-evidence');mkdirSync(out,{recursive:true});
+const base='http://127.0.0.1:'+server.address().port,checks=[],errors=[];
+let browser;
+try {
+  const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+  browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
+  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
+  const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(base+'/__preview/admin');
+  const ready=async scope=>{await page.locator('#as-traffic-note').filter({hasText:'当前口径：'+({business:'业务',internal:'内部测试',all:'全部'})[scope]}).waitFor();await page.locator('#as-kpi .value').first().waitFor();await page.locator('#as-websites .as-pager').waitFor();await page.locator('#as-csv:enabled').waitFor();};
+  const count=async()=>Number((await page.locator('#as-kpi .value').first().innerText()).replace(/,/g,''));
+  await ready('business');assert.equal(await count(),10);checks.push('business default excludes 6 internal calls, includes 2 legacy');
+  const stamp=()=>page.evaluate(()=>{if(document.getElementById('traffic-synthetic'))return;const p=document.createElement('p');p.id='traffic-synthetic';p.className='small faint';p.textContent='合成数据验收 · 本地内存预览';document.querySelector('#as-root').prepend(p);});
+  await stamp();await page.screenshot({path:out+'/business-desktop.png',fullPage:true,animations:'disabled'});
+  await page.screenshot({path:out+'/business-summary.png',animations:'disabled'});
+  const select=async scope=>{
+    const response=page.waitForResponse(r=>r.url().includes('/admin/analytics/overview?')&&new URL(r.url()).searchParams.get('traffic')===scope);
+    await page.locator(`[data-traffic="${scope}"]`).click();await response;await ready(scope);
+  };
+  await select('internal');assert.equal(await count(),6);checks.push('internal switch updates KPIs, endpoints and source queries');
+  const req=(await (await context.request.get(base+'/admin/analytics/source-requests?range=7d&traffic=internal')).json()).data.items;
+  assert.equal(req.length,6);assert.ok(req.every(r=>r.traffic==='internal'));
+  const downloadEvent=page.waitForEvent('download');await page.locator('#as-csv').click();const download=await downloadEvent;
+  assert.match(download.suggestedFilename(),/-internal-/);await download.saveAs(out+'/internal.csv');
+  assert.match(readFileSync(out+'/internal.csv','utf8'),/统计口径/);assert.match(readFileSync(out+'/internal.csv','utf8'),/内部测试/);checks.push('CSV records selected scope in header, rows and filename');
+  await page.screenshot({path:out+'/internal-desktop.png',fullPage:true,animations:'disabled'});
+  await page.screenshot({path:out+'/internal-summary.png',animations:'disabled'});
+  await page.locator('#as-websites [data-source-host]').first().click();await page.locator('[data-source-requests] .as-pager').waitFor();
+  await page.locator('[data-source-rid]').first().click();await page.locator('.modal h2').filter({hasText:/请求 traffic/}).waitFor();
+  assert.match(await page.locator('.modal').innerText(),/内部测试/);await page.locator('.modal [data-close]').click();checks.push('internal logs retained and request detail shows classification');
+  await select('all');assert.equal(await count(),16);checks.push('all reconciles business plus internal');
+  await page.screenshot({path:out+'/all-summary.png',animations:'disabled'});
+  await page.locator('[data-traffic-config]').click();await page.locator('.modal h2').filter({hasText:'内部测试标记配置'}).waitFor();
+  assert.match(await page.locator('.modal').innerText(),/已有内部测试标签/);
+  assert.equal(await page.locator('.modal input').count(),0);assert.equal(await page.locator('.modal img').count(),0);
+  await page.locator('.modal').screenshot({path:out+'/configuration.png',animations:'disabled'});
+  await page.locator('.modal [data-close]').click();checks.push('read-only existing-identity configuration, no credential controls');
+  await page.route('**/admin/analytics/overview?**',async route=>{
+    if(new URL(route.request().url()).searchParams.get('traffic')==='internal')return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({code:503,message:'合成加载失败'})});
+    return route.continue();
+  });
+  await page.locator('[data-traffic="internal"]').click();await page.locator('#as-kpi [data-as-retry]').waitFor();
+  assert.match(await page.locator('#as-traffic-note').innerText(),/当前口径：内部测试/);
+  await page.unroute('**/admin/analytics/overview?**');await page.locator('#as-kpi [data-as-retry]').click();await ready('internal');
+  assert.equal(await count(),6);checks.push('scope error and retry never show old scope label');
+  await select('business');
+  for(const width of [390,320]) {
+    await page.setViewportSize({width,height:844});await page.locator('#as-root').scrollIntoViewIfNeeded();
+    await page.mouse.move(0,0);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no page overflow '+width);
+    await page.screenshot({path:out+`/business-mobile-${width}.png`,fullPage:true,animations:'disabled'});
+    await page.screenshot({path:out+`/business-mobile-${width}-summary.png`,animations:'disabled'});
+    await page.locator('[data-traffic="internal"]').focus();await page.keyboard.press('Enter');await ready('internal');assert.equal(await count(),6);
+    await select('business');
+  }
+  checks.push('390px/320px responsive controls and keyboard scope switching');
+  await page.goto(base+'/admin/stats');await ready('business');assert.equal(await count(),10);checks.push('returning to stats resets safe business default');
+  const userContext=await browser.newContext();const u=await userContext.newPage();await u.goto(base+'/__preview/user');
+  assert.equal((await userContext.request.get(base+'/admin/analytics/traffic-config')).status(),403);
+  const anonContext=await browser.newContext();assert.equal((await anonContext.request.get(base+'/admin/analytics/sources?traffic=internal')).status(),401);
+  checks.push('admin-only switches and internal config APIs');assert.deepEqual(errors,[]);
+  const result={browser:await browser.version(),counts:{business:10,internal:6,all:16,legacyIncluded:2},checks,pageErrors:errors};
+  writeFileSync(out+'/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));
+}finally{await browser?.close();server.close();}

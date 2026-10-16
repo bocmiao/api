@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { HttpError } from './http.js';
 import { recordCall, regionOf, clientOf, pruneStats } from './stats.js';
 import { requestSource } from './source.js';
+import { classifyTraffic } from './traffic.js';
 
 export function secondsUntilReset(now = Date.now()) {
   const shanghai = now + 8 * 3600_000;
@@ -119,20 +120,21 @@ export function quota({ user, ip }) {
 }
 
 // error：失败时的原因（只记我们自己的错误说明，不含请求参数），最多 300 字
-export function logRequest({ user, keyId, ip, path, status, ms, error = null, cached = null, bytes = null, headers = {}, rid = null }) {
+export function logRequest({ user, keyId, ip, path, status, ms, error = null, cached = null, bytes = null, headers = {}, rid = null,trafficClassification = null }) {
   const ts = Date.now();
   const via = keyId ? 'apikey' : user ? 'session' : 'anon';
   const { region, isp } = regionOf(ip);
   const source = requestSource(headers);
+  const classification=trafficClassification ?? classifyTraffic(user,keyId);
   sql(`INSERT INTO request_log (ts, user_id, key_id, ip, path, status, ms, error, cached, bytes, via, referer, client, region, isp, rid,
-       source_basis, source_state, origin_host, referer_host) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+       source_basis, source_state, origin_host, referer_host,traffic,traffic_basis) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(ts, user?.id ?? null, keyId ?? null, ip, path, status, ms, error ? String(error).slice(0, 300) : null,
       cached, bytes, via, source.host, clientOf(headers['user-agent']), region, isp, rid,
-      source.basis, source.state, source.originHost, source.refererHost);
+      source.basis, source.state, source.originHost, source.refererHost,classification.traffic,classification.basis);
   if (path.startsWith('/api/') && status !== 404) {
     sql('INSERT INTO api_calls (path, total) VALUES (?, 1) ON CONFLICT(path) DO UPDATE SET total = total + 1').run(path);
   }
-  recordCall({ ts, path, status, ms, cached: cached ?? 0, bytes: bytes ?? 0, via });
+  recordCall({ ts, path, status, ms, cached: cached ?? 0, bytes: bytes ?? 0, via,traffic:classification.traffic });
 }
 
 export function pruneLogs() {

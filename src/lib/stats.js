@@ -80,6 +80,7 @@ export function regionOf(ip) {
 const pending = new Map(); // `${hour}|${day}|${path}` -> 计数
 let flushFailures = 0;
 const pendingLimited = new Map(); // `${day}|${subject}|${path}` -> 次数
+const pendingTraffic = new Map(), pendingTrafficLimited = new Map();
 
 const blank = () => Object.fromEntries(STAT_COLS.map((c) => [c, 0]));
 function slot(ts, path) {
@@ -92,8 +93,12 @@ function slot(ts, path) {
 }
 
 // 记录一次完成的调用（成功或失败）。via：anon / session / apikey；cached：0 / 1 / 2
-export function recordCall({ ts = Date.now(), path, status, ms, cached = 0, bytes = 0, via = 'anon' }) {
-  const s = slot(ts, path);
+export function recordCall({ ts = Date.now(), path, status, ms, cached = 0, bytes = 0, via = 'anon', traffic = 'business' }) {
+  if(!['business','internal','legacy'].includes(traffic))throw new TypeError('Invalid traffic classification');
+  const key=JSON.stringify([Math.floor(ts/3600_000)*3600_000,today(new Date(ts)),path,traffic]);
+  let scoped=pendingTraffic.get(key);
+  if(!scoped)pendingTraffic.set(key,(scoped=blank()));
+  for(const s of [slot(ts,path),scoped]) {
   s.calls++;
   if (status < 400) s.ok++;
   else if (status >= 500) s.e5xx++;
@@ -105,11 +110,19 @@ export function recordCall({ ts = Date.now(), path, status, ms, cached = 0, byte
   s.ms_max = Math.max(s.ms_max, ms);
   s[via === 'apikey' ? 'apikey' : via === 'session' ? 'session' : 'anon']++;
   s[`l${latBucket(ms)}`]++;
+  }
 }
 
 // 记录一次被限流（429）的请求：只计数，不写调用明细
-export function recordLimited({ ts = Date.now(), subject, path }) {
+export function recordLimited({ ts = Date.now(), subject, path, traffic = 'business' }) {
+  if(!['business','internal','legacy'].includes(traffic))throw new TypeError('Invalid traffic classification');
   slot(ts, path).limited++;
+  const tk=JSON.stringify([Math.floor(ts/3600_000)*3600_000,today(new Date(ts)),path,traffic]);
+  let scoped=pendingTraffic.get(tk);
+  if(!scoped)pendingTraffic.set(tk,(scoped=blank()));
+  scoped.limited++;
+  const lk=JSON.stringify([today(new Date(ts)),subject,path,traffic]);
+  pendingTrafficLimited.set(lk,(pendingTrafficLimited.get(lk)||0)+1);
   const key = `${today(new Date(ts))}|${subject}|${path}`;
   pendingLimited.set(key, (pendingLimited.get(key) ?? 0) + 1);
 }
@@ -122,6 +135,8 @@ const upsert = (table, keyCols) => {
 };
 const UPSERT_HOURLY = upsert('stats_hourly', ['hour', 'path']);
 const UPSERT_DAILY = upsert('stats_daily', ['day', 'path']);
+const UPSERT_TRAFFIC_HOURLY=upsert('traffic_hourly',['hour','path','traffic']);
+const UPSERT_TRAFFIC_DAILY=upsert('traffic_daily',['day','path','traffic']);
 
 // 把内存里的计数写进数据库（每分钟一次；进程退出前也会调用）
 export function flushStats() {
@@ -141,6 +156,15 @@ export function flushStats() {
       sql(UPSERT_DAILY).run(day, path, ...vals);
     }
     stage = 'limited';
+    for(const [key,s] of pendingTraffic) {
+      const [hour,day,path,traffic]=JSON.parse(key),vals=STAT_COLS.map(c=>s[c]);
+      sql(UPSERT_TRAFFIC_HOURLY).run(hour,path,traffic,...vals);
+      sql(UPSERT_TRAFFIC_DAILY).run(day,path,traffic,...vals);
+    }
+    for(const [key,n] of pendingTrafficLimited) {
+      const [day,subject,path,traffic]=JSON.parse(key);
+      sql('INSERT INTO traffic_limited VALUES(?,?,?,?,?) ON CONFLICT(day,subject,path,traffic) DO UPDATE SET count=count+excluded.count').run(day,subject,path,traffic,n);
+    }
     for (const [key, n] of limited) {
       const [day, subject, path] = key.split('|');
       sql(`INSERT INTO stats_limited (day, subject, path, count) VALUES (?, ?, ?, ?)
@@ -150,6 +174,7 @@ export function flushStats() {
     db.exec('COMMIT');
     pending.clear();
     pendingLimited.clear();
+    pendingTraffic.clear();pendingTrafficLimited.clear();
     return true;
   } catch {
     let code = 'STATS_DB_FAILURE';
@@ -165,6 +190,13 @@ export function flushStats() {
 // 已经结束的日子：把当天的独立 IP 数、活跃用户数存下来（调用明细过期后仍可查看）
 export function saveDayMeta() {
   const d = today();
+  for(const traffic of ['business','internal']) {
+    const pred=traffic==='internal'?"traffic='internal'":"traffic!='internal'";
+    for(const r of sql(`SELECT date(ts/1000+28800,'unixepoch') AS day,COUNT(DISTINCT ip) AS ips,COUNT(DISTINCT user_id) AS users FROM request_log WHERE ts>=? AND ${pred} GROUP BY 1`).all(Date.now()-3*86400_000)) {
+      if(r.day===d)continue;
+      sql('INSERT INTO traffic_day_meta VALUES(?,?,?,?) ON CONFLICT(day,traffic) DO UPDATE SET ips=excluded.ips,users=excluded.users').run(r.day,traffic,r.ips,r.users);
+    }
+  }
   const rows = sql(`SELECT date(ts / 1000 + 28800, 'unixepoch') AS day, COUNT(DISTINCT ip) AS ips, COUNT(DISTINCT user_id) AS users
                     FROM request_log WHERE ts >= ? GROUP BY 1`).all(Date.now() - 3 * 86400_000);
   for (const r of rows) {
@@ -175,6 +207,8 @@ export function saveDayMeta() {
 }
 
 export function pruneStats({ hourlyDays = 90, rawDays = 30 } = {}) {
+  sql('DELETE FROM traffic_hourly WHERE hour < ?').run(Date.now()-hourlyDays*86400_000);
+  sql('DELETE FROM traffic_limited WHERE day < ?').run(today(new Date(Date.now()-rawDays*86400_000)));
   sql('DELETE FROM stats_hourly WHERE hour < ?').run(Date.now() - hourlyDays * 86400_000);
   sql('DELETE FROM stats_limited WHERE day < ?').run(today(new Date(Date.now() - rawDays * 86400_000)));
 }

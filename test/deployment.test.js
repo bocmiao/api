@@ -79,10 +79,10 @@ test('保留的数据、密钥、备份、Git 元数据不影响代码指纹；�
   assert.equal(diskIdentity({ root, record }).sha, null);
 });
 
-test('Git 身份需逐文件匹配，保留旧 HEAD、增加文件或符号链接都不能冒认', () => {
+test('Git 身份需逐文件匹配，保留旧 HEAD 或增加文件不能冒认', () => {
   const root = makeRoot();
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  git('init', '-q'); git('add', '.');
+  git('init', '-q');git('config','core.autocrlf','false'); git('add', '.');
   git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture');
   const sha = git('rev-parse', 'HEAD');
   assert.equal(diskIdentity({ root, record: null }).sha, sha);
@@ -92,7 +92,12 @@ test('Git 身份需逐文件匹配，保留旧 HEAD、增加文件或符号链�
   writeFileSync(join(root, 'extra.js'), '//');
   assert.equal(diskIdentity({ root, record: null }).sha, null);
   rmSync(join(root, 'extra.js'));
-  symlinkSync(join(root, 'app.js'), join(root, 'link.js'));
+});
+
+test('符号链接不能冒认部署身份',t=>{
+  const root=makeRoot();
+  try {symlinkSync(join(root,'app.js'),join(root,'link.js'));}
+  catch(err){if(process.platform==='win32'&&err.code==='EPERM'){t.skip('当前 Windows 账户不允许创建符号链接，未更改权限');return;}throw err;}
   assert.equal(diskIdentity({ root, record: null }).codeDigest, null);
   assert.equal(restartState(captureRunningIdentity({ root, record: null }), diskIdentity({ root, record: null })).restartUnknown, true);
 });

@@ -14,6 +14,7 @@ import { flushStats } from '../lib/stats.js';
 import { metrics, sumRows } from '../lib/analytics.js';
 import { publicUser } from '../lib/auth.js';
 import { audit } from '../lib/audit.js';
+import { trafficSql as statsSql } from '../lib/traffic.js';
 
 const r = (method, path, handler) => accountRouter.add(method, path, handler);
 const DAY = 86400_000;
@@ -42,24 +43,24 @@ export function siteOverview(now = Date.now()) {
   // 趋势只画已经过完的 7 天，今天单独显示，避免最后一天看起来像流量暴跌
   const all = lastDays(8, now);
   const days = all.slice(0, 7);
-  const daily = sql('SELECT day, SUM(calls) AS calls, SUM(ok) AS ok, SUM(e4xx) AS e4xx, SUM(e5xx) AS e5xx FROM stats_daily WHERE day >= ? GROUP BY day').all(days[0]);
+  const daily = statsSql('SELECT day, SUM(calls) AS calls, SUM(ok) AS ok, SUM(e4xx) AS e4xx, SUM(e5xx) AS e5xx FROM stats_daily WHERE day >= ? GROUP BY day').all(days[0]);
   const byDay = new Map(daily.map((d) => [d.day, d]));
   const hourFloor = Math.floor(now / HOUR) * HOUR;
-  const sumHours = (from, to) => sql('SELECT COALESCE(SUM(calls), 0) AS calls, COALESCE(SUM(e5xx), 0) AS e5xx FROM stats_hourly WHERE hour >= ? AND hour < ?').get(from, to);
+  const sumHours = (from, to) => statsSql('SELECT COALESCE(SUM(calls), 0) AS calls, COALESCE(SUM(e5xx), 0) AS e5xx FROM stats_hourly WHERE hour >= ? AND hour < ?').get(from, to);
   const h24 = sumHours(hourFloor - 23 * HOUR, hourFloor + HOUR);
   const prev24 = sumHours(hourFloor - 47 * HOUR, hourFloor - 23 * HOUR);
   const t = byDay.get(all.at(-1)) ?? { calls: 0, ok: 0, e5xx: 0 };
   // 热门接口：近 7 天调用最多的 6 个（按接口汇总多个调用地址）
   const hot = new Map();
-  for (const row of sql('SELECT path, SUM(calls) AS calls FROM stats_daily WHERE day >= ? GROUP BY path').all(days[0])) {
+  for (const row of statsSql('SELECT path, SUM(calls) AS calls FROM stats_daily WHERE day >= ? GROUP BY path').all(days[0])) {
     const m = pathToModule.get(row.path);
     if (m) hot.set(m.name, { name: m.name, title: m.title, category: m.category, calls: (hot.get(m.name)?.calls ?? 0) + row.calls });
   }
   return {
     apis: mods.length,
     routes: mods.reduce((n, m) => n + m.routes.length, 0),
-    requestTotal: sql("SELECT COALESCE(SUM(total), 0) AS n FROM api_calls WHERE path LIKE '/api/%'").get().n,
-    users: sql('SELECT COUNT(*) AS n FROM users').get().n,
+    requestTotal: statsSql("SELECT COALESCE(SUM(total), 0) AS n FROM api_calls WHERE path LIKE '/api/%'").get().n,
+    users: sql('SELECT COUNT(*) AS n FROM users WHERE id NOT IN(SELECT user_id FROM traffic_config_users)').get().n,
     today: { calls: t.calls, availability: pct(t.calls - t.e5xx, t.calls) },
     last24h: { calls: h24.calls, delta: prev24.calls ? Math.round(((h24.calls - prev24.calls) / prev24.calls) * 1000) / 10 : null, availability: pct(h24.calls - h24.e5xx, h24.calls) },
     trend: days.map((day) => {
@@ -82,7 +83,7 @@ export function moduleStats(m, now = Date.now()) {
   const marks = paths.map(() => '?').join(',');
   // 本周 = 最近 7 个完整的天（不含今天），上周 = 再往前 7 天
   const days = lastDays(15, now).slice(0, 14);
-  const rows = sql(`SELECT day, path, ${STAT_COLS.join(', ')} FROM stats_daily WHERE day >= ? AND path IN (${marks})`).all(days[0], ...paths);
+  const rows = statsSql(`SELECT day, path, ${STAT_COLS.join(', ')} FROM stats_daily WHERE day >= ? AND path IN (${marks})`).all(days[0], ...paths);
   const per = (list) => days.map((day) => {
     const s = sumRows(list.filter((x) => x.day === day));
     return { day, calls: s.calls, ok: s.ok, fail: s.e4xx + s.e5xx };
@@ -90,12 +91,12 @@ export function moduleStats(m, now = Date.now()) {
   const week = sumRows(rows.filter((x) => x.day >= days[7] && x.day <= days.at(-1)));
   const mt = metrics(week);
   // 状态码分布读调用明细（近 7 天）；不登录也能调用的接口同样记录
-  const codes = sql(`SELECT path, status, COUNT(*) AS n FROM request_log WHERE ts >= ? AND path IN (${marks}) GROUP BY path, status`).all(now - 7 * DAY, ...paths);
+  const codes = statsSql(`SELECT path, status, COUNT(*) AS n FROM request_log WHERE ts >= ? AND path IN (${marks}) GROUP BY path, status`).all(now - 7 * DAY, ...paths);
   const routes = Object.fromEntries(paths.map((p) => {
     const list = rows.filter((x) => x.path === p);
     const d = per(list);
     return [p, {
-      total: sql('SELECT total FROM api_calls WHERE path = ?').get(p)?.total ?? 0,
+      total: statsSql('SELECT total FROM api_calls WHERE path = ?').get(p)?.total ?? 0,
       thisWeek: d.slice(7),
       lastWeek: d.slice(0, 7),
       codes: codes.filter((c) => c.path === p).map((c) => ({ status: c.status, n: c.n })).sort((a, b) => a.status - b.status),
@@ -383,6 +384,7 @@ r('GET', '/admin/request', (ctx) => {
   return {
     data: {
       rid: row.rid, at: new Date(row.ts).toISOString(), path: row.path, status: row.status, ms: row.ms, error: row.error,
+      traffic:row.traffic,trafficBasis:row.traffic_basis,
       cached: row.cached, bytes: row.bytes, via: row.via, ip: row.ip, region: row.region, isp: row.isp, referer: row.referer, client: row.client,
       source: { host: row.referer, basis: row.source_basis, state: row.source_state, originHost: row.origin_host, refererHost: row.referer_host },
       user: row.user_id ? { id: row.user_id, email: row.email } : null,

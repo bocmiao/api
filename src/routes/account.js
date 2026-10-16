@@ -32,6 +32,8 @@ import { loadIpInfo, normalizeIp } from '../apis/life/ip.js';
 import { parseRange, overview, endpoints, endpointDetail, audience, userGrowth, issues, statusData } from '../lib/analytics.js';
 import { healthStatus, runHealthCheck } from '../lib/health.js';
 import { normalizeRules } from '../lib/keysource.js';
+import { trafficSql as statsSql,withTrafficScope,trafficMetadata,trafficConfiguration } from '../lib/traffic.js';
+import { flushStats } from '../lib/stats.js';
 import { sources, sourceAttribution, sourceRequests } from '../lib/source-analytics.js';
 import { audit, requireReason, recordLogin } from '../lib/audit.js';
 import { moduleOptions, setModuleOptions } from '../lib/modules.js';
@@ -238,8 +240,8 @@ function lastDays(n) {
   return days;
 }
 
-function endpointStats(where, args, since, limit = 15) {
-  return sql(`SELECT path, COUNT(*) AS calls, CAST(AVG(ms) AS INTEGER) AS avgMs,
+function endpointStats(where, args, since, limit = 15,read = sql) {
+  return read(`SELECT path, COUNT(*) AS calls, CAST(AVG(ms) AS INTEGER) AS avgMs,
                      SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors
               FROM request_log WHERE ts >= ? ${where} GROUP BY path ORDER BY calls DESC LIMIT ?`).all(since, ...args, limit);
 }
@@ -256,7 +258,7 @@ r('GET', '/account/usage', (ctx) => {
       daily: days.map((day) => ({ day, count: map[day] ?? 0 })),
       endpoints: endpointStats('AND user_id = ?', [user.id], since),
       recent: sql(`SELECT l.ts, l.path, l.status, l.ms, l.rid, l.error, k.name AS keyName FROM request_log l
-                   LEFT JOIN api_keys k ON k.id = l.key_id WHERE l.user_id = ? ORDER BY l.id DESC LIMIT 20`).all(user.id),
+                   LEFT JOIN api_keys k ON k.id = l.key_id AND k.user_id=l.user_id WHERE l.user_id = ? ORDER BY l.id DESC LIMIT 20`).all(user.id),
     },
   };
 });
@@ -345,15 +347,15 @@ r('POST', '/account/subscriptions/push', async (ctx) => {
 
 // ---------- 管理员 ----------
 
-r('GET', '/admin/stats', (ctx) => {
+const adminTraffic=(ctx,fn)=>{requireAdmin(ctx);return withTrafficScope(ctx.query.get('traffic'),fn);};
+r('GET', '/admin/stats', (ctx) => adminTraffic(ctx,() => {
   requireAdmin(ctx);
+  flushStats();
   const days = lastDays(14);
-  const rows = sql(`SELECT day, SUM(count) AS count,
-                           SUM(CASE WHEN subject LIKE 'ip:%' THEN count ELSE 0 END) AS anon
-                    FROM usage_daily WHERE day >= ? GROUP BY day`).all(days[0]);
+  const rows = statsSql('SELECT day,SUM(calls) AS count,SUM(anon) AS anon FROM stats_daily WHERE day>=? GROUP BY day').all(days[0]);
   const map = Object.fromEntries(rows.map((x) => [x.day, x]));
   const since = Date.now() - 86400_000;
-  const last24 = sql(`SELECT COUNT(*) AS calls, CAST(AVG(ms) AS INTEGER) AS avgMs,
+  const last24 = statsSql(`SELECT COUNT(*) AS calls, CAST(AVG(ms) AS INTEGER) AS avgMs,
                              SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors,
                              COUNT(DISTINCT ip) AS ips FROM request_log WHERE ts >= ?`).get(since);
   return {
@@ -367,12 +369,13 @@ r('GET', '/admin/stats', (ctx) => {
       },
       daily: days.map((day) => ({ day, count: map[day]?.count ?? 0, anon: map[day]?.anon ?? 0 })),
       // 管理后台返回全部接口（前端每页显示 10 个）
-      endpoints: endpointStats('', [], Date.now() - 7 * 86400_000, 1000),
-      errors: sql(`SELECT path, status, COUNT(*) AS n FROM request_log WHERE ts >= ? AND status >= 500
+      endpoints: endpointStats('', [], Date.now() - 7 * 86400_000, 1000,statsSql),
+      traffic:trafficMetadata(),
+      errors: statsSql(`SELECT path, status, COUNT(*) AS n FROM request_log WHERE ts >= ? AND status >= 500
                    GROUP BY path, status ORDER BY n DESC LIMIT 10`).all(since),
     },
   };
-});
+}));
 
 // 用户列表：支持按邮箱搜索、分页（每页 10 / 20 / 50 / 100，默认 20）
 r('GET', '/admin/users', (ctx) => {
@@ -385,7 +388,7 @@ r('GET', '/admin/users', (ctx) => {
   const args = q ? [`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`] : [];
   const total = sql(`SELECT COUNT(*) AS n FROM users u ${where}`).get(...args).n;
   const since7 = Date.now() - 7 * 86400_000;
-  const users = sql(`SELECT u.*, (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id) AS keys,
+  const users = statsSql(`SELECT u.*, (SELECT COUNT(*) FROM api_keys k WHERE k.user_id = u.id) AS keys,
                             COALESCE((SELECT count FROM usage_daily d WHERE d.day = ? AND d.subject = 'user:' || u.id), 0) AS usedToday,
                             (SELECT COUNT(*) FROM request_log l WHERE l.user_id = u.id AND l.ts >= ?) AS calls7d,
                             (SELECT MAX(ts) FROM request_log l WHERE l.user_id = u.id) AS lastCallAt
@@ -402,7 +405,7 @@ r('GET', '/admin/users', (ctx) => {
 });
 
 // 只返回白名单统计字段，不返回 Key、请求参数或日志明细。
-r('GET', '/admin/users/:id/calls', (ctx) => {
+r('GET', '/admin/users/:id/calls', (ctx) => adminTraffic(ctx,() => {
   requireAdmin(ctx);
   if (!/^[1-9]\d*$/.test(ctx.params.id) || !Number.isSafeInteger(Number(ctx.params.id))) throw new HttpError(400, '用户 ID 无效');
   const id = Number(ctx.params.id);
@@ -413,14 +416,15 @@ r('GET', '/admin/users/:id/calls', (ctx) => {
   }
   const user = sql('SELECT id, email FROM users WHERE id = ?').get(id);
   if (!user) throw new HttpError(404, '用户不存在');
-  const items = sql('SELECT path, calls, ok, e4xx, e5xx FROM user_calls_daily WHERE user_id = ? AND day = ? ORDER BY calls DESC, path').all(id, day);
+  const items = statsSql('SELECT path, calls, ok, e4xx, e5xx FROM user_calls_daily WHERE user_id = ? AND day = ? AND calls>0 ORDER BY calls DESC, path').all(id, day);
   const totals = { calls: 0, ok: 0, e4xx: 0, e5xx: 0 };
   for (const item of items) for (const field of Object.keys(totals)) totals[field] += item[field];
-  const startedAt = sql('SELECT started_at FROM user_calls_meta WHERE id = 1').get().started_at;
+  const startedAt = Math.max(sql('SELECT started_at FROM user_calls_meta WHERE id = 1').get().started_at,
+    ctx.query.get('traffic')==='all'?0:sql('SELECT started_at FROM traffic_meta WHERE id=1').get().started_at);
   const completeFrom = today(new Date(startedAt + 86400_000));
-  return { data: { user, day, today: today(), items, totals, completeFrom,
+  return { data: { user, day, today: today(), items, totals, completeFrom,traffic:trafficMetadata(),
     coverage: day < completeFrom ? 'partial' : 'complete' } };
-});
+}));
 
 r('PATCH', '/admin/users/:id', (ctx) => {
   requireAdmin(ctx);
@@ -554,7 +558,7 @@ r('GET', '/admin/update/progress', (ctx) => {
 r('GET', '/admin/modules', (ctx) => {
   requireAdmin(ctx);
   const since = Date.now() - 7 * 86400_000;
-  const calls = new Map(sql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(since).map((x) => [x.path, x.n]));
+  const calls = new Map(statsSql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(since).map((x) => [x.path, x.n]));
   return {
     data: {
       categories: apiCategories,
@@ -732,10 +736,10 @@ const moduleHealth = () => cachedStatus().modules;
 let cardStats = null;
 r('GET', '/stats/modules', () => {
   if (cardStats && Date.now() - cardStats.at < 60_000) return { data: cardStats.data };
-  const totals = new Map(sql('SELECT path, total FROM api_calls').all().map((x) => [x.path, x.total]));
+  const totals = new Map(statsSql('SELECT path, total FROM api_calls').all().map((x) => [x.path, x.total]));
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0); // 服务器时区为北京时间
-  const today = new Map(sql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(dayStart.getTime()).map((x) => [x.path, x.n]));
+  const today = new Map(statsSql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(dayStart.getTime()).map((x) => [x.path, x.n]));
   const health = new Map(moduleHealth().map((h) => [h.name, h.status]));
   const data = {};
   for (const m of apiModules) {
@@ -763,8 +767,9 @@ r('GET', '/status', () => {
 // ---------- 详细统计（仅管理员） ----------
 const analyticsRoute = (path, fn) => r('GET', `/admin/analytics/${path}`, (ctx) => {
   requireAdmin(ctx);
-  return { data: fn(parseRange(ctx.query), ctx) };
+  return withTrafficScope(ctx.query.get('traffic'),()=>({data:{...fn(parseRange(ctx.query),ctx),traffic:trafficMetadata()}}));
 });
+ r('GET','/admin/analytics/traffic-config',(ctx)=>{requireAdmin(ctx);return {data:trafficConfiguration()};});
 analyticsRoute('overview', (range) => overview(range));
 analyticsRoute('endpoints', (range) => endpoints(range));
 analyticsRoute('endpoint', (range, ctx) => endpointDetail(range, String(ctx.query.get('path') ?? '')));

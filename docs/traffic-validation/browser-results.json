@@ -1,0 +1,22 @@
+{
+  "browser": "153.0.8010.12",
+  "counts": {
+    "business": 10,
+    "internal": 6,
+    "all": 16,
+    "legacyIncluded": 2
+  },
+  "checks": [
+    "business default excludes 6 internal calls, includes 2 legacy",
+    "internal switch updates KPIs, endpoints and source queries",
+    "CSV records selected scope in header, rows and filename",
+    "internal logs retained and request detail shows classification",
+    "all reconciles business plus internal",
+    "read-only existing-identity configuration, no credential controls",
+    "scope error and retry never show old scope label",
+    "390px/320px responsive controls and keyboard scope switching",
+    "returning to stats resets safe business default",
+    "admin-only switches and internal config APIs"
+  ],
+  "pageErrors": []
+}

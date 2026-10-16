@@ -6,7 +6,7 @@ import { createServer } from 'node:net';
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath,pathToFileURL } from 'node:url';
 import { codeDigest } from '../src/lib/deployment.js';
 
 const source = fileURLToPath(new URL('../', import.meta.url));
@@ -60,7 +60,7 @@ async function fixture(mode) {
   writeFileSync(join(root,'.gitignore'),'/data/\n/.env\n/.update*/\n');
   const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore'],maxBuffer:80*1024*1024}).trim();
   const commit=message=>{git('add','.');git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm',message);return git('rev-parse','HEAD');};
-  git('init','-q');const oldSha=commit('baseline');
+  git('init','-q');git('config','core.autocrlf','false');const oldSha=commit('baseline');
   // launcher 从头到尾都是原文件。健康/未重启场景的 server 也逐字节保持原样。
   assert.deepEqual(readFileSync(join(root,'src/launcher.js')),readFileSync(join(source,'src/launcher.js')));
   assert.deepEqual(readFileSync(join(root,'src/server.js')),readFileSync(join(source,'src/server.js')));
@@ -90,10 +90,11 @@ async function fixture(mode) {
   const port=portServer.address().port;await new Promise(r=>portServer.close(r));
   const base='http://127.0.0.1:'+port;
   let logs='';
-  const child=spawn(process.execPath,['--import',join(dir,'preload.mjs'),join(root,'src',mode==='unmanaged'?'server.js':'launcher.js')],{
+  const preloadUrl=pathToFileURL(join(dir,'preload.mjs')).href;
+  const child=spawn(process.execPath,['--import',preloadUrl,join(root,'src',mode==='unmanaged'?'server.js':'launcher.js')],{
     cwd:root,detached:process.platform!=='win32',stdio:['ignore','pipe','pipe'],
     env:{PATH:process.env.PATH,NODE_ENV:'test',DB_FILE:join(root,'data/fixture.db'),DATA_DIR:join(root,'data'),PORT:String(port),PUBLIC_URL:base,
-      NODE_OPTIONS:'--import '+join(dir,'preload.mjs'),UPDATE_PROCESS_META:join(dir,'meta.json'),UPDATE_REPO:'fixture/api',UPDATE_BRANCH:'Miao-API',UPDATE_UPLOAD_VERIFY:'1',
+      NODE_OPTIONS:'--import '+preloadUrl,UPDATE_PROCESS_META:join(dir,'meta.json'),UPDATE_REPO:'fixture/api',UPDATE_BRANCH:'Miao-API',UPDATE_UPLOAD_VERIFY:'1',
       HEALTH_CHECK_INTERVAL_MIN:'0',EMAIL_VERIFY:'0',ADMIN_EMAILS:'process@preview.invalid',TZ:'UTC'},
   });
   for(const stream of [child.stdout,child.stderr])stream.on('data',d=>{if(logs.length<200000)logs+=d;});

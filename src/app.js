@@ -21,6 +21,8 @@ import { applySettings } from './lib/settings.js';
 applySettings();
 import { consume, logRequest, refund, reserveAdditional } from './lib/limits.js';
 import { recordLimited } from './lib/stats.js';
+import { classifyTraffic,initializeTrafficConfiguration } from './lib/traffic.js';
+initializeTrafficConfiguration();
 
 // 日汇总与日志仍原子提交；日志故障不能改变已经完成的业务结果或再记一次假 500。
 function writeRequestLog(entry) {
@@ -280,6 +282,7 @@ export async function handle(req, res) {
         if (!user) throw new HttpError(401, 'API Key 无效或已删除', 'INVALID_API_KEY');
         log.keyId = user.key_id;
         log.user = user;
+        log.trafficClassification=classifyTraffic(user,user.key_id);
         log.logged = !route.public;
         if (user.key_disabled) throw new HttpError(403, '该 API Key 已停用，可在控制台重新启用', 'KEY_DISABLED');
         checkKeySource(user.key_allow, { ip, headers: req.headers });
@@ -290,6 +293,7 @@ export async function handle(req, res) {
         user = userFromSession(cookies.sid);
       }
       log.user = user;
+      log.trafficClassification ??= classifyTraffic(user,log.keyId);
       log.logged = !route.public;
       // 被管理员关闭的模块对所有人（包括管理员）返回 403，已生成的短链接也随之失效
       if (!isModuleEnabled(hit.route.module.name)) throw new HttpError(403, '该接口已被管理员关闭', 'API_DISABLED');
@@ -337,7 +341,7 @@ export async function handle(req, res) {
     if (status >= 500) console.error(`[${req.method} ${path}]`, err instanceof HttpError ? `${status} ${err.message}` : err);
     // 被限流的请求不计入日志，避免刷量拖慢数据库
     // 被限流的请求不写调用明细（避免刷量拖慢数据库），只在统计里计数
-    if (log.logged && status === 429) recordLimited({ subject: log.user ? `user:${log.user.id}` : `ip:${ip}`, path });
+    if (log.logged && status === 429) recordLimited({ subject: log.user ? `user:${log.user.id}` : `ip:${ip}`, path,traffic:(log.trafficClassification ?? classifyTraffic(log.user,log.keyId)).traffic });
     if (log.logged && status !== 429) {
       const error = err instanceof HttpError ? err.message : `${err?.name ?? 'Error'}: ${err?.message ?? err}`;
       writeRequestLog({ ...log, ip, path: log.canonicalPath ?? path, status, ms: Date.now() - started, error, headers: req.headers });

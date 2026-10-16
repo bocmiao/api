@@ -10,12 +10,14 @@ const AS_STACK = [
   { key: 'apikey', label: 'API Key', color: 'var(--as-s3)' },
 ];
 const AS_VIA = { anon: '未登录', session: '网页登录', apikey: 'API Key' };
+const AS_TRAFFIC = {business:'业务',internal:'内部测试',all:'全部'};
 const AS_WEEK = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const AS_PAGE_SIZE = 20;
 const AS_SOURCE_BASIS = { origin: 'Origin', referer: 'Referer', unknown: '未知', legacy: '旧版回填' };
 const AS_SOURCE_STATE = { matched: '两头一致', conflict: '来源冲突', single: '单一有效头', fallback: 'Referer 兜底', missing: '未提供来源', opaque: 'null 来源', invalid: '来源无效', legacy: '旧版（依据缺失）', legacy_unverifiable: '旧版域名无法核实' };
 
 const asState = {
+  traffic:'business',
   range: { key: '7d', from: '', to: '' },
   token: 0,
   overlay: { line: true, lower: false },
@@ -411,11 +413,12 @@ function asLegend(items) {
 // ---------- 页面 ----------
 function asQs() {
   const r = asState.range;
-  return r.key === 'custom' ? `range=custom&from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}` : `range=${r.key}`;
+  return (r.key === 'custom' ? `range=custom&from=${encodeURIComponent(r.from)}&to=${encodeURIComponent(r.to)}` : `range=${r.key}`)+`&traffic=${encodeURIComponent(asState.traffic)}`;
 }
 
 async function pageAdminStats() {
   if (!state.user?.isAdmin) return pageNotFound();
+  asState.traffic='business';
   asInjectCss();
   const saved = asLs.get('adminStats.range');
   if (saved && AS_RANGES.some(([k]) => k === saved.key)) asState.range = { key: saved.key, from: saved.from || '', to: saved.to || '' };
@@ -427,6 +430,8 @@ async function pageAdminStats() {
   $('#main').innerHTML = `<div class="wrap as-page" id="as-root">
     <div class="page-head"><div><h1>统计</h1><p>调用量、接口、调用方、来源与错误的详细统计</p></div>${adminTabs('stats')}</div>
     <div class="card as-bar">
+      <div class="as-seg" role="group" aria-label="统计口径">${[['business','业务'],['internal','内部测试'],['all','全部']].map(([k,t])=>`<button type="button" data-traffic="${k}" aria-pressed="${asState.traffic===k}" class="${asState.traffic===k?'active':''}">${t}</button>`).join('')}</div>
+      <button class="btn sm" type="button" data-traffic-config>查看内部标记配置</button>
       <div class="as-seg" role="group" aria-label="时间范围">${AS_RANGES.map(([k, t]) => `<button type="button" data-range="${k}" class="${r.key === k ? 'active' : ''}">${t}</button>`).join('')}</div>
       <form class="as-custom" id="as-custom" ${r.key === 'custom' ? '' : 'hidden'}>
         <input class="input" type="date" name="from" value="${esc(r.from)}" max="${asYmd(Date.now())}" aria-label="开始日期"><span class="faint">至</span>
@@ -436,6 +441,7 @@ async function pageAdminStats() {
         <button class="btn sm" type="button" id="as-refresh">刷新</button></div>
     </div>
     <div class="as-range-info" id="as-range-info">&nbsp;</div>
+    <div class="as-range-info" id="as-traffic-note">业务口径排除已明确标记的内部测试；旧记录保留为未分类历史。日志、实际配额和认证保持原样。</div>
     <div id="as-kpi" class="as-slot-kpi">${asKpiSkeleton()}</div>
     ${card('trend', '调用趋势', `<div class="as-legend" id="as-trend-tg">
       <label title="服务端错误（5xx）次数，和调用量用同一纵轴"><input type="checkbox" data-ov="line" ${asState.overlay.line ? 'checked' : ''}><i class="as-sw line" style="background:var(--danger)"></i>失败（5xx）</label>
@@ -475,6 +481,9 @@ function asBind(root) {
     asLoadSources(root);
   });
   root.addEventListener('click', (e) => {
+    const scope=e.target.closest('[data-traffic]');
+    if(scope){asState.traffic=scope.dataset.traffic;$$('[data-traffic]',root).forEach(b=>{const on=b===scope;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});return asLoadAll(root);}
+    if(e.target.closest('[data-traffic-config]'))return asOpenTrafficConfig();
     const sourcePage = e.target.closest('[data-source-page]');
     if (sourcePage) { asState.source.page = Number(sourcePage.dataset.sourcePage); return asLoadSources(root); }
     const sourceHost = e.target.closest('[data-source-host]');
@@ -589,6 +598,9 @@ const asLoaders = {
 const asSecOf = { websites: 'websites', kpi: 'overview', trend: 'overview', heat: 'overview', cats: 'overview', ep: 'endpoints', callers: 'audience', sources: 'audience', geo: 'audience', growth: 'users', issues: 'issues', health: 'health' };
 
 function asLoadAll(root) {
+  $('#as-traffic-note',root).textContent=`当前口径：${AS_TRAFFIC[asState.traffic]}。业务排除明确标记的内部测试；未分类历史保留在业务和全部中。`;
+  asState.ep.items=[];
+  $('#as-csv',root).disabled=true;
   asState.source.page = 1;
   const tok = ++asState.token;
   for (const fn of Object.values(asLoaders)) fn(root, tok);
@@ -628,6 +640,7 @@ async function asLoad(root, tok, ids, path, render) {
 
 // ---------- 概览：KPI、趋势、热力图、分类 ----------
 function asRenderOverview(root, d) {
+  if(d.traffic)$('#as-traffic-note',root).textContent=`当前口径：${d.traffic.label}。${d.traffic.history} 分类从 ${asSourceDate(d.traffic.startedAt)} 起记录；配额按实际调用计算。`;
   const { cur, prev } = d.kpi;
   const rg = d.range;
   const info = rg.key === 'custom'
@@ -640,7 +653,7 @@ function asRenderOverview(root, d) {
     <div class="as-foot">${change}${foot}</div></div>`;
   const prevTxt = (v) => `<span>上期 ${v}</span>`;
   $('#as-kpi', root).innerHTML = `<div class="tiles tiles-4">
-    ${tile('调用量', '这段时间内所有接口被调用的总次数（含失败和被限流的请求）', fmtNum(cur.calls), asChange(cur.calls, prev.calls), prevTxt(fmtNum(prev.calls)))}
+    ${tile('调用量', '当前统计口径内已记录的接口调用（含成功和失败，429 单独计数）', fmtNum(cur.calls), asChange(cur.calls, prev.calls), prevTxt(fmtNum(prev.calls)))}
     ${tile(`独立 IP${approx}`, '有调用的不同 IP 地址数', fmtNum(cur.ips), asChange(cur.ips, prev.ips), prevTxt(fmtNum(prev.ips)))}
     ${tile(`活跃用户${approx}`, '有过调用（网页登录或 API Key）的注册用户数', fmtNum(cur.activeUsers), asChange(cur.activeUsers, prev.activeUsers), prevTxt(fmtNum(prev.activeUsers)))}
     ${tile('新注册', '这段时间内新注册的用户数', fmtNum(cur.newUsers), asChange(cur.newUsers, prev.newUsers), prevTxt(fmtNum(prev.newUsers)))}
@@ -724,6 +737,7 @@ const AS_EP_COLS = [
 ];
 
 function asRenderEndpoints(root, d) {
+  $('#as-csv',root).disabled=!d.items.length;
   asState.ep.items = d.items;
   asState.ep.total = d.total;
   asState.ep.routesTotal = d.routesTotal;
@@ -788,8 +802,8 @@ function asExportCsv() {
     if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`; // 防止被 Excel 当成公式
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const head = ['接口名称', '地址', '模块', '分类', '调用次数', '占比(%)', '成功率(%)', '4xx', '5xx', '失败率(%)', '限流', '平均耗时(ms)', 'P95(ms)', '缓存命中率(%)', '平均响应(字节)', '上期调用', '较上期(%)'];
-  const lines = [head, ...list.map((e) => [e.title ?? '', e.path, e.module ?? '', e.category ? catOf(e.category).title : '', e.calls, e.share, e.successRate, e.e4xx, e.e5xx,
+  const head = ['统计口径', '接口名称', '地址', '模块', '分类', '调用次数', '占比(%)', '成功率(%)', '4xx', '5xx', '失败率(%)', '限流', '平均耗时(ms)', 'P95(ms)', '缓存命中率(%)', '平均响应(字节)', '上期调用', '较上期(%)'];
+  const lines = [head, ...list.map((e) => [({business:'业务',internal:'内部测试',all:'全部'})[asState.traffic],e.title ?? '', e.path, e.module ?? '', e.category ? catOf(e.category).title : '', e.calls, e.share, e.successRate, e.e4xx, e.e5xx,
     e.errorRate, e.limited, e.avgMs, e.p95, e.cacheHit, e.avgBytes, e.prevCalls, e.change])].map((r) => r.map(cell).join(','));
   const blob = new Blob([`﻿${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -797,7 +811,7 @@ function asExportCsv() {
   a.href = url;
   // 文件名用 ASCII：个别浏览器遇到中文文件名会退回成没有扩展名的 download
   const r = asState.range;
-  a.download = `miao-api-endpoints-${r.key === 'custom' ? `${r.from}_${r.to}` : r.key}-${asYmd(Date.now())}.csv`;
+  a.download = `miao-api-endpoints-${asState.traffic}-${r.key === 'custom' ? `${r.from}_${r.to}` : r.key}-${asYmd(Date.now())}.csv`;
   document.body.append(a);
   a.click();
   a.remove();
@@ -818,6 +832,22 @@ const asTable = (head, rows, empty = '暂无数据', limit = Infinity) => (rows.
     ${rows.length > limit ? `<div class="as-pager"><button class="btn sm ghost" type="button" data-as-more>展开全部 ${rows.length} 条</button></div>` : ''}</div>`
   : asEmpty(empty));
 const asIpWhere = (x) => [x.region, x.isp].filter(Boolean).map(esc).join(' · ') || '<span class="faint">未知</span>';
+
+async function asOpenTrafficConfig() {
+  const returnFocus=document.activeElement;
+  try {
+    const d=await api('GET','/admin/analytics/traffic-config');
+    modal(`<h2>内部测试标记配置</h2><p class="small muted">只读取服务器显式配置的已有身份。账号配置覆盖该账号后续调用；Key 配置只覆盖指定 Key。请求头、域名、IP 和管理员身份不会自动成为内部标记。</p>
+      <h3>已有账号</h3>${asTable([['账号 ID'],['邮箱']],d.users.map(u=>`<tr><td>${u.id}</td><td>${esc(u.email)}</td></tr>`),'未配置内部测试账号')}
+      <h3>已有 Key</h3>${asTable([['Key ID'],['用户 ID'],['标签']],d.keys.map(k=>`<tr><td>${k.id}</td><td>${k.userId}</td><td>${esc(k.name)}</td></tr>`),'未配置内部测试 Key')}
+      ${d.inactiveUserIds.length||d.inactiveKeyIds.length?`<p class="form-error">以下配置条目未生效：账号 ${esc(d.inactiveUserIds.join(', ')||'无')}；Key ${esc(d.inactiveKeyIds.join(', ')||'无')}。身份不存在或 Key 已变更，需由服务器配置者核对；若命中其他有效配置，仍按该配置分类。</p>`:''}
+      <p class="small faint">${esc(d.history)} 分类记录起于 ${esc(asSourceDate(d.startedAt))}。不会改变日志保留、配额、Key 或权限。</p><div class="actions"><button class="btn primary" data-close>关闭</button></div>`,(root,close)=>{
+        $('.modal',root).setAttribute('aria-label','内部测试标记配置');
+        $('[data-close]',root).onclick=close;
+        root.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();$('[data-close]',root).focus();}});
+      },()=>{if(returnFocus?.isConnected)returnFocus.focus();});
+  } catch(err){toast(err.message,true);}
+}
 
 function asSourceForm() {
   const s = asState.source;
@@ -897,8 +927,8 @@ function asOpenSource(host) {
         const d=await api('GET',`/admin/analytics/source-${section}?${q}`);
         if (!root.isConnected || tok !== Number(el.dataset.generation)) return;
         const rows=d.items.map(r=>section==='attribution' ? `<tr><td>${esc(r.email || (r.user_id ? `已删除用户 #${r.user_id}`:'未登录'))}</td><td>${esc(r.keyName || (r.key_id ? `已删除 Key #${r.key_id}`:'无 Key'))}<span class="faint small">${r.key_id ? ` #${r.key_id}`:''}</span></td><td class="mono small">${esc(r.path)}</td><td class="num">${fmtNum(r.calls)}</td><td class="num">${fmtNum(r.errors)}</td><td class="nowrap small">${esc(asMd(r.lastAt))}</td></tr>`
-          : `<tr><td class="small nowrap">${esc(asMd(r.ts))}</td><td class="mono small">${esc(r.path)}</td><td>${r.status}</td><td>${esc(AS_SOURCE_BASIS[r.basis] || r.basis)} / ${esc(AS_SOURCE_STATE[r.state] || r.state)}</td><td>${r.rid ? `<button class="btn sm" data-source-rid="${esc(r.rid)}">查看请求</button>`:'旧日志无请求 ID'}</td></tr>`);
-        el.innerHTML=asTable(section==='attribution' ? [['用户'],['Key 标签'],['接口'],['调用','num'],['失败','num'],['最后时间']] : [['时间'],['接口'],['状态'],['来源依据 / 状态'],['详情']], rows, section==='attribution'?'没有符合条件的归属记录':'没有尚存的请求明细，日汇总仍按保留期保存')
+          : `<tr><td class="small nowrap">${esc(asMd(r.ts))}</td><td class="mono small">${esc(r.path)}</td><td>${r.status}</td><td>${esc(AS_SOURCE_BASIS[r.basis] || r.basis)} / ${esc(AS_SOURCE_STATE[r.state] || r.state)}</td><td>${esc(({business:'业务',internal:'内部测试',legacy:'未分类历史'})[r.traffic]||'未分类历史')}</td><td>${r.rid ? `<button class="btn sm" data-source-rid="${esc(r.rid)}">查看请求</button>`:'旧日志无请求 ID'}</td></tr>`);
+        el.innerHTML=asTable(section==='attribution' ? [['用户'],['Key 标签'],['接口'],['调用','num'],['失败','num'],['最后时间']] : [['时间'],['接口'],['状态'],['来源依据 / 状态'],['统计分类'],['详情']], rows, section==='attribution'?'没有符合条件的归属记录':'没有尚存的请求明细，日汇总仍按保留期保存')
           +asSourcePager(d,`data-source-${section}-page`)+(section==='attribution'?asSourceCoverage(d.coverage):`<div class="as-note">仅展示保留期内的原始明细；旧日志或未记录的调用可能没有请求 ID。${d.capped?'所选范围已超出明细保留期。':''}</div>`);
       } catch(err) { if(root.isConnected && tok===Number(el.dataset.generation))el.innerHTML=`<div class="form-error">${esc(err.message)} <button class="btn sm" data-source-${section}-page="${page}">重试</button></div>`; }
       finally {if(tok===Number(el.dataset.generation))el.setAttribute('aria-busy','false');}

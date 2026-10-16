@@ -1,7 +1,8 @@
 // 接口自动检测：定时用示例参数把接口轻量调用一遍（复用一键巡检的逻辑，不计额度、不进调用统计），
 // 结果写入 health_checks / health_daily，供运行状态页显示真实可用性；没人调用的接口也有状态。
 // 同时根据检测结果和实际调用的失败率自动记录故障（incidents）：连续两次检测失败即开始，恢复后自动结束。
-import { sql, db } from '../db.js';
+import { db } from '../db.js';
+import { trafficSql as sql } from './traffic.js';
 import { config } from '../config.js';
 import { today } from './limits.js';
 import { planTargets, callTarget } from './inspect.js';

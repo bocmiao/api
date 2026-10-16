@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync, statSync, copyFileSync } from 'node:fs';
 import { dirname, join, normalize, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { HttpError } from './http.js';
 import { extractTar } from './tar.js';
 import { extractZip, isZip } from './zip.js';
@@ -537,7 +538,7 @@ function verifyStaging(dir) {
     if (!existsSync(join(dir, f))) throw new HttpError(502, `更新包缺少 ${f}，已取消更新`);
   }
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(join(dir, 'src/app.js'))});`], {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(join(dir, 'src/app.js')).href)});`], {
       env: { ...process.env, NODE_ENV: 'test', DB_FILE: ':memory:', MIAO_LAUNCHER: '' },
       stdio: ['ignore', 'ignore', 'pipe'],
       timeout: 30_000,

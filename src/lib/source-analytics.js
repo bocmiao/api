@@ -1,4 +1,4 @@
-import { sql } from '../db.js';
+import { trafficSql as sql } from './traffic.js';
 import { config } from '../config.js';
 import { today } from './day.js';
 import { HttpError } from './http.js';
@@ -118,7 +118,7 @@ export function sourceAttribution(range, q) {
 export function sourceRequests(range, q) {
   const f = filters(q), rawFrom = Date.now() - config.logRetentionDays * DAY;
   const cte = `WITH raw AS (SELECT id, ts, rid, path, status, ms, COALESCE(referer, '') AS host,
-    source_basis AS basis, source_state AS state, origin_host, referer_host,
+    source_basis AS basis, source_state AS state, origin_host, referer_host,traffic,traffic_basis,
     COALESCE(user_id, 0) AS user_id, COALESCE(key_id, 0) AS key_id FROM request_log WHERE ts >= ? AND ts < ?),
     filtered AS (SELECT * FROM raw WHERE ${f.where})`;
   const args = [Math.max(range.from, rawFrom), range.to, ...f.args];

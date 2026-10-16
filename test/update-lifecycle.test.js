@@ -28,6 +28,7 @@ function fixture() {
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: ['ignore', 'pipe', 'ignore'] });
   const commit = () => { git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'); return git('rev-parse', 'HEAD').toString().trim(); };
   git('init', '-q');
+  git('config','core.autocrlf','false');
   const oldSha = commit();
   writeFileSync(join(root, 'src/app.js'), 'export const marker = "new";');
   const sha = commit();
