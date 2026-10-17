@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { apiRouter, catalog } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import './routes/site.js';
+import './routes/news60s.js';
 import { HttpError, errorCode } from './lib/http.js';
 import { renderPage, renderAbout, siteOrigin, sitemap, robots } from './lib/seo.js';
 import { la51Tags, pageCsp } from './lib/la51.js';

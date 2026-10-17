@@ -58,6 +58,7 @@ docker run -d -p 3000:3000 -v miao-api-data:/app/data --env-file .env miao-api
 | `PUBLIC_URL` | | 站点公网地址，如 `https://api.example.com`，用于短链与 Cookie 的 Secure 标记 |
 | `TRUST_PROXY` | 0 | 部署在 Nginx / CDN 后设为 1，从 `X-Forwarded-For` 读取真实 IP（否则所有人共享一个 IP 的额度） |
 | `DATA_DIR` | `./data` | SQLite 数据目录 |
+| `NEWS_60S_SOURCE_URL` | 空 | 可选自有简报 JSON 更新源，支持 `{date}` 静态模板；仅管理员/CLI 更新时读取，无默认公共 API。见 [自有简报与 Linux 调度](docs/news60s-self-hosting.md) |
 | `ANON_DAILY_LIMIT` / `ANON_MINUTE_LIMIT` | 100 / 20 | 未登录用户（按 IP）每天 / 每分钟额度 |
 | `USER_DAILY_LIMIT` / `USER_MINUTE_LIMIT` | 10000 / 120 | 注册用户每天 / 每分钟额度（管理员可给单个用户单独设置） |
 | `MAX_KEYS_PER_USER` / `MAX_CHANNELS_PER_USER` | 10 / 10 | 每个账号的 Key、推送渠道数量上限 |
@@ -217,7 +218,7 @@ await fetch('https://api.example.com/api/shorturl', {
 | IP 归属地 | `/api/ip` | 查询 IP 归属地（默认调用者 IP） |
 | 手机号归属地 ⚠️ | `/api/phone` | 查询手机号归属地与运营商 |
 | 历史上的今天 ⚠️ | `/api/history/today` | 历史上的今天大事记 |
-| 60 秒读懂世界 ⚠️ | `/api/news/60s` | 获取每日 60 秒新闻简报 |
+| 60 秒读懂世界 ⚠️ | `/api/news/60s` | 读取自有持久简报，支持历史日期；须先导入，更新失败保留旧版。见 [更新说明](docs/news60s-self-hosting.md) |
 | 摸鱼日历 | `/api/moyu` | 摸鱼日历：周末、发薪日与节假日倒计时 |
 | BMI 计算 | `/api/bmi` | 计算身体质量指数（BMI） |
 | 个税计算 | `/api/tax/income` | 按月累计预扣或年度汇算，支持五险一金、专项附加扣除、年终奖单独计税 |

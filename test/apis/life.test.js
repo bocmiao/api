@@ -1,6 +1,8 @@
-import { test, describe, afterEach } from 'node:test';
+import { test, describe, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 import lifeModules from '../../src/apis/life/index.js';
@@ -12,6 +14,8 @@ import { normalizeIp, isPrivateIp, parseIpApi } from '../../src/apis/life/ip.js'
 import { parse360, carrierBySegment } from '../../src/apis/life/phone.js';
 import { parseBaiduHistory } from '../../src/apis/life/history.js';
 import { parseViki60s, parseZhihu60s } from '../../src/apis/life/news60s.js';
+import { updateNews60s } from '../../src/lib/news60s/update.js';
+import { news60sStore } from '../../src/lib/news60s/store.js';
 import { parseOilPage, normalizeProvince } from '../../src/apis/life/oil.js';
 import { assertFieldsDocumented, collectPaths, matcher } from '../helpers/fields.js';
 
@@ -19,6 +23,15 @@ const fx = (name) => readFileSync(new URL(`../fixtures/life/${name}`, import.met
 const json = (name) => JSON.parse(fx(name));
 
 const realFetch = globalThis.fetch;
+const newsTestDir = mkdtempSync(join(tmpdir(), 'miao-life-news60s-'));
+const previousDataDir = process.env.DATA_DIR;
+process.env.DATA_DIR = newsTestDir;
+after(() => {
+  news60sStore().close();
+  if (previousDataDir == null) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = previousDataDir;
+  rmSync(newsTestDir, { recursive: true, force: true });
+});
 afterEach(() => { globalThis.fetch = realFetch; });
 // 按 URL 片段返回预置响应的假 fetch
 function mockFetch(routes) {
@@ -379,10 +392,10 @@ describe('60 秒读懂世界', () => {
     assert.equal(r.tip, '人生没有白走的路，每一步都算数。');
     assert.equal(r.date, '2026-09-24');
   });
-  test('主源失败时回退知乎', async () => {
-    mockFetch({ '60s.viki.moe': 404, 'zhihu.com': json('zhihu-60s.json') });
-    const r = await call('/api/news/60s');
-    assert.equal(r.data.source, 'zhihu.com');
+  test('未导入时返回503，不隐式调用公共源或知乎', async () => {
+    const calls = mockFetch({ '60s.viki.moe': json('viki-60s.json'), 'zhihu.com': json('zhihu-60s.json') });
+    await assert.rejects(call('/api/news/60s'), { status: 503 });
+    assert.equal(calls.length, 0);
   });
 });
 
@@ -508,13 +521,11 @@ describe('返回字段说明', () => {
     assertFieldsCovered('/api/history/today', [r.data]);
   });
 
-  test('/api/news/60s：主源与知乎备用源', async () => {
-    mockFetch({ '60s.viki.moe': json('viki-60s.json') });
-    const viki = (await call('/api/news/60s', 'date=2026-09-24')).data;
-    assert.equal(viki.source, '60s.viki.moe');
-    mockFetch({ '60s.viki.moe': 404, 'zhihu.com': json('zhihu-60s.json') });
-    const zhihu = (await call('/api/news/60s')).data;
-    assert.equal(zhihu.source, 'zhihu.com');
-    assertFieldsCovered('/api/news/60s', [viki, zhihu]);
+  test('/api/news/60s：自有发布数据及来源归属', async () => {
+    await updateNews60s({ data: { ...json('viki-60s.json').data, image: null, cover: null, source: '测试编辑来源' } });
+    const published = (await call('/api/news/60s', 'date=2026-09-24')).data;
+    assert.equal(published.source, '测试编辑来源');
+    assert.equal(published.provenance.method, 'manual-json');
+    assertFieldsCovered('/api/news/60s', [published]);
   });
 });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { db, sql } from '../src/db.js';
 import { recordCall, recordLimited, flushStats, _pendingSize } from '../src/lib/stats.js';
@@ -93,7 +94,7 @@ test('畸形Cookie/URL受控400，服务继续处理正常请求，绝不逃出h
 });
 
 test('统计提交后重启无重复；未刷内存批次不承诺跨进程恢复',()=>{
- const dir=mkdtempSync(join(process.cwd(),'data/reliability-')),file=join(dir,'synthetic.db');
+ const dir=mkdtempSync(join(tmpdir(),'miao-reliability-')),file=join(dir,'synthetic.db');
  const run=code=>{const r=spawnSync(process.execPath,['--input-type=module','-e',code],{env:{...process.env,DB_FILE:file},encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
  try{
  run(`import {recordCall,flushStats} from './src/lib/stats.js';recordCall({path:'/api/persisted',status:200,ms:1});flushStats();recordCall({path:'/api/unflushed',status:200,ms:1});`);
@@ -123,7 +124,7 @@ test('上游headers后取消JSON/text正文仍是调用方取消；正文超时5
 
 test('首次api_calls/全站统计回填故障连同建表回滚，下次启动可重新完成且不重复',()=>{
  for(const target of ['api_calls','stats_daily']){
-  const dir=mkdtempSync(join(process.cwd(),'data/bootstrap-')),file=join(dir,'synthetic.db');
+  const dir=mkdtempSync(join(tmpdir(),'miao-bootstrap-')),file=join(dir,'synthetic.db');
   const run=code=>{const r=spawnSync(process.execPath,['--input-type=module','-e',code],{env:{...process.env,DB_FILE:file},encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
   try{
    run(`import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.env.DB_FILE);db.exec('CREATE TABLE request_log(id INTEGER PRIMARY KEY,ts INTEGER NOT NULL,user_id INTEGER,key_id INTEGER,ip TEXT,path TEXT NOT NULL,status INTEGER NOT NULL,ms INTEGER NOT NULL)');db.prepare('INSERT INTO request_log(ts,path,status,ms) VALUES(?,?,?,?)').run(Date.now(),'/api/legacy',200,1);db.close();`);

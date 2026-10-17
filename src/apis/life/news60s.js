@@ -1,11 +1,7 @@
-import { cache } from '../../lib/cache.js';
-import { fetchJSON, HttpError, param, stripTags } from '../../lib/http.js';
+import { HttpError, param, stripTags } from '../../lib/http.js';
 import { todayBeijing } from './lunar.js';
-
-// 主源：vikiboss/60s 开源项目的公共实例（数据整理自"每天60秒读懂世界"公众号/知乎专栏）
-const VIKI_URL = 'https://60s.viki.moe/v2/60s';
-// 备用：知乎专栏"每天60秒读懂世界"
-const ZHIHU_URL = 'https://www.zhihu.com/api/v4/columns/c_1715391799055720448/items?limit=1';
+import { news60sStore } from '../../lib/news60s/store.js';
+import { config } from '../../config.js';
 
 const cleanItem = (s) => stripTags(s).replace(/^\d+[、.．]\s*/, '').replace(/[；;]$/, '').trim();
 
@@ -49,23 +45,18 @@ export function parseZhihu60s(raw) {
 
 // 供推送复用
 export async function loadDaily60s(date) {
-  const key = `news60s:${date ?? 'latest'}`;
-  return cache.wrap(key, 30 * 60_000, async () => {
-    try {
-      return parseViki60s(await fetchJSON(date ? `${VIKI_URL}?date=${encodeURIComponent(date)}` : VIKI_URL));
-    } catch (err) {
-      if (date) throw err;
-      return parseZhihu60s(await fetchJSON(ZHIHU_URL));
-    }
-  });
+  const result = await news60sStore().read(date);
+  const data = { ...result.data };
+  for (const key of ['image', 'cover']) if (data[key] && config.publicUrl) data[key] = config.publicUrl + data[key];
+  return { ...result, data };
 }
 
 export default {
   name: 'news-60s',
   category: 'life',
   title: '60 秒读懂世界',
-  description: '每日 15 条新闻简报 + 微语',
-  source: '60s.viki.moe（vikiboss/60s，备用知乎专栏"每天60秒读懂世界"）',
+  description: '已发布的自有新闻简报与微语；按日期查询，更新失败保留旧版',
+  source: '本站持久数据（结构化导入、自有 JSON 源或人工指定微信文章）',
   unofficial: true,
   routes: [
     {
@@ -74,19 +65,40 @@ export default {
       summary: '获取每日 60 秒新闻简报',
       params: [{ name: 'date', desc: '日期 YYYY-MM-DD，留空取最新一期', example: '2026-09-24' }],
       fields: [
-        { name: 'date', type: 'string|null', desc: '简报日期，YYYY-MM-DD。备用源 zhihu.com 按文章发布时间换算为北京时间日期；取不到时为 null' },
-        { name: 'weekday', type: 'string|null', desc: '星期几，如 星期四。仅主源 60s.viki.moe 提供，备用源 zhihu.com 为 null' },
-        { name: 'lunarDate', type: 'string|null', desc: '农历日期，如 八月十四（不含年份）。仅主源 60s.viki.moe 提供，备用源 zhihu.com 为 null' },
+        { name: 'date', type: 'string', desc: '已校验的来源日期 YYYY-MM-DD；历史日期缺失返回 404，不回退最新' },
+        { name: 'weekday', type: 'string|null', desc: '星期几，如 星期四；未提供时按日期计算' },
+        { name: 'lunarDate', type: 'string|null', desc: '原来源提供的农历日期，未提供时为 null' },
         { name: 'news', type: 'array', desc: '新闻条目（字符串数组，通常 15 条），已去掉序号、HTML 标签和末尾分号' },
         { name: 'tip', type: 'string|null', desc: '微语（每日一句）；上游没有时为 null' },
-        { name: 'image', type: 'string|null', desc: '图片链接：主源为整期简报的图片版；备用源为知乎文章题图。没有时为 null' },
-        { name: 'cover', type: 'string|null', desc: '封面图链接：主源为封面图；备用源与 image 相同。没有时为 null' },
-        { name: 'link', type: 'string|null', desc: '原文链接：主源为公众号文章，备用源为知乎专栏文章。没有时为 null' },
-        { name: 'source', type: 'string', desc: '本次数据实际来自哪个源：60s.viki.moe（主源）或 zhihu.com（未指定 date 且主源失败时的备用源）' },
+        { name: 'image', type: 'string|null', desc: '已镜像到本站的图片地址；配置 PUBLIC_URL 时为绝对地址，否则为本站相对路径。没有时为 null' },
+        { name: 'cover', type: 'string|null', desc: '已镜像到本站的封面地址；没有时为 null' },
+        { name: 'link', type: 'string|null', desc: '原文公开链接；没有时为 null' },
+        { name: 'source', type: 'string', desc: '原始内容来源归属；人工输入且未声明时为 人工录入' },
+        { name: 'provenance', type: 'object', desc: '导入方法、来源网址与原图归属；自有存储不代表自有内容生产' },
+        { name: 'provenance.method', type: 'string', desc: 'manual-json / json-url / wechat-url' },
+        { name: 'provenance.url', type: 'string|null', desc: '实际读取的公开 JSON 或文章 URL；人工 JSON 为 null' },
+        { name: 'provenance.image', type: 'string|null', desc: '镜像前的原图公开地址；内嵌图片或无图片时为 null' },
+        { name: 'provenance.cover', type: 'string|null', desc: '镜像前的封面公开地址；内嵌图片或无封面时为 null' },
+        { name: 'provenance.dateBasis', type: 'string', desc: 'supplied-date（结构化输入）或 article-visible-date（文章明确年月日）' },
       ],
       async handler({ query }) {
         const date = param(query, 'date', { pattern: /^\d{4}-\d{2}-\d{2}$/ });
         return loadDaily60s(date);
+      },
+    },
+    {
+      method: 'GET', path: '/api/news/60s/assets/:revision/:file', raw: true,
+      summary: '读取已发布版本的本地镜像图片',
+      params: [
+        { name: 'revision', in: 'path', desc: '发布版本 UUID', required: true },
+        { name: 'file', in: 'path', desc: 'SHA-256 文件名及 raster 图片扩展名', required: true },
+      ],
+      returns: '本地 PNG/JPEG/WebP/GIF；不可变版本地址，带 ETag、nosniff 和长期缓存；不存在返回 404',
+      async handler({ params, req }) {
+        const asset = await news60sStore().asset(params.revision, params.file);
+        const unchanged = req?.headers?.['if-none-match'] === asset.etag;
+        return { status: unchanged ? 304 : 200, body: unchanged ? '' : asset.bytes,
+          headers: { 'content-type': asset.mime, etag: asset.etag, 'cache-control': 'public, max-age=31536000, immutable' } };
       },
     },
   ],

@@ -1,0 +1,8 @@
+{
+  "date": "2026-01-02",
+  "news": ["这是本地导入示例，不是真实新闻。", "请替换为已经核对日期和来源的正式内容。"],
+  "tip": "此文件只用于验证导入、图片存储和读取链路。",
+  "source": "人工示例（非真实新闻）",
+  "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=",
+  "link": "https://example.com/news/2026-01-02"
+}

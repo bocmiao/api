@@ -3,9 +3,16 @@ import { DEFAULT_PROXY_HOSTS } from './proxy.js';
 import { normalizeLa51 } from './la51.js';
 import { sql } from '../db.js';
 import { HttpError } from './http.js';
+import { sourceTemplate } from './news60s/update.js';
 
 // type: text | secret | int | bool | url | emails
 export const SETTING_GROUPS = [
+  {
+    id: 'news60s', title: '60 秒简报',
+    fields: [
+      { key: 'NEWS_60S_SOURCE_URL', label: '自有 JSON 更新来源', type: 'text', placeholder: 'https://news.example.com/{date}.json', help: '仅管理员更新或 CLI 读取，不会在访客请求中访问。可填自有 /v2/60s 或静态 {date}.json，未指定日期时 {date} 为 latest。留空则须人工导入；不默认使用作者公共服务。只接受公开、无密钥 URL' },
+    ],
+  },
   {
     id: 'basic', title: '基础',
     fields: [
@@ -127,6 +134,7 @@ function validate(f, raw) {
   if (f.key === 'LA51_CODE') return normalizeLa51(raw);
   const v = String(raw).trim();
   if (v.length > 2000) throw new HttpError(400, `${f.label}过长`);
+  if (f.key === 'NEWS_60S_SOURCE_URL') return sourceTemplate(v);
   switch (f.type) {
     case 'int': {
       const n = Number(v);
