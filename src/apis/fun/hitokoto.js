@@ -24,6 +24,7 @@ export const FALLBACK_HITOKOTO = [
   { type: 'd', hitokoto: '从明天起，做一个幸福的人。', from: '面朝大海，春暖花开', from_who: '海子' },
   { type: 'e', hitokoto: '慢慢来，比较快。', from: 'API Hub', from_who: null },
   { type: 'f', hitokoto: 'Stay hungry, stay foolish.', from: '斯坦福大学毕业演讲', from_who: '史蒂夫·乔布斯' },
+  { type: 'g', hitokoto: '给今天留一点余地，也给明天留一点期待。', from: '本站原创', from_who: null },
   { type: 'h', hitokoto: '希望是个好东西，也许是世间最好的东西，好东西是不会消逝的。', from: '肖申克的救赎', from_who: '安迪' },
   { type: 'h', hitokoto: '人生就像一盒巧克力，你永远不知道下一块会是什么味道。', from: '阿甘正传', from_who: '阿甘' },
   { type: 'h', hitokoto: '我命由我不由天。', from: '哪吒之魔童降世', from_who: '哪吒' },
@@ -84,7 +85,9 @@ export function pickFallbackHitokoto(types = [], rand = Math.random) {
   };
 }
 
-export async function loadHitokoto(types = []) {
+export async function loadHitokoto(types = [], { provider = 'local' } = {}) {
+  if (provider === 'local') return pickFallbackHitokoto(types);
+  if (provider !== 'hitokoto') throw new HttpError(400, 'provider 只能是 local / hitokoto');
   try {
     return parseHitokoto(await fetchJSON(buildHitokotoUrl(types), { timeoutMs: 5000 }));
   } catch {
@@ -97,13 +100,14 @@ export default {
   category: 'fun',
   title: '一言',
   description: '随机返回一句动漫、文学、诗词、哲学等分类的句子',
-  source: 'Hitokoto 一言',
+  source: '本地内置句库；可选 Hitokoto 一言',
   routes: [
     {
       method: 'GET',
       path: '/api/hitokoto',
-      summary: '随机一言，上游不可用时返回内置句子',
+      summary: '随机一言，默认本地有限句库；可显式选择一言服务',
       params: [
+        { name: 'provider', required: false, default: 'local', desc: 'local 本地有限句库（不联网）；hitokoto 一言服务，失败时返回本地句子', example: 'local' },
         {
           name: 'type',
           required: false,
@@ -130,15 +134,15 @@ export default {
           name: 'fallback',
           type: 'boolean',
           desc:
-            '是否为内置兜底句子。false：正常取自一言上游；true：上游请求失败、超时（5 秒）或返回格式无法识别，' +
-            '改为从内置句子库中按所选分类随机取一条，此时 id、uuid、creator、url 均为 null。' +
-            '所选分类在内置库中没有句子时（如 g=其他）从全部内置句子中取，type 可能与请求的分类不同',
+            '是否来自本地有限句库（保留原字段）。默认 local 时为 true，id、uuid、creator、url 均为 null；' +
+            '显式选择 hitokoto 且请求成功时为 false，失败时为 true。本地句库覆盖 a~l 分类，内容规模小于一言服务',
         },
       ],
       async handler({ query }) {
         const types = parseTypes(param(query, 'type', { max: 30 }));
+        const provider = param(query, 'provider', { default: 'local', oneOf: ['local', 'hitokoto'] });
         // 随机接口不缓存
-        return { data: await loadHitokoto(types), updatedAt: new Date().toISOString() };
+        return { data: await loadHitokoto(types, { provider }), updatedAt: new Date().toISOString() };
       },
     },
   ],

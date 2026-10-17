@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 import { cache } from '../../lib/cache.js';
-import { fetchJSON, HttpError } from '../../lib/http.js';
+import { fetchJSON, HttpError, param } from '../../lib/http.js';
 import { lookupIpOffline } from './offline-db.js';
 
 const FIELDS = 'status,message,country,countryCode,regionName,city,district,zip,lat,lon,timezone,isp,org,as,query';
@@ -130,11 +130,16 @@ export function mergeIpInfo(local, online) {
  * 境外 IP、本地查不到城市、IPv6，或调用方需要 ASN（withAsn）时再请求 ip-api 补全，
  * ip-api 失败时仍返回本地结果。
  * @param {string} ip 已规整的公网 IP
- * @param {{ withAsn?: boolean }} [opts]
+ * @param {{ withAsn?: boolean, mode?: "auto"|"offline" }} [opts]
  */
-export async function loadIpInfo(ip, { withAsn = false } = {}) {
+export async function loadIpInfo(ip, { withAsn = false, mode = 'auto' } = {}) {
+  if (!['auto', 'offline'].includes(mode)) throw new HttpError(400, 'mode 只能是 auto / offline');
   const raw = isIP(ip) === 4 ? lookupIpOffline(ip) : null;
   const local = raw && fromIp2region(ip, raw);
+  if (mode === 'offline') {
+    if (!local) throw new HttpError(404, '本地 IP 库无记录（目前只含 IPv4）；offline 模式不会请求在线服务');
+    return { data: local };
+  }
   if (local && !withAsn && local.city && ['CN', 'HK', 'MO', 'TW'].includes(local.countryCode)) return { data: local };
   // ip-api 免费版仅支持 HTTP，限 45 次/分钟
   const url = `http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=${FIELDS}`;
@@ -158,7 +163,10 @@ export default {
       method: 'GET',
       path: '/api/ip',
       summary: '查询 IP 归属地（默认调用者 IP）',
-      params: [{ name: 'ip', desc: 'IPv4 或 IPv6 地址，留空为调用者 IP', example: '114.114.114.114' }],
+      params: [
+        { name: 'ip', desc: 'IPv4 或 IPv6 地址，留空为调用者 IP', example: '114.114.114.114' },
+        { name: 'mode', default: 'auto', desc: 'auto 保持本地优先、在线补全；offline 只查本地 IPv4 库，无记录返回 404，ASN/坐标等未收录字段为 null', example: 'offline' },
+      ],
       fields: [
         { name: 'ip', type: 'string', desc: '实际查询的 IP 地址（IPv4 映射的 IPv6 地址会还原为 IPv4）' },
         { name: 'country', type: 'string|null', desc: '国家，如 中国。国内 IP 与 ip-api 结果为中文；ip-api 不可用、仅有本地库结果的境外 IP 为英文（如 Australia）' },
@@ -176,6 +184,7 @@ export default {
         { name: 'source', type: 'string', desc: '数据来源：ip2region（仅本地离线库）、ip-api（仅在线接口，如 IPv6 或本地库无记录）、ip2region+ip-api（本地结果由 ip-api 补全）' },
       ],
       async handler({ query, ip: callerIp }) {
+        const mode = param(query, 'mode', { default: 'auto', oneOf: ['auto', 'offline'] });
         const given = query.get('ip');
         if (given && given.length > 64) throw new HttpError(400, 'ip 参数过长');
         const ip = normalizeIp(given || callerIp || '');
@@ -184,7 +193,7 @@ export default {
         if (isPrivateIp(ip)) {
           throw new HttpError(400, given ? '该 IP 为内网或保留地址，无法查询归属地' : `你的 IP（${ip}）为内网地址，请通过 ip 参数指定公网 IP`);
         }
-        return loadIpInfo(ip);
+        return loadIpInfo(ip, { mode });
       },
     },
   ],

@@ -13,7 +13,7 @@ export async function legacyReleaseCheck({ sameVersion = false } = {}) {
   const targetSha = 'a'.repeat(40); // local, uncommitted release candidate fixture
   const oldSha = 'b'.repeat(40);
   const candidate = { sha: targetSha, commit: {
-    message: 'docs: clarify v0.12.0 features and upgrade requirements [skip ci]\n\n- 补齐 v0.12.0 中文说明，包含60秒简报、内部测试统计和更新器改进。\n- 明确首次导入、空库503与文章发现尚未自动化；内部测试按配置账号/Key ID隔离。',
+    message: 'feat: default to local content and audit API sources [skip ci]\n\n- 默认诗词和一言使用本地句库，准确标注接口来源。\n- 明确首次导入、空库503与文章发现尚未自动化；内部测试按配置账号/Key ID隔离。',
     committer: { date: '2026-10-17T16:00:00Z' },
   } };
   const selected = notes.filter((n) => ['b92ad7c', 'd5db3e9', '6be54ee', '9a20a6d'].some((prefix) => n.sha.startsWith(prefix)));

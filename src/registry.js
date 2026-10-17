@@ -5,6 +5,7 @@ import { HttpError } from './lib/http.js';
 import { config } from './config.js';
 import { isModuleEnabled, moduleOptions } from './lib/modules.js';
 import { routeTtl } from './lib/routecache.js';
+import { moduleSourceInfo } from './lib/api-sources.js';
 
 export const apiRouter = new Router();
 for (const mod of modules) {
@@ -31,6 +32,7 @@ export function catalog({ includeDisabled = false } = {}) {
         title: m.title,
         description: m.description ?? '',
         source: m.source ?? null,
+        sourceInfo: moduleSourceInfo(m.name),
         unofficial: Boolean(m.unofficial),
         env,
         enabled: isModuleEnabled(m.name),

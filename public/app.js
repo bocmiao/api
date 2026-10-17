@@ -265,12 +265,19 @@ async function loadCatalog() {
 const catOf = (id) => state.catalog?.categories.find((c) => c.id === id) ?? { title: id, icon: 'layers' };
 
 // ---------- 首页 ----------
+function sourceBadge(m) {
+  const info = m.sourceInfo;
+  if (!info) return m.unofficial ? '<span class="badge warn" title="此旧版目录尚未提供详细来源分类">网页/非正式源</span>' : '';
+  const tone = info.kind === 'first-party-web' ? ' warn' : info.network === 'none' ? ' ok' : '';
+  return `<span class="badge${tone}" title="${esc(info.summary)}">${esc(info.label)}</span>`;
+}
+
 function moduleBadges(m, { card = false } = {}) {
   return [
     m.featured ? '<span class="badge brand" title="站长推荐">推荐</span>' : '',
     m.enabled === false ? '<span class="badge danger" title="已被管理员关闭，仅管理员可见和调用">已关闭</span>' : '',
     m.suspended && !card ? `<span class="badge danger" title="${esc(m.suspended)}">暂不可用</span>` : '', // 卡片的状态行已经显示
-    m.unofficial ? '<span class="badge warn" title="数据来自非官方接口或网页，可能随上游改版失效">非官方</span>' : '',
+    sourceBadge(m),
     !m.available ? '<span class="badge danger" title="服务端未配置所需的密钥">需配置</span>' : '',
     m.env.some((e) => e.optional) && m.available ? '<span class="badge" title="可选配置密钥以增强功能">可选 Key</span>' : '',
   ].join('');
@@ -651,6 +658,7 @@ async function pageApi(name) {
         <div class="row small" style="margin-top:8px">
           ${m.source ? `<span class="faint">数据来源：${esc(m.source)}</span>` : ''}${moduleBadges(m)}
         </div>
+        ${m.sourceInfo ? `<p class="source-note">${esc(m.sourceInfo.summary)}</p>` : ''}
         ${m.env.length ? `<div class="small faint" style="margin-top:6px">配置项：${m.env.map((e) => `<code>${esc(e.name)}</code>${e.optional ? '（可选）' : ''} ${e.configured ? '✓' : '未配置'}`).join('，')}
           ${state.user?.isAdmin ? ` · <a href="/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a>` : ''}</div>` : ''}
       </div>
@@ -991,7 +999,8 @@ curl -X POST ${o}/api/shorturl -H "Content-Type: application/json" -d '{"url":"h
 
     <h2>注意事项</h2>
     <ul>
-      <li>标记为「非官方」的接口数据来自第三方网页或未公开接口，可能随上游改版暂时失效。</li>
+      <li>来源按实际依赖标注：本地计算、本地数据、目标直查、官方公开源、平台网页源、第三方数据或混合来源。平台网页源通常直接访问平台站内接口或页面，可能随改版失效，并不表示经过第三方代理。</li>
+      <li>「默认本地」「本地优先」的具体范围见详情。默认本地可显式选择外部服务；本地优先仍可能联网补全。目标直查也需要目标网站、服务器或DNS可达。缓存不会产生独立的实时数据。</li>
       <li>标记为「需配置」的接口需要站长在服务端配置对应的第三方密钥后才能使用。</li>
     </ul>
 
@@ -2407,7 +2416,8 @@ function openDiagnose(path) {
           近 7 天调用 ${fmtNum(ev.last7d.calls)} 次，失败 ${fmtNum(ev.last7d.failed ?? 0)} 次，平均 ${fmtNum(ev.last7d.avgMs ?? 0)} ms<br>
           刚才实际调用：${liveText}<br>
           ${ev.module.env.length ? `所需密钥：${ev.module.env.map((x) => `${esc(x.name)} ${x.configured ? '已配置' : x.optional ? '未配置（可选）' : '<b style="color:var(--danger)">未配置</b>'}`).join('，')}<br>` : ''}
-          数据来源：${esc(ev.module.source ?? '—')}${ev.module.unofficial ? '（非官方）' : ''}
+          数据来源：${esc(ev.module.source ?? '—')}${sourceBadge(ev.module)}
+          ${ev.module.sourceInfo ? `<p class="source-note">${esc(ev.module.sourceInfo.summary)}</p>` : ''}
         </div>
         ${ev.errors.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>状态</th><th>失败原因</th><th class="num">次数</th></tr></thead><tbody>
           ${ev.errors.map((x) => `<tr><td><span class="badge danger">${x.status}</span></td><td class="small">${esc(x.error ?? '（旧记录没有保存原因）')}</td><td class="num">${fmtNum(x.n)}</td></tr>`).join('')}

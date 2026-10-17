@@ -6,6 +6,7 @@ import { isModuleEnabled } from './modules.js';
 import { HttpError } from './http.js';
 import { RUNNING_VERSION } from './updater.js';
 import { completeJSON, isConfigured } from '../apis/ai/llm.js';
+import { moduleSourceInfo } from './api-sources.js';
 
 // 实际调用一次会产生数据、消耗第三方额度或耗时很长的模块，不做实时测试
 const NO_LIVE_TEST = new Set(['crawl', 'probe', 'batch-check', 'ai', 'shorturl', 'captcha']);
@@ -52,6 +53,7 @@ export async function gatherEvidence(path) {
     method: route.method,
     module: {
       name: module.name, title: module.title, description: module.description ?? '', source: module.source ?? null,
+      sourceInfo: moduleSourceInfo(module.name),
       unofficial: Boolean(module.unofficial), enabled: isModuleEnabled(module.name),
       // 只给出是否已配置，不给出密钥内容
       env: (module.env ?? []).map((e) => (typeof e === 'string' ? { name: e, optional: false } : e))

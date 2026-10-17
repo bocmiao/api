@@ -5,15 +5,17 @@ import { createHash } from 'node:crypto';
 import { parseChangelog, parseUpdateNotes, compareVersions } from '../src/lib/updater.js';
 import { releaseFiles, legacyReleaseCheck } from './helpers/update-release.js';
 
-test('v0.12.0元数据一致，中文日志包含新功能和首次使用边界', () => {
+test('v0.13.0元数据一致，中文日志包含本地能力和升级边界', () => {
   const files = releaseFiles();
   const pkg = JSON.parse(files['package.json']);
   const entry = parseChangelog(files['CHANGELOG.md'])[0];
-  assert.equal(pkg.version, '0.12.0');
+  assert.equal(pkg.version, '0.13.0');
   assert.equal(entry.version, pkg.version);
   assert.equal(compareVersions(pkg.version, '0.11.1'), 1);
   const text = entry.items.join('\n');
-  for (const re of [/60 秒简报/, /首次导入/, /503/, /404/, /全自动发现/, /尚未支持/, /账号 ID\/Key ID/, /默认不自动归类/]) assert.match(text, re);
+  for (const re of [/默认/, /本地/, /provider=jinrishici/, /provider=hitokoto/, /fallback=true/, /mode=offline/, /404/, /2023-12/, /129个模块/, /204个调用地址/]) assert.match(text, re);
+  const previous = parseChangelog(files['CHANGELOG.md']).find((e) => e.version === '0.12.0').items.join('\n');
+  for (const re of [/60 秒简报/, /首次导入/, /503/, /404/, /全自动发现/, /账号 ID\/Key ID/]) assert.match(previous, re);
   assert.doesNotMatch(text, /Git blob|ahead\/identical|launcher|Chromium|node --test|20 秒/);
   for (const name of ['package-lock.json', 'npm-shrinkwrap.json']) {
     const file = new URL('../' + name, import.meta.url);
@@ -42,10 +44,10 @@ test('四个说明映射到真实功能/修复提交，保留提交当时版本�
 test('历史v0.11.1真实解析函数读取新日志，显示新功能版本而非同版本修复', async () => {
   const { result, requests } = await legacyReleaseCheck();
   assert.equal(result.current.version, '0.11.1');
-  assert.equal(result.latest.version, '0.12.0');
+  assert.equal(result.latest.version, '0.13.0');
   assert.equal(result.hasUpdate, true);
   assert.equal(result.patch, false);
-  assert.deepEqual(result.changes.map((c) => c.version), ['0.12.0']);
+  assert.deepEqual(result.changes.map((c) => c.version), ['0.13.0', '0.12.0']);
   const visible = result.changes.flatMap((c) => c.items).join('\n');
   assert.match(visible, /60 秒简报/);
   assert.match(visible, /内部测试/);

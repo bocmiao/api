@@ -461,8 +461,9 @@ describe('返回字段说明', () => {
     assertFieldsCovered('/api/holiday/next', [next, (await call('/api/holiday/next', 'date=2026-10-08')).data]);
 
     const year = (await call('/api/holiday/year', 'year=2026')).data;
-    assert.equal(year.source, 'holiday-cn');
-    assert.ok(year.papers.length && year.periods.length);
+    assert.equal(year.source, 'builtin');
+    assert.ok(year.periods.length);
+    assert.deepEqual(year.papers, []);
     assertFieldsCovered('/api/holiday/year', [year]);
   });
 

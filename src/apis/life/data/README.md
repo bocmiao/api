@@ -36,6 +36,6 @@
   > SOFTWARE.
 
 - 大小：4,505,816 字节；SHA-256 `cb17a69eafa68d7706cfcc68d47cdf165ea916e9d5c476b4dd5f06cf74aed23d`
-- 未采用 xluohome/phonedata：其格式相同，但仓库许可为 GPL-3.0，与本项目的 MIT 许可不兼容
+- 未采用 xluohome/phonedata：其格式相同，但仓库许可为 GPL-3.0，本项目当时未采用该 GPL-3.0 数据源；当前项目整体许可为 GPL-3.0-only，仍沿用已注明来源的 lovedboy/phone MIT 数据
 - 格式：8 字节头（4 字节版本号 + u32 首条索引偏移）、记录区 `省份|城市|邮编|区号\0`、
   索引区每条 9 字节（u32 号段前 7 位 + u32 记录偏移 + u8 卡类型），小端

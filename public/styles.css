@@ -130,6 +130,13 @@ svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none;
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-2); }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; border-radius: 8px; }
+@media (max-width: 380px) {
+  .topbar .wrap { gap: 6px; }
+  .topbar .logo { gap: 6px; font-size: 15px; }
+  .topbar .logo-mark { width: 24px; height: 24px; }
+  .topbar-right .btn { height: 32px; padding: 0 8px; font-size: 12px; }
+  .topbar-right .btn.icon { width: 30px; padding: 0; }
+}
 .btn.lg { height: 44px; padding: 0 20px; font-size: 15px; border-radius: 11px; }
 .btn.icon { width: 36px; padding: 0; }
 
@@ -153,6 +160,7 @@ textarea.input { height: auto; min-height: 80px; padding: 10px 12px; resize: ver
 .badge.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
 .badge.danger { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
 .badge.brand { background: var(--brand-soft); color: var(--brand); border-color: transparent; }
+.source-note { margin: 10px 0 0; color: var(--text-2); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .method { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 5px; background: var(--ok-soft); color: var(--ok); }
 .method.POST { background: var(--brand-soft); color: var(--brand); }
 .empty { text-align: center; color: var(--text-3); padding: 40px 16px; }

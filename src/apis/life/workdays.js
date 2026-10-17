@@ -10,7 +10,7 @@ export const MAX_ADD_DAYS = 500;
 const MIN_YEAR = 2007;
 const MAX_YEAR = 2100;
 
-// 按年加载放假安排（复用 /api/holiday 的数据源与缓存：holiday-cn → 内置安排 → 未公布）。
+// 按年加载放假安排（复用 /api/holiday 的数据源与缓存：已内置2025/2026直接返回，其余年份查询holiday-cn → 未公布）。
 // 上游失败又没有内置数据时降级为只按周末计算，并在 years[].source 标注 unavailable
 export function makeYearLoader(load = loadHolidayYear) {
   const years = new Map();

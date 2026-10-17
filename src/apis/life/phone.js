@@ -61,9 +61,11 @@ export function fromPhoneDat(number, r) {
 }
 
 // 先查本地号段库，查不到再请求 360 接口
-export async function loadPhoneArea(number) {
+export async function loadPhoneArea(number, { mode = 'auto' } = {}) {
+  if (!['auto', 'offline'].includes(mode)) throw new HttpError(400, 'mode 只能是 auto / offline');
   const local = fromPhoneDat(number, lookupPhoneOffline(number));
   if (local) return { data: local };
+  if (mode === 'offline') throw new HttpError(404, '本地号段库无记录；offline 模式不会请求在线服务');
   const seg = number.slice(0, 7);
   // 归属地只取决于前 7 位号段，按号段缓存
   const res = await cache.wrap(`phone:${seg}`, 7 * 86_400_000, async () =>
@@ -83,7 +85,10 @@ export default {
       method: 'GET',
       path: '/api/phone',
       summary: '查询手机号归属地与运营商',
-      params: [{ name: 'number', required: true, desc: '11 位中国大陆手机号', example: '13800138000' }],
+      params: [
+        { name: 'number', required: true, desc: '11 位中国大陆手机号', example: '13800138000' },
+        { name: 'mode', default: 'auto', desc: 'auto 保持本地优先、360 兜底；offline 只查本地号段库，无记录返回 404（号段数据版本 2023-12，携号转网可能不准）', example: 'offline' },
+      ],
       fields: [
         { name: 'number', type: 'string', desc: '查询的 11 位手机号（已去掉 +86 前缀、空格和连字符）' },
         { name: 'segment', type: 'string', desc: '号段，即手机号前 7 位；归属地由号段决定' },
@@ -97,9 +102,10 @@ export default {
         { name: 'source', type: 'string', desc: '数据来源：phonedata（本地离线号段库）或 360（本地查不到时请求 360 接口）' },
       ],
       async handler({ query }) {
+        const mode = param(query, 'mode', { default: 'auto', oneOf: ['auto', 'offline'] });
         const number = param(query, 'number', { required: true }).replace(/[\s-]/g, '').replace(/^(\+?86)(?=1\d{10}$)/, '');
         if (!PHONE_RE.test(number)) throw new HttpError(400, 'number 须为 11 位中国大陆手机号');
-        return loadPhoneArea(number);
+        return loadPhoneArea(number, { mode });
       },
     },
   ],

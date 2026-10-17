@@ -1,4 +1,4 @@
-import { fetchJSON, HttpError } from '../../lib/http.js';
+import { fetchJSON, HttpError, param } from '../../lib/http.js';
 import { lazy } from './lazy-json.js';
 import { localPoems } from './poetry.js';
 
@@ -91,7 +91,9 @@ export function pickFallbackPoem(rand = Math.random) {
   return { ...p, category: null, fallback: true };
 }
 
-export async function loadPoem() {
+export async function loadPoem({ provider = 'local' } = {}) {
+  if (provider === 'local') return pickFallbackPoem();
+  if (provider !== 'jinrishici') throw new HttpError(400, 'provider 只能是 local / jinrishici');
   try {
     return parsePoem(await fetchJSON(UPSTREAM, { timeoutMs: 5000 }));
   } catch {
@@ -104,13 +106,13 @@ export default {
   category: 'fun',
   title: '每日诗词',
   description: '随机一句古诗词，含标题、作者与朝代',
-  source: '今日诗词 jinrishici.com',
+  source: '本地名句与 chinese-poetry（MIT）；可选今日诗词',
   routes: [
     {
       method: 'GET',
       path: '/api/poem',
-      summary: '随机古诗词名句，上游不可用时返回本地诗句',
-      params: [],
+      summary: '随机古诗词名句，默认本地；可显式选择今日诗词',
+      params: [{ name: 'provider', required: false, default: 'local', desc: 'local 本地句库（不联网）；jinrishici 今日诗词，失败时仍返回本地诗句', example: 'local' }],
       fields: [
         { name: 'content', type: 'string', desc: '诗词名句（一般是一两句，不是全文），如 "会当凌绝顶，一览众山小。"' },
         { name: 'title', type: 'string|null', desc: '出处诗词的标题，如 "望岳"；上游未提供时为 null' },
@@ -127,12 +129,13 @@ export default {
           name: 'fallback',
           type: 'boolean',
           desc:
-            '是否为内置兜底诗句。false：正常取自今日诗词；true：上游请求失败、超时（5 秒）或返回格式无法识别，' +
-            '改为本地兜底：一半概率取内置的约 30 句名句，一半取本地《唐诗三百首》中的一联对句，此时 title、author、dynasty 都有值，category 为 null',
+            '是否来自本地句库（保留原字段）。默认 local 时为 true；显式选择 jinrishici 且请求成功时为 false，失败时为 true。' +
+            '本地一半概率取内置名句，一半取本地《唐诗三百首》中的一联对句，title、author、dynasty 都有值，category 为 null',
         },
       ],
-      async handler() {
-        return { data: await loadPoem(), updatedAt: new Date().toISOString() };
+      async handler({ query }) {
+        const provider = param(query, 'provider', { default: 'local', oneOf: ['local', 'jinrishici'] });
+        return { data: await loadPoem({ provider }), updatedAt: new Date().toISOString() };
       },
     },
   ],

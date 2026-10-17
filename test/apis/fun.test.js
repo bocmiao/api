@@ -64,7 +64,7 @@ test('一言：兜底列表按分类挑选，上游失败时返回兜底', async
   assert.equal(f.type, 'i');
   assert.equal(f.fallback, true);
   mockFetch(() => { throw new TypeError('network'); });
-  const h = await loadHitokoto(['k']);
+  const h = await loadHitokoto(['k'], { provider: 'hitokoto' });
   assert.equal(h.fallback, true);
   assert.equal(h.type, 'k');
 });
@@ -78,7 +78,7 @@ test('诗词：解析 all.json 并补朝代；上游失败时兜底', async () =
   assert.ok(FALLBACK_POEMS.every((x) => x.content && x.title && x.author && x.dynasty));
   assert.equal(pickFallbackPoem(() => 0).title, '静夜思');
   mockFetch(() => new Response('bad gateway', { status: 502 }));
-  assert.equal((await loadPoem()).fallback, true);
+  assert.equal((await loadPoem({ provider: 'jinrishici' })).fallback, true);
 });
 
 test('Bing：完整 URL、UHD、日期与版权拆分', () => {
@@ -282,7 +282,7 @@ function checkFields(r, samples) {
 test('字段说明：一言（上游 / 上游缺省字段 / 兜底）', async () => {
   const r = route('/api/hitokoto');
   mockFetch(() => jsonRes(json('hitokoto.json')));
-  const ok = (await call('/api/hitokoto', 'type=a')).data;
+  const ok = (await call('/api/hitokoto', 'type=a&provider=hitokoto')).data;
   assert.equal(ok.fallback, false);
   assert.equal(ok.id, 6412);
   assert.equal(ok.creator, 'ANO');
@@ -292,13 +292,13 @@ test('字段说明：一言（上游 / 上游缺省字段 / 兜底）', async ()
   for (const k of ['uuid', 'length', 'from_who', 'creator']) delete partial[k];
   partial.type = 'x';
   mockFetch(() => jsonRes(partial));
-  const p = (await call('/api/hitokoto')).data;
+  const p = (await call('/api/hitokoto', 'provider=hitokoto')).data;
   assert.deepEqual([p.uuid, p.url, p.fromWho, p.creator], [null, null, null, null]);
   assert.equal(p.length, [...partial.hitokoto].length);
   assert.equal(p.typeName, '其他');
 
-  // 内置库没有 g 分类，兜底时从全部内置句子里取
-  assert.ok(!FALLBACK_HITOKOTO.some((h) => h.type === 'g'));
+  // 本地库现在覆盖 g 分类，兜底也严格保留分类
+  assert.ok(FALLBACK_HITOKOTO.some((h) => h.type === 'g'));
   mockFetch(() => { throw new TypeError('network'); });
   const fb = (await call('/api/hitokoto', 'type=g')).data;
   assert.equal(fb.fallback, true);
@@ -315,16 +315,16 @@ test('字段说明：一言（上游 / 上游缺省字段 / 兜底）', async ()
 test('字段说明：诗词（上游 / 作者不在朝代表 / 兜底）', async () => {
   const r = route('/api/poem');
   mockFetch(() => jsonRes(json('jinrishici.json')));
-  const ok = (await call('/api/poem')).data;
+  const ok = (await call('/api/poem', 'provider=jinrishici')).data;
   assert.equal(ok.fallback, false);
   assert.equal(ok.dynasty, '唐');
 
   mockFetch(() => jsonRes({ content: '青青子衿，悠悠我心。', origin: '子衿', author: '佚名' }));
-  const anon = (await call('/api/poem')).data;
+  const anon = (await call('/api/poem', 'provider=jinrishici')).data;
   assert.deepEqual([anon.dynasty, anon.category], [null, null]);
 
   mockFetch(() => new Response('bad gateway', { status: 502 }));
-  const fb = (await call('/api/poem')).data;
+  const fb = (await call('/api/poem', 'provider=jinrishici')).data;
   assert.equal(fb.fallback, true);
   assert.equal(fb.category, null);
   assert.ok(fb.title && fb.author && fb.dynasty);

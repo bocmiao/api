@@ -50,14 +50,14 @@ export function parseHolidayCn(raw, year) {
   return { year: raw.year ?? year, papers: Array.isArray(raw.papers) ? raw.papers : [], days };
 }
 
-// 加载某年安排：优先上游，失败用内置；都没有则返回空列表（尚未公布）
+// 已内置的 2025/2026 年无需联网；其他年份保留在线查询，不猜测未来调休安排。
 export async function loadHolidayYear(year) {
+  const builtin = fallbackYear(year);
+  if (builtin) return { ...builtin, source: 'builtin' };
   const res = await cache.wrap(`holiday:${year}`, DAY_MS, async () => {
     try {
       return { ...parseHolidayCn(await fetchJSON(upstreamUrl(year)), year), source: 'holiday-cn' };
     } catch (err) {
-      const fb = fallbackYear(year);
-      if (fb) return { ...fb, source: 'builtin' };
       // 上游 404 通常表示当年安排尚未公布
       if (err instanceof HttpError && /HTTP 404/.test(err.message)) return { year, papers: [], days: [], source: 'none' };
       throw err;
@@ -145,7 +145,7 @@ export default {
   category: 'life',
   title: '节假日与调休',
   description: '中国法定节假日、调休上班日查询，含下一个假期倒计时',
-  source: 'NateScarlet/holiday-cn（国务院办公厅通知）',
+  source: '本地 2025/2026 年国务院安排；其他年份 NateScarlet/holiday-cn',
   routes: [
     {
       method: 'GET',
@@ -210,7 +210,7 @@ export default {
         { name: 'days[].name', type: 'string', desc: '所属节假日名称，如 春节' },
         { name: 'days[].date', type: 'string', desc: '日期，YYYY-MM-DD' },
         { name: 'days[].isOffDay', type: 'boolean', desc: 'true 为放假，false 为调休上班' },
-        { name: 'source', type: 'string', desc: '数据来源：holiday-cn（从 NateScarlet/holiday-cn 获取）、builtin（上游不可用，使用内置的国务院安排）、none（该年安排尚未公布，days 与 periods 为空）' },
+        { name: 'source', type: 'string', desc: '数据来源：holiday-cn（从 NateScarlet/holiday-cn 获取）、builtin（直接使用内置的2025/2026年国务院安排，不联网）、none（该年安排尚未公布，days 与 periods 为空）' },
         { name: 'periods', type: 'array', desc: '按连续日期合并后的假期段，按时间先后排列' },
         { name: 'periods[].name', type: 'string', desc: '假期名称，如 国庆节' },
         { name: 'periods[].start', type: 'string', desc: '放假第一天，YYYY-MM-DD' },

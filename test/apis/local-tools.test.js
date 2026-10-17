@@ -621,7 +621,7 @@ describe('摸鱼日历', () => {
   test('节假日数据正常：放假判断与节假日倒计时', async (t) => {
     const calls = mockFetch(t, { '/2026.json': fixture('holiday-cn-2026.json'), '/2027.json': 404 });
     const d = await loadMoyu({ now: Date.parse('2026-09-24T02:00:00Z'), pick: () => 0 });
-    assert.ok(calls.some((u) => u.endsWith('/2026.json')));
+    assert.ok(!calls.some((u) => u.endsWith('/2026.json')), '内置2026安排不请求上游');
     assert.equal(d.date, '2026-09-24');
     assert.equal(d.weekday, '星期四');
     assert.equal(d.lunar.monthDay, '八月十四');
@@ -633,7 +633,7 @@ describe('摸鱼日历', () => {
       { name: '中秋节', start: '2026-09-25', end: '2026-09-27', days: 3, daysUntil: 1 },
       { name: '国庆节', start: '2026-10-01', end: '2026-10-07', days: 7, daysUntil: 7 },
     ]);
-    assert.equal(d.holidaySource, 'holiday-cn');
+    assert.equal(d.holidaySource, 'builtin');
     assert.equal(d.degraded, false);
     assert.equal(d.notice, null);
     assert.equal(d.quote, QUOTES[0]);

@@ -454,17 +454,17 @@ test('温馨提示：节假日数据源出错或超时都不报错', async () =>
   const ok = await loadGreeting(bj('2026-10-01T09:00:00'));
   assert.deepEqual([ok.dayType, ok.holidayName, ok.holidayData], ['holiday', '国庆节', true]);
 
-  // 缓存里是坏数据 → getHolidayInfo 抛错 → 按周末/工作日处理
+  // 没有内置表的年份，缓存里是坏数据 → getHolidayInfo 抛错 → 按周末/工作日处理
   cache.store.clear();
-  cache.set('holiday:2026', { days: null }, 60_000);
-  const broken = await loadGreeting(bj('2026-10-01T09:00:00'));
+  cache.set('holiday:2031', { days: null }, 60_000);
+  const broken = await loadGreeting(bj('2031-10-01T09:00:00'));
   assert.deepEqual([broken.dayType, broken.isOffDay, broken.holidayData], ['normal', false, false]);
 
   // 数据源一直不响应 → 超时后照常返回
   cache.store.clear();
-  cache.pending.set('holiday:2026', new Promise(() => {}));
+  cache.pending.set('holiday:2031', new Promise(() => {}));
   const started = Date.now();
-  const slow = await loadGreeting(bj('2026-10-03T09:00:00'), { timeoutMs: 50 });
+  const slow = await loadGreeting(bj('2031-10-04T09:00:00'), { timeoutMs: 50 });
   assert.ok(Date.now() - started < 2000);
   assert.deepEqual([slow.dayType, slow.holidayData], ['weekend', false]);
   cache.pending.clear();

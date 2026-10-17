@@ -7,6 +7,7 @@ import { isModuleEnabled } from './modules.js';
 import { config } from '../config.js';
 import { localChangelog, RUNNING_VERSION } from './updater.js';
 import { sql } from '../db.js';
+import { moduleSourceInfo } from './api-sources.js';
 
 export const REPO_URL = 'https://github.com/bocmiao/api';
 // 已通过审核的友情链接（首页底部、友链页）；直接读表，避免引用路由模块造成循环依赖
@@ -68,6 +69,7 @@ ${fields ? `<h3>返回字段</h3><ul>${fields}</ul>` : ''}</section>`;
 <p>${esc(m.description ?? '')}</p>
 ${m.suspended ? `<p><b>该接口暂不可用</b>：${esc(m.suspended)}</p>` : ''}
 ${m.source ? `<p>数据来源：${esc(m.source)}</p>` : ''}
+<p>${esc(moduleSourceInfo(m.name).label)}：${esc(moduleSourceInfo(m.name).summary)}</p>
 <p>返回统一的 JSON 格式 <code>{ code, message, cached, stale, updatedAt, data }</code>，支持跨域，免注册每天可免费调用 100 次，注册后每天 10000 次。</p>
 ${routes}
 </div>`;

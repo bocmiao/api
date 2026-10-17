@@ -493,7 +493,7 @@ describe('工作日计算', () => {
     assert.equal(r.adjustedWorkdays, 2);
     assert.equal(r.offDays, 11);
     assert.deepEqual(r.holidayDetail, [{ name: '中秋节', days: 3 }, { name: '国庆节', days: 7 }]);
-    assert.deepEqual(r.years, [{ year: 2026, source: 'holiday-cn', published: true }]);
+    assert.deepEqual(r.years, [{ year: 2026, source: 'builtin', published: true }]);
     assert.equal(r.complete, true);
     assert.equal(r.degraded, false);
     const one = await countWorkdays('2026-10-10', '2026-10-10');
@@ -515,7 +515,7 @@ describe('工作日计算', () => {
   test('下一年未公布（404）只按周末算，并标注', async () => {
     mockFetch({ '2026.json': fixture('holiday-cn-2026.json'), '2027.json': 404 });
     const r = await countWorkdays('2026-12-28', '2027-01-08');
-    assert.deepEqual(r.years.map((y) => [y.year, y.source, y.published]), [[2026, 'holiday-cn', true], [2027, 'none', false]]);
+    assert.deepEqual(r.years.map((y) => [y.year, y.source, y.published]), [[2026, 'builtin', true], [2027, 'none', false]]);
     assert.equal(r.complete, false);
     assert.equal(r.degraded, false);
     assert.equal(r.workdays, 10); // 2027-01-01 周五未公布，按工作日算
