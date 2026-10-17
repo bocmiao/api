@@ -198,7 +198,7 @@ test('同版本用户说明按实际功能提交筛选，并覆盖回顾性提�
   const { localVersion, parseUpdateNotes, localChangelog } = await import('../src/lib/updater.js');
   const notes = readFileSync(join(process.cwd(), 'UPDATE_NOTES.json'), 'utf8');
   const entries = parseUpdateNotes(notes);
-  assert.deepEqual(entries.map((e) => e.sha.slice(0, 7)), ['037984b', 'ed78af3', 'eb118ed', '142a564', '5d89286', '896407b', '76b1c61', '2f0ded7']);
+  assert.deepEqual(entries.map((e) => e.sha.slice(0, 7)), ['037984b', 'ed78af3', 'eb118ed', '142a564', '5d89286', '896407b', '76b1c61', '2f0ded7', 'b92ad7c', 'd5db3e9', '6be54ee', '9a20a6d']);
   assert.deepEqual(localChangelog().filter((e) => e.date?.includes('同版本更新')).map((e) => e.date.match(/[0-9a-f]{7}$/)[0]), entries.map((e) => e.sha.slice(0, 7)).reverse());
   recordInstallation();
   mockGitHub({ version: localVersion(), changelog: null, sha: entries[2].sha, updateNotes: notes });
