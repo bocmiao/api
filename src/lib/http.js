@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
 export class HttpError extends Error {
   // code：可选的错误代码（如 QUOTA_EXCEEDED），不传时按状态码给一个通用的
   constructor(status, message, code) {
@@ -49,42 +51,84 @@ export function upstreamError(err, url, what = '上游服务') {
   return new HttpError(502, `无法连接${what}（${host}${reason ? `：${reason}` : ''}）${overseasHint(url)}`);
 }
 
-async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body, signal } = {}) {
-  let res;
-  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
-  try {
-    res = await outboundFetch(url, {
-      method,
-      body,
-      headers: { 'user-agent': UA, ...headers },
-      signal: requestSignal,
-    });
-  } catch (err) {
+const RETRY_STATUS = new Set([502, 503, 504]);
+const TRANSIENT_NETWORK = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT']);
+const transientNetworkError = (error) => !error?.proxy && (TRANSIENT_NETWORK.has(error?.cause?.code ?? error?.code)
+  || (error instanceof TypeError && /fetch failed|failed to fetch|network/i.test(error.message)));
+
+// 不能等待不可信响应体的cancel钩子完成；发起取消并接住失败，保证重试/最终错误仍受总预算约束。
+function discardResponse(res) {
+  try { Promise.resolve(res.body?.cancel()).catch(() => {}); } catch {}
+}
+
+// retry必须由已确认只读、可重复且可承担额外请求的调用方显式启用。
+// GET/HEAD本身不能证明无副作用；带body的请求和POST等永不重放。
+async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body, signal, retry = false } = {}) {
+  signal?.throwIfAborted();
+  method = String(method).toUpperCase();
+  const attempts = retry === true && (method === 'GET' || method === 'HEAD') && body == null ? 2 : 1;
+  // 一个信号贯穿首次请求、退避、第二次请求和调用方读取正文，不为每次尝试重开预算。
+  const budgetSignal = AbortSignal.timeout(timeoutMs);
+  const deadline = performance.now() + timeoutMs;
+  const requestSignal = signal ? AbortSignal.any([signal, budgetSignal]) : budgetSignal;
+  const checkStopped = () => {
     signal?.throwIfAborted();
-    throw upstreamError(requestSignal.aborted ? requestSignal.reason : err, url);
+    if (requestSignal.aborted || performance.now() >= deadline) throw upstreamError(requestSignal.reason ?? new DOMException('请求总预算已用完', 'TimeoutError'), url);
+  };
+  const pause = async () => {
+    try { await delay(200, undefined, { signal: requestSignal }); }
+    catch (err) { checkStopped(); throw err; }
+    checkStopped();
+  };
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    checkStopped();
+    let res;
+    try {
+      res = await outboundFetch(url, {
+        method, body, headers: { 'user-agent': UA, ...headers }, signal: requestSignal,
+      });
+    } catch (err) {
+      checkStopped();
+      if (attempt < attempts && transientNetworkError(err)) { await pause(); continue; }
+      throw upstreamError(err, url);
+    }
+    try { checkStopped(); } catch (err) { discardResponse(res); throw err; }
+    if (!res.ok) {
+      discardResponse(res);
+      // 429/4xx、认证/证书错误及要求Retry-After的响应均不自动重试。
+      if (attempt < attempts && RETRY_STATUS.has(res.status) && !res.headers?.has('retry-after')) {
+        await pause();
+        continue;
+      }
+      throw new HttpError(502, `上游返回 HTTP ${res.status}`);
+    }
+    return { res, signal: requestSignal, checkStopped };
   }
-  if (!res.ok) throw new HttpError(502, `上游返回 HTTP ${res.status}`);
-  return { res, signal: requestSignal };
 }
 
 export async function fetchJSON(url, opts = {}) {
-  const { res, signal } = await request(url, { ...opts, headers: { accept: 'application/json', ...opts.headers } });
+  const { res, checkStopped } = await request(url, { ...opts, headers: { accept: 'application/json', ...opts.headers } });
   try {
-    return await res.json();
+    const data = await res.json();
+    checkStopped();
+    return data;
   } catch {
-    opts.signal?.throwIfAborted();
-    if (signal.aborted) throw upstreamError(signal.reason, url);
+    discardResponse(res);
+    checkStopped();
     throw new HttpError(502, '上游返回的不是合法 JSON');
   }
 }
 
 // encoding 用于 GBK 等非 UTF-8 页面，例如 fetchText(url, { encoding: 'gbk' })
 export async function fetchText(url, { encoding = 'utf-8', ...opts } = {}) {
-  const { res, signal } = await request(url, opts);
+  const { res, checkStopped } = await request(url, opts);
   let body;
-  try { body = await res.arrayBuffer(); }
-  catch (err) { opts.signal?.throwIfAborted(); throw upstreamError(signal.aborted ? signal.reason : err, url); }
-  return new TextDecoder(encoding).decode(body);
+  try { body = await res.arrayBuffer(); checkStopped(); }
+  catch (err) { discardResponse(res); checkStopped(); throw upstreamError(err, url); }
+  const text = new TextDecoder(encoding).decode(body);
+  checkStopped();
+  return text;
 }
 
 export function requireEnv(name) {
