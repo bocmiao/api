@@ -21,9 +21,11 @@ function noNetwork() {
 }
 
 test('all registered modules have explicit audited sources; catalog and README counts agree', () => {
-  assert.equal(modules.length, 129);
+  // 接口清单的快照由 npm run api:sync 生成：新增/删除接口必须显式更新它，避免数量悄悄变化
+  const surface = JSON.parse(readFileSync(new URL('../docs/api-surface.json', import.meta.url), 'utf8'));
+  assert.equal(modules.length, surface.modules.length);
   const count = modules.reduce((n, m) => n + m.routes.length, 0);
-  assert.equal(count, 204);
+  assert.equal(count, surface.modules.reduce((n, m) => n + m.routes.length, 0));
   assert.deepEqual([...SOURCE_PROFILE_NAMES].sort(), modules.map((m) => m.name).sort());
   for (const m of catalog({ includeDisabled: true }).modules) {
     assert.ok(m.sourceInfo.kind in SOURCE_TYPES, m.name);

@@ -8,8 +8,10 @@ import { apiRouter, catalog } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import './routes/site.js';
 import './routes/news60s.js';
+import './routes/api-admin.js';
 import { HttpError, errorCode } from './lib/http.js';
 import { renderPage, renderAbout, siteOrigin, sitemap, robots } from './lib/seo.js';
+import { openapi, llmsTxt } from './lib/openapi.js';
 import { la51Tags, pageCsp } from './lib/la51.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled, moduleOptions } from './lib/modules.js';
@@ -152,7 +154,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
     // 页面里引用的脚本和样式加上内容指纹，文件一变地址就变，旧缓存自动失效
     if (file.endsWith('.html')) {
       let html = body.toString('utf8');
-      for (const asset of ['app.js', 'admin-stats.js', 'status-page.js', 'styles.css', 'theme-init.js', 'about.js', 'site.js']) {
+      for (const asset of ['app.js', 'admin-stats.js', 'admin-apis.js', 'status-page.js', 'styles.css', 'theme-init.js', 'about.js', 'site.js']) {
         try {
           const h = createHash('sha1').update(await readFile(join(PUBLIC_DIR, asset))).digest('base64url').slice(0, 10);
           html = html.replaceAll(`"/${asset}"`, `"/${asset}?v=${h}"`);
@@ -242,6 +244,13 @@ export async function handle(req, res) {
     }
     if (req.method === 'GET' && path === '/robots.txt') return send(res, 200, robots(siteOrigin(req)), { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' });
     if (req.method === 'GET' && path === '/sitemap.xml') return send(res, 200, sitemap(siteOrigin(req)), { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+    // 对外契约：从运行时接口注册表生成，后台改文案或新增接口后自动同步
+    if (req.method === 'GET' && path === '/openapi.json') {
+      return send(res, 200, JSON.stringify(openapi(siteOrigin(req))), { ...CORS, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'public, max-age=300' });
+    }
+    if (req.method === 'GET' && path === '/llms.txt') {
+      return send(res, 200, llmsTxt(siteOrigin(req)), { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=300' });
+    }
     if (req.method === 'GET' && path === '/health') return send(res, 200, envelope({ data: { status: 'up' } }));
     if (req.method === 'GET' && path === '/api') {
       const viewer = userFromSession(cookies.sid);

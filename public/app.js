@@ -97,7 +97,7 @@ async function cachedGet(path) {
 // 空闲时预先取好导航栏各页面的数据，第一次点进去也不用等
 function prefetchPages() {
   const paths = [];
-  if (state.user?.isAdmin) paths.push('/admin/stats', '/admin/users?q=&page=1&size=20', '/admin/changelog', '/admin/settings');
+  if (state.user?.isAdmin) paths.push('/admin/stats', '/admin/users?q=&page=1&size=20', '/admin/changelog', '/admin/settings', '/admin/apis');
   if (state.user) paths.push('/account/usage', '/account/keys', '/account/notify');
   paths.push('/status');
   const startedVersion = cacheVersion;
@@ -1588,6 +1588,7 @@ async function pageAdmin() {
 
 const adminTabs = (active) => `<div class="seg">
   <a href="/admin" class="${active === 'overview' ? 'active' : ''}">概览</a>
+  <a href="/admin/apis" class="${active === 'apis' ? 'active' : ''}">接口</a>
   <a href="/admin/stats" class="${active === 'stats' ? 'active' : ''}">统计</a>
   <a href="/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
   <a href="/admin/site" class="${active === 'site' ? 'active' : ''}">运营</a>
@@ -2357,7 +2358,7 @@ async function router({ keepScroll = false } = {}) {
       case 'links': await pageLinks(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : arg === 'site' ? pageAdminSite(sub) : pageAdmin()); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : arg === 'site' ? pageAdminSite(sub) : arg === 'apis' ? pageAdminApis(sub) : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {

@@ -333,5 +333,43 @@ try {
   throw e;
 }
 
+// ---------- 接口工作台 ----------
+// 文案覆盖层：一行 = 管理员改过的一个文字字段（标题、说明、参数说明、字段说明）。
+// 代码里的接口定义是唯一权威，这里只存"说法"；删掉一行即恢复代码默认值，结构永远只读。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS api_meta (
+    name TEXT NOT NULL,
+    target TEXT NOT NULL,
+    value TEXT NOT NULL,
+    base_rev TEXT NOT NULL DEFAULT '',
+    rev INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (name, target)
+  );
+  -- 后台新增的声明式接口：draft 是未发布的草稿，config 是线上版本
+  CREATE TABLE IF NOT EXISTS custom_apis (
+    name TEXT PRIMARY KEY,
+    draft TEXT,
+    config TEXT,
+    version INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    published_at INTEGER,
+    published_by TEXT
+  );
+  -- 每次发布留一个版本，回滚只改指针，不依赖 git
+  CREATE TABLE IF NOT EXISTS custom_api_versions (
+    name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    config TEXT NOT NULL,
+    note TEXT,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (name, version)
+  );
+`);
+
 migrateSources(db);
 migrateTraffic(db,STAT_COLS);

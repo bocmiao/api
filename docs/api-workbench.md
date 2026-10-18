@@ -1,0 +1,127 @@
+# 接口工作台
+
+管理后台的「接口」页把三件原本只能改代码的事拆开，按风险分级：
+
+| 能力 | 谁用 | 改什么 | 怎么生效 | 风险 |
+| --- | --- | --- | --- | --- |
+| 文案编辑 | 运营 / 管理员 | 标题、描述、参数说明、示例、返回字段说明 | 保存即生效，不重启 | 低：结构字段只读 |
+| 新增声明式接口 | 运营 / 管理员 | 取值 → 请求上游 → 字段映射的 JSON 配置 | 草稿 → 发布，立即注册路由 | 中：只能调上游和映射，不执行代码 |
+| 核心接口实现 | 研发 | `src/apis/**` 里的 JS | 提交 + 更新/重启 | 高：仍走代码审查 |
+
+## 一、两条底线
+
+1. **代码是结构的唯一权威。** 文案覆盖层（`api_meta`）没有修改参数名、类型、必填、枚举的入口，合并函数只写 `title / description / summary / desc / example`。覆盖前后的 `shapeHash` 必须完全相等，`test/api-meta.test.js` 锁住这一点。
+2. **线上改动要能回滚。** 声明式接口每次发布都写一条 `custom_api_versions`，回滚只切换线上指针，不依赖 git；删除会同时删除发布记录，但会留下操作审计。
+
+## 二、文案编辑
+
+- 一行覆盖 = 一个补丁；删掉补丁即恢复代码默认值，不会出现"字段没文档"。
+- 每条补丁记录自己的结构指纹（`targetRev`）。代码结构变了，体检里标为「待确认」，不会静默套用旧文案。
+- 合并时按目标是否存在决定是否生效：代码里已经没有的字段，补丁自动失效并进入「孤儿」清单，可一键清理。
+- 并发：`api_meta.rev` 每次写入 +1，审计日志保留修改人、时间与前后值，`api.meta.save` 可以在操作日志里追溯。
+
+体检分类（`GET /admin/apis/doctor`）：
+
+| kind | 含义 | 处理 |
+| --- | --- | --- |
+| `orphan` | 代码里已没有这个字段 | 还原或清理补丁 |
+| `stale` | 保存后代码结构变过 | 确认文案是否仍然准确 |
+| `invalid` | 超长、必填为空、含控制字符 | 改短或还原 |
+| `module-missing` | 整个接口已被删除 | 清理补丁 |
+| `invalid-target` | 目标格式不合法（旧版本遗留） | 清理补丁 |
+
+## 三、新增声明式接口
+
+配置存在 `custom_apis`（草稿 `draft` 与线上 `config` 分开），启动和发布时由 registry 合并进路由表，**不写入代码目录，因此在线更新不会冲掉**。
+
+最小配置：
+
+```json
+{
+  "name": "custom-example",
+  "category": "tools",
+  "title": "示例接口",
+  "description": "从后台新增的接口",
+  "sourceInfo": { "kind": "third-party-service", "network": "required", "summary": "示例数据源" },
+  "routes": [{
+    "method": "GET",
+    "path": "/api/custom/example",
+    "summary": "按关键词查询",
+    "params": [{ "name": "q", "required": true, "desc": "关键词", "example": "hello", "maxLength": 40 }],
+    "url": "https://api.example.com/search?q={q}",
+    "extract": "data",
+    "map": { "title": "name", "link": "url" },
+    "fields": [
+      { "name": "title", "type": "string", "desc": "标题" },
+      { "name": "link", "type": "string", "desc": "链接" }
+    ],
+    "cacheTtlSec": 300,
+    "timeoutMs": 10000
+  }]
+}
+```
+
+规则（发布前全部校验）：
+
+- `name` 3~40 位小写字母/数字/`-`，不能和核心接口重名；`path` 以 `/api/` 开头，不能带 `:`。
+- `url` 里用 `{参数名}` 取值（自动 URL 编码），`{env:变量名}` 引用已声明的环境变量；必填参数必须给 `example`（自动检测会用它）。
+- 支持 `GET` / `POST`；`POST` 可以给 `body`（对象或字符串，值同样支持占位符）。
+- `extract` 从上游响应里取路径（`data.items`、`data.items[0]`）；取不到时返回 **502「上游返回结构可能已变化」**，不会静默返回 null。
+- `map` 把上游字段映射成返回字段；每个输出字段都必须在 `fields` 里写说明。
+- `cacheTtlSec` 0~86400 秒，0 表示实时获取；`timeoutMs` 500~20000。
+- 发布时检查与核心接口、其他自定义接口的路径冲突；冲突返回 409，不会出现两条路由抢同一个地址。
+
+## 四、发布与回滚
+
+1. 在「新建接口」或接口详情的「接口定义」里改 JSON。
+2. 「校验」只做结构与冲突检查，不落库。
+3. 「保存草稿」写 `draft`，线上不变。
+4. 「发布」要求填写原因（写入操作日志），成功后：
+   - 版本号 +1，写入 `custom_api_versions`；
+   - registry 重建，新接口立刻出现在 `/api` 目录、文档页、sitemap、OpenAPI、Key 权限下拉和统计里；
+   - 清掉该模块的缓存。
+5. 「回滚到此版」把线上指针切到指定版本；「删除」同时删除发布记录（审计日志保留）。
+
+## 五、对外契约
+
+- `GET /openapi.json`：OpenAPI 3.1，按运行时目录生成，含参数、枚举、示例、`x-miao.fields` 字段说明。
+- `GET /llms.txt`：纯文本接口清单，供 LLM/Agent 直接阅读。
+- `GET /api`：原有目录 JSON，新增模块带 `origin: "custom"` 和 `custom: true`。
+
+以上都是运行时生成，后台改文案或新增接口后**不需要另写文档**。
+
+## 六、开发流程与门禁
+
+```bash
+npm run api:check   # 路径/命名唯一、来源登记、README 数量、接口清单快照
+npm run api:sync    # 同步 README 数量和 docs/api-surface.json
+npm test
+```
+
+新增核心接口时：
+
+1. 写 `src/apis/<分类>/<name>.js`（约定见 `src/apis/README.md`）；
+2. 在分类 `index.js` 里导出；
+3. `src/lib/api-sources.js` 登记数据来源；
+4. `npm run api:sync` 更新数量与快照；
+5. 补测试与 fixture。
+
+`docs/api-surface.json` 是接口清单快照：任何改名、删除或新增都会在 diff 里显示，避免"数量悄悄变了"。
+
+## 七、边界与后续
+
+- 本版本**不提供在线写任意 JS**。声明式配置覆盖"调上游 + 映射字段"这一类需求；需要写解析逻辑的接口仍走代码，理由是可审查、可测试、可回滚。
+- 角色分层（`editor` 只能改文案、`admin` 才能发布代码）是下一步，目前工作台只对管理员开放。
+- README 的逐行接口表格仍手写；下一步可以由 `docs/api-surface.json` 生成，减少一次手改。
+
+## 八、代码位置
+
+| 文件 | 作用 |
+| --- | --- |
+| `src/lib/api-meta.js` | 文案补丁：合并、校验、体检、结构指纹 |
+| `src/lib/custom-api.js` | 声明式接口：配置校验、运行、草稿/发布/回滚 |
+| `src/registry.js` | 可重建的运行时快照（核心 + 文案 + 自定义） |
+| `src/routes/api-admin.js` | 工作台后台接口 |
+| `src/lib/openapi.js` | OpenAPI / llms.txt 生成 |
+| `public/admin-apis.js` | 工作台页面 |
+| `scripts/api-check.mjs` | 契约自检与快照同步 |

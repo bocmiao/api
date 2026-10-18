@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node src/launcher.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "api:check": "node scripts/api-check.mjs",
+    "api:sync": "node scripts/api-check.mjs --sync"
   },
   "license": "GPL-3.0-only"
 }
