@@ -210,19 +210,22 @@ test('豆瓣 city 参数校验', async () => {
 });
 
 test('猫眼票房解析', () => {
-  const d = parseBoxOffice(json('maoyan-second.json'));
-  assert.equal(d.date, '2026-09-24');
-  assert.equal(d.totalBox, 3370.88);
+  const d = parseBoxOffice(json('maoyan-dashboard.json'));
+  assert.equal(d.date, '2026-10-18');
+  assert.equal(d.totalBox, 950.2);
   assert.equal(d.totalBoxUnit, '万');
+  assert.equal(d.serverTime, '2026-10-18 09:12:00');
   assert.equal(d.list.length, 2);
   const [a] = d.list;
   assert.equal(a.rank, 1);
-  assert.equal(a.name, '示例电影甲');
-  assert.equal(a.box, 1523.67);
-  assert.equal(a.boxRate, '45.2%');
-  assert.equal(a.sumBox, '4.55亿');
-  assert.equal(a.showCount, 128563);
-  assert.equal(a.url, 'https://piaofang.maoyan.com/movie/1492913');
+  assert.equal(a.name, '生化危机：爆发夜');
+  assert.equal(a.box, 295.24);
+  assert.equal(a.splitBox, 261.94);
+  assert.equal(a.boxRate, '31.1%');
+  assert.equal(a.sumBox, '3.57亿');
+  assert.equal(a.splitSumBox, '3.18亿');
+  assert.equal(a.showCount, 106557);
+  assert.equal(a.url, 'https://piaofang.maoyan.com/movie/1586199');
   assert.throws(() => parseBoxOffice({ success: false }), { status: 502 });
 });
 
@@ -444,23 +447,23 @@ test('字段说明：豆瓣正在热映（含缺少属性的条目）', async ()
 test('字段说明：猫眼实时票房（万元 / 亿元单位 / 缺失值）', async () => {
   const r = route('/api/boxoffice');
   clearCache();
-  mockFetch(() => jsonRes(json('maoyan-second.json')));
+  mockFetch(() => jsonRes(json('maoyan-dashboard.json')));
   const normal = (await call('/api/boxoffice', 'limit=1')).data;
   assert.equal(normal.list.length, 1);
-  assert.deepEqual([normal.totalBox, normal.totalBoxUnit, normal.splitTotalBox, normal.splitTotalBoxUnit], [3370.88, '万', 3001.55, '万']);
-  assert.equal(normal.serverTime, '2026-09-24 15:32:10');
+  assert.deepEqual([normal.totalBox, normal.totalBoxUnit, normal.splitTotalBox, normal.splitTotalBoxUnit], [950.2, '万', 843.6, '万']);
+  assert.equal(normal.serverTime, '2026-10-18 09:12:00');
 
-  // 综合票房已过亿、分账仍以万计：两个单位要分开给
+  // 综合票房以亿计、分账仍以万计：两个单位要分开给
   clearCache();
-  mockFetch(() => jsonRes(json('maoyan-second-yi.json')));
+  mockFetch(() => jsonRes(json('maoyan-dashboard-yi.json')));
   const yi = (await call('/api/boxoffice')).data;
   assert.deepEqual([yi.totalBox, yi.totalBoxUnit, yi.splitTotalBox, yi.splitTotalBoxUnit], [1.08, '亿', 9868.3, '万']);
   const [a, b] = yi.list;
   assert.equal(a.box, 6739.52);
   assert.equal(a.avgSeatView, '31.5%');
   assert.deepEqual(
-    [b.movieId, b.url, b.releaseInfo, b.splitBox, b.showCount, b.avgShowView],
-    [null, null, null, null, null, null],
+    [b.movieId, b.url, b.releaseInfo, b.splitBox, b.showCount, b.avgShowView, b.seatRate],
+    [null, null, null, null, null, null, null],
   );
   assert.equal(b.box, 12.4);
   checkFields(r, [normal, yi]);

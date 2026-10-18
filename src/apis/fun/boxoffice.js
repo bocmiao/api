@@ -1,9 +1,10 @@
 import { cache } from '../../lib/cache.js';
 import { fetchJSON, HttpError, param } from '../../lib/http.js';
 
-// 猫眼专业版实时票房（猫眼 App 内使用的旧接口，无需签名，数字未做字体加密）
-// piaofang.maoyan.com/dashboard-ajax 需 signKey 且数字经字体混淆，这里不用。
-const UPSTREAM = 'https://box.maoyan.com/promovie/api/box/second.json';
+// 猫眼专业版网页端「实时票房」接口。
+// 2026-10 核对：返回全国大盘 + 影片榜，数字单位为「分」，无需签名；
+// 旧接口 box.maoyan.com/promovie/api/box/second.json 已下线（域名无法解析）。
+const UPSTREAM = 'https://piaofang.maoyan.com/dashboard-ajax/movie';
 const TTL_MS = 2 * 60_000;
 
 const numOrNull = (s) => {
@@ -12,54 +13,81 @@ const numOrNull = (s) => {
   return Number.isFinite(n) ? n : null;
 };
 
-// 响应：{ success, data: { list: [{ movieId, movieName, releaseInfo, boxInfo, boxRate, sumBoxInfo, showInfo, showRate, seatRate, avgSeatView, avgShowView, splitBoxInfo, splitSumBoxInfo }], totalBox, totalBoxUnit, queryDate, updateInfo, serverTime } }
+// 上游以「分」为单位：295242755 分 = 295.24 万元
+const fenToWan = (v) => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n / 1e4) / 100 : null;
+};
+
+const textOrNull = (v) => (v == null || v === '' ? null : String(v));
+
+const dateFmt = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+const timeFmt = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+});
+
+// 响应：{ movieList: { list: [{ box, splitBox, boxRate, showCount, showCountRate, avgShowView,
+//   avgSeatView, sumBoxDesc, splitSumBoxDesc, movieInfo: { movieId, movieName, releaseInfo } }],
+//   nationBoxInfo: { nationBoxSplitUnit: { num, unit }, nationSplitBoxSplitUnit: { num, unit } },
+//   updateInfo: { updateTimestamp } }, calendar: { selectDate } }
 export function parseBoxOffice(raw) {
-  const d = raw?.data;
-  if (!d || !Array.isArray(d.list)) throw new HttpError(502, '猫眼票房返回的数据格式无法识别');
+  const list = raw?.movieList?.list;
+  if (!Array.isArray(list)) throw new HttpError(502, '猫眼票房返回的数据格式无法识别');
+
+  const nation = raw.movieList.nationBoxInfo || {};
+  const ts = Number(raw.movieList.updateInfo?.updateTimestamp);
+  const serverTime = Number.isFinite(ts) && ts > 0
+    ? `${dateFmt.format(new Date(ts))} ${timeFmt.format(new Date(ts))}`
+    : null;
+
   return {
-    date: d.queryDate ?? null,
-    updateInfo: d.updateInfo ?? null,
-    serverTime: d.serverTime ?? null,
-    totalBox: numOrNull(d.totalBoxInfo ?? d.totalBox),
-    totalBoxUnit: d.totalBoxUnitInfo ?? d.totalBoxUnit ?? '万',
-    splitTotalBox: numOrNull(d.splitTotalBoxInfo ?? d.splitTotalBox),
+    date: raw.calendar?.selectDate ?? (serverTime ? serverTime.slice(0, 10) : null),
+    updateInfo: serverTime ? `北京时间 ${serverTime.slice(11)} 更新` : null,
+    serverTime,
+    totalBox: numOrNull(nation.nationBoxSplitUnit?.num),
+    totalBoxUnit: nation.nationBoxSplitUnit?.unit ?? '万',
+    splitTotalBox: numOrNull(nation.nationSplitBoxSplitUnit?.num),
     // 分账总票房有自己的单位：综合已过亿时分账可能仍以"万"计
-    splitTotalBoxUnit: d.splitTotalBoxUnitInfo ?? d.splitTotalBoxUnit ?? '万',
-    list: d.list.map((m, i) => ({
+    splitTotalBoxUnit: nation.nationSplitBoxSplitUnit?.unit ?? '万',
+    list: list.map((m, i) => ({
       rank: i + 1,
-      movieId: m.movieId ?? null,
-      name: m.movieName,
-      releaseInfo: m.releaseInfo || null,
-      box: numOrNull(m.boxInfo), // 当日综合票房（万元）
-      boxRate: m.boxRate ?? null,
-      splitBox: numOrNull(m.splitBoxInfo), // 当日分账票房（万元）
-      sumBox: m.sumBoxInfo ?? null, // 累计票房，带单位文本，如 "2.67亿"
-      splitSumBox: m.splitSumBoxInfo ?? null,
-      showCount: numOrNull(m.showInfo),
-      showRate: m.showRate ?? null,
-      seatRate: m.seatRate ?? null,
+      movieId: m.movieInfo?.movieId ?? null,
+      name: m.movieInfo?.movieName ?? null,
+      releaseInfo: m.movieInfo?.releaseInfo || null,
+      box: fenToWan(m.box), // 当日综合票房（万元）
+      boxRate: textOrNull(m.boxRate),
+      splitBox: fenToWan(m.splitBox), // 当日分账票房（万元）
+      sumBox: textOrNull(m.sumBoxDesc), // 累计票房，带单位文本，如 "2.67亿"
+      splitSumBox: textOrNull(m.sumSplitBoxDesc),
+      showCount: numOrNull(m.showCount),
+      showRate: textOrNull(m.showCountRate),
+      seatRate: textOrNull(m.seatRate),
       avgShowView: numOrNull(m.avgShowView),
-      avgSeatView: m.avgSeatView ?? null,
-      url: m.movieId ? `https://piaofang.maoyan.com/movie/${m.movieId}` : null,
+      avgSeatView: textOrNull(m.avgSeatView),
+      url: m.movieInfo?.movieId ? `https://piaofang.maoyan.com/movie/${m.movieInfo.movieId}` : null,
     })),
   };
 }
 
 export async function loadBoxOffice() {
-  return parseBoxOffice(await fetchJSON(UPSTREAM, { headers: { referer: 'https://piaofang.maoyan.com/' } }));
+  return parseBoxOffice(await fetchJSON(UPSTREAM, {
+    headers: {
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      referer: 'https://piaofang.maoyan.com/dashboard',
+      accept: 'application/json, text/plain, */*',
+    },
+  }));
 }
 
-// 猫眼已改为「每次请求都要浏览器端生成的动态签名（mtgsig）+ 数字用随机字体加密」，
-// 旧的免签名接口 box.maoyan.com 也已下线（域名无法解析）。没有可正当使用的公开数据源，接口暂停服务，保留代码以便日后恢复
-export const SUSPENDED = '猫眼已停止提供公开的票房数据（旧接口下线，新接口需要浏览器端动态签名且数字经字体加密），暂时找不到可用的数据源';
-
 export default {
-  suspended: SUSPENDED,
   name: 'boxoffice',
   category: 'fun',
   title: '实时票房',
   description: '全国电影实时票房榜（综合/分账、排片占比、上座率）',
-  source: '猫眼专业版（非官方接口 box.maoyan.com/promovie/api/box/second.json）',
+  source: '猫眼专业版（非官方接口 piaofang.maoyan.com/dashboard-ajax/movie）',
   unofficial: true,
   routes: [
     {
