@@ -98,6 +98,8 @@ npm run api:sync    # 同步 README 数量和 docs/api-surface.json
 npm test
 ```
 
+`test/api-contract.test.js` 和 `api:check` 共用同一份规则（`src/lib/api-contract.js`），所以 CI 现有的 `node --test` 就会拦住过期快照与非法路径，不依赖额外的 workflow 步骤。
+
 新增核心接口时：
 
 1. 写 `src/apis/<分类>/<name>.js`（约定见 `src/apis/README.md`）；
