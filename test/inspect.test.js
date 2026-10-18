@@ -47,20 +47,26 @@ test('要先建任务才能查的接口直接跳过', () => {
   assert.match(t.skip, /先创建抓取任务/);
 });
 
-test('暂停服务的接口：巡检跳过，调用直接返回 503 并说明原因，不去请求上游', async () => {
-  const t = planTargets().find((x) => x.path === '/api/boxoffice');
-  assert.equal(t.skip, '接口已暂停服务');
-  const { invoke, catalog } = await import('../src/registry.js');
+test('暂停模块：目录标记、巡检跳过、预热排除与调用503都保留', async () => {
+  const { apiRouter, invoke, catalog } = await import('../src/registry.js');
+  const { modules } = await import('../src/apis/index.js');
+  const { warmable } = await import('../src/lib/prewarm.js');
+  const path = '/api/__suspended';
+  const module = { name: 'test-suspended', category: 'tools', title: '暂停行为夹具', source: '测试上游', suspended: '测试用：上游已下线', routes: [{ method: 'GET', path }] };
+  module.routes[0].handler = () => { throw new Error('不应执行处理器'); };
+  modules.push(module);
+  apiRouter.add('GET', path, module.routes[0].handler, { route: module.routes[0], module });
   const prev = globalThis.fetch;
   let called = false;
   globalThis.fetch = async () => { called = true; throw new Error('不应请求上游'); };
   try {
-    await assert.rejects(invoke('/api/boxoffice'), (e) => e.status === 503 && /暂不可用.*猫眼/.test(e.message));
+    assert.equal(planTargets().find((x) => x.path === path).skip, '接口已暂停服务');
+    assert.equal(warmable(path), false);
+    assert.match(catalog().modules.find((m) => m.name === module.name).suspended, /上游已下线/);
+    await assert.rejects(invoke(path), (e) => e.status === 503 && /暂不可用.*上游已下线/.test(e.message));
+    assert.equal(called, false);
   } finally {
     globalThis.fetch = prev;
+    modules.splice(modules.indexOf(module), 1);
   }
-  assert.equal(called, false);
-  assert.match(catalog().modules.find((m) => m.name === 'boxoffice').suspended, /猫眼/);
-  const { warmable } = await import('../src/lib/prewarm.js');
-  assert.equal(warmable('/api/boxoffice'), false);
 });
