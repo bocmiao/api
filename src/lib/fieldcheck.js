@@ -20,7 +20,7 @@ export function collectPaths(value, prefix = '', out = new Set()) {
 
 // 把文档里的 rates.* 这类通配写法转成正则
 export function matcher(name) {
-  const re = name.split('*').map((s) => s.replace(/[.[\]]/g, '\\$&')).join('[^.\\[\\]]+');
+  const re = name.split('*').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[^.\\[\\]]+');
   return new RegExp(`^${re}$`);
 }
 

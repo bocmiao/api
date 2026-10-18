@@ -47,6 +47,7 @@ test('applyMeta 只覆盖文字，孤儿补丁不生效但会被标出', () => {
     ['field|/api/demo|title|desc', { value: '新字段说明' }],
     ['field|/api/demo|gone|desc', { value: '孤儿' }],
   ]);
+  for (const [target, row] of patch) row.baseRev = targetRev(demo(), target);
   const out = applyMeta(demo(), patch);
   assert.equal(out.title, '新标题');
   assert.equal(out.description, '');

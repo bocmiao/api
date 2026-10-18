@@ -34,11 +34,53 @@ async function pageAdminApis(name) {
   return pageAdminApiList();
 }
 
+
+let workbenchDirty = () => false;
+window.addEventListener('beforeunload', (event) => { if (workbenchDirty()) { event.preventDefault(); event.returnValue = ''; } });
+document.addEventListener('click', (event) => {
+  const link = event.target.closest('a[href]');
+  if (!link || link.target === '_blank' || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !workbenchDirty()) return;
+  const url = new URL(link.href, location.href);
+  if (url.origin !== location.origin) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  confirmDialog('离开当前编辑', '尚有未保存修改或请求正在处理中。离开后请重新打开详情核对保存结果。', { okText: '离开' }).then((ok) => { if (ok) navigate(url.pathname + url.search); });
+}, true);
+
+// 编辑版本由页面读取时固定；不能在提交前偷偷刷新它，否则会掩盖并发覆盖。
+async function workbenchWrite(method, path, body, expectedRev, main) {
+  if (main.dataset.saving) throw new Error('正在保存，请等待结果');
+  main.dataset.saving = '1';
+  const buttons = [...main.querySelectorAll('button')].map((el) => [el, el.disabled]);
+  for (const [el] of buttons) el.disabled = true;
+  try {
+    const result = await api(method, path, { ...body, expectedRev });
+    state.catalog = null;
+    return result;
+  } catch (err) {
+    if (main.isConnected) {
+      let error = main.querySelector('[data-workbench-error]');
+      if (!error) { error = document.createElement('p'); error.dataset.workbenchError = '1'; error.className = 'workbench-error'; error.setAttribute('role', 'alert'); main.querySelector('.wrap')?.prepend(error); }
+      error.textContent = `${err.message}。未收到成功结果时，可重新打开详情核对；不要连续重复发布。 `;
+      const reload = document.createElement('a'); reload.href = location.pathname; reload.textContent = '重新读取详情'; error.append(reload);
+    }
+    throw err;
+  } finally {
+    delete main.dataset.saving;
+    for (const [el, disabled] of buttons) el.disabled = disabled;
+  }
+}
+
+function refreshWorkbench(name, main) {
+  if (main.isConnected && main === $('#main')) return pageAdminApiDetail(name).catch((err) => { if (err.name !== 'AbortError' && main.isConnected) toast(err.message, true); });
+}
+
 // ---------- 列表 ----------
 
 async function pageAdminApiList() {
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
-  const d = await cachedGet('/admin/apis');
+  const main = $('#main');
+  const d = await api('GET', '/admin/apis');
+  if (!main.isConnected) return;
   const rows = d.modules.map((m) => {
     const draftOnly = m.customDraft && !m.version;
     const stateBadge = draftOnly
@@ -67,7 +109,7 @@ async function pageAdminApiList() {
         const label = { orphan: '代码里已没有该字段', stale: '代码结构变过', invalid: '内容不合法', 'module-missing': '接口已被删除', 'invalid-target': '目标格式不合法' }[i.kind] ?? i.kind;
         return `<div><code class="mono">${esc(i.target)}</code> · ${esc(label)} ${i.name ? `<a class="small" href="${apiUrl(i.name)}">去处理</a>` : ''}${i.kind === 'module-missing' && i.name ? ` <button class="btn sm" data-clear-meta="${esc(i.name)}">清理</button>` : ''}</div>`;
       }).join('')}${doctor.issues.length > 8 ? '<div class="faint">…还有更多，请在对应接口里处理</div>' : ''}</div>`;
-  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+  $('#main').innerHTML = `<div class="wrap api-workbench" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>接口</h1><p>可视化编辑接口文案、试跑、体检；也可以在后台新增声明式接口，发布后立即生效</p></div>${adminTabs('apis')}</div>
     <div class="card card-pad" style="margin-bottom:16px">
       <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
@@ -80,20 +122,22 @@ async function pageAdminApiList() {
         <div class="row" style="gap:8px"><input class="input" id="api-q" placeholder="搜索名称、路径、说明" style="width:220px;height:32px">
         <a class="btn sm" href="/openapi.json" target="_blank" rel="noopener">OpenAPI</a></div></div>
       <div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th>分类</th><th>类型</th><th>状态</th><th class="num">7 天调用</th><th class="num">文案覆盖</th><th>最近检测</th><th></th></tr></thead>
-      <tbody id="api-rows">${rows || '<tr><td colspan="8"><div class="empty">还没有接口</div></td></tr>'}</tbody></table></div>
+      <tbody id="api-rows">${rows || '<tr><td colspan="8"><div class="empty">还没有接口</div></td></tr>'}<tr id="api-no-matches" hidden><td colspan="8" class="empty">没有匹配的接口，请修改关键词。</td></tr></tbody></table></div>
     </div>
   </div>`;
   $('#api-q').addEventListener('input', (e) => {
     const q = e.target.value.trim().toLowerCase();
-    for (const tr of $$('#api-rows tr[data-search]')) tr.hidden = Boolean(q) && !tr.dataset.search.includes(q);
+    const rows = $$('#api-rows tr[data-search]');
+    for (const tr of rows) tr.hidden = Boolean(q) && !tr.dataset.search.includes(q);
+    $('#api-no-matches').hidden = rows.some((tr) => !tr.hidden) || !rows.length;
   });
   for (const btn of $$('[data-clear-meta]')) {
     btn.addEventListener('click', async () => {
       if (!(await confirmDialog('清理失效文案', `删除 ${btn.dataset.clearMeta} 留下的全部文案补丁？`, { okText: '清理' }))) return;
       try {
-        const r = await api('DELETE', `/admin/apis/${encodeURIComponent(btn.dataset.clearMeta)}/meta`);
+        const r = await workbenchWrite('DELETE', `/admin/apis/${encodeURIComponent(btn.dataset.clearMeta)}/meta`, {}, d.editRev, main);
         toast(`已清理 ${r.cleared} 条`);
-        pageAdminApiList();
+        if (main.isConnected) pageAdminApiList().catch((err) => toast(err.message, true));
       } catch (err) { toast(err.message, true); }
     });
   }
@@ -102,11 +146,14 @@ async function pageAdminApiList() {
 // ---------- 新建 ----------
 
 async function pageAdminApiNew() {
-  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+  const main = $('#main');
+  const { editRev } = await api('GET', '/admin/custom-apis');
+  if (!main.isConnected) return;
+  $('#main').innerHTML = `<div class="wrap api-workbench" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>新建接口</h1><p>声明式配置：取值 → 请求上游 → 映射字段，不执行任意代码</p></div>${adminTabs('apis')}</div>
     <div class="card card-pad">
       <p class="small faint" style="margin-top:0">配置保存为草稿，发布前会校验字段说明；发布后立即出现在首页、文档和 OpenAPI 里。示例里的地址和字段请替换成真实值。</p>
-      <textarea class="input mono" id="custom-config" rows="26" style="height:auto;padding:12px;line-height:1.6">${esc(JSON.stringify(API_TEMPLATE, null, 2))}</textarea>
+      <textarea class="input mono" id="custom-config" aria-label="接口 JSON 配置" rows="26" style="height:auto;padding:12px;line-height:1.6">${esc(JSON.stringify(API_TEMPLATE, null, 2))}</textarea>
       <div class="row" style="gap:10px;margin-top:12px;flex-wrap:wrap">
         <button class="btn sm primary" id="custom-save">保存草稿</button>
         <button class="btn sm" id="custom-check">校验</button>
@@ -117,6 +164,8 @@ async function pageAdminApiNew() {
     </div>
   </div>`;
   const ta = $('#custom-config');
+  const savedText = ta.value;
+  workbenchDirty = () => main.isConnected && (Boolean(main.dataset.saving) || ta.value !== savedText);
   const out = $('#custom-out');
   const msg = $('#custom-msg');
   const configOf = () => { try { return JSON.parse(ta.value); } catch (err) { throw new Error(`JSON 格式错误：${err.message}`); } };
@@ -132,9 +181,9 @@ async function pageAdminApiNew() {
   $('#custom-save').onclick = async () => {
     try {
       const config = configOf();
-      await api('POST', '/admin/custom-apis', { config });
+      await workbenchWrite('POST', '/admin/custom-apis', { config }, editRev, main);
       toast('草稿已保存');
-      navigate(apiUrl(config.name));
+      if (main.isConnected) navigate(apiUrl(config.name));
     } catch (err) { toast(err.message, true); msg.textContent = err.message; }
   };
 }
@@ -143,7 +192,9 @@ async function pageAdminApiNew() {
 
 async function pageAdminApiDetail(name) {
   $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
+  const main = $('#main');
   const d = await api('GET', apiUrl(name));
+  if (!main.isConnected) return;
   const m = d.module;
   const groups = new Map([['', []]]);
   for (const t of d.targets) {
@@ -156,8 +207,8 @@ async function pageAdminApiDetail(name) {
     ${list.map((t) => {
       const long = /description|desc|summary/.test(t.target);
       const control = long
-        ? `<textarea class="input" rows="2" style="height:auto;padding:8px" data-meta-target="${esc(t.target)}" data-code="${esc(t.code)}" maxlength="${t.limit}">${esc(t.value)}</textarea>`
-        : `<input class="input" data-meta-target="${esc(t.target)}" data-code="${esc(t.code)}" value="${esc(t.value)}" maxlength="${t.limit}">`;
+        ? `<textarea class="input" rows="2" style="height:auto;padding:8px" data-meta-target="${esc(t.target)}" data-saved="${esc(t.value)}" data-stale="${t.stale ? '1' : ''}" aria-label="${esc(t.label)} ${esc(t.path ?? '')} ${esc(t.name ?? '')}" data-code="${esc(t.code)}" maxlength="${t.limit}">${esc(t.value)}</textarea>`
+        : `<input class="input" data-meta-target="${esc(t.target)}" data-saved="${esc(t.value)}" data-stale="${t.stale ? '1' : ''}" aria-label="${esc(t.label)} ${esc(t.path ?? '')} ${esc(t.name ?? '')}" data-code="${esc(t.code)}" value="${esc(t.value)}" maxlength="${t.limit}">`;
       return `<label class="meta-row${t.overridden ? ' is-overridden' : ''}">
         <span class="meta-label">${esc(t.label)}${t.overridden ? ' <span class="badge ok">已改</span>' : ''}${t.stale ? ' <span class="badge warn" title="代码结构变过，请确认文案">待确认</span>' : ''}</span>
         <span class="meta-code small faint">代码默认：${esc(t.code) || '（空）'}</span>
@@ -170,7 +221,7 @@ async function pageAdminApiDetail(name) {
   const metaBody = [...groups.entries()].map(([path, list]) => {
     if (!path) return metaSection('接口信息', list);
     const route = m.routes.find((r) => r.path === path);
-    return metaSection(`${path}${route?.summary ? ` · ${route.summary}` : ''}`, list);
+    return `<details class="meta-details"><summary>${esc(path)}${route?.summary ? ` · ${esc(route.summary)}` : ''}<span class="small faint">（${list.length} 项）</span></summary>${metaSection('参数与字段文案', list)}</details>`;
   }).join('');
 
   const routesHtml = m.routes.map((route) => `<div class="card card-pad" style="margin-bottom:10px">
@@ -185,17 +236,18 @@ async function pageAdminApiDetail(name) {
     : '<span class="small faint">还没有检测记录</span>';
 
   const customPanel = m.custom ? customEditor(d, m) : `<div class="card card-pad"><p class="small faint" style="margin:0">这是代码里的核心接口：可以改文案、试跑，但不能在网页里改实现逻辑。需要新增接口请用「新建接口」。</p></div>`;
+  const trialModule = { ...m, routes: d.trialRoutes ?? m.routes };
   const draftOnly = m.custom && d.custom && !d.custom.config;
 
-  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+  $('#main').innerHTML = `<div class="wrap api-workbench" style="padding:28px 20px 80px">
     <div class="page-head"><div><a class="small" href="/admin/apis">← 接口列表</a>
       <h1 style="margin-top:6px">${esc(m.title)}</h1>
       <p><span class="mono">${esc(m.name)}</span> · ${esc(m.category)} · ${originBadge(m)} ${draftOnly ? '<span class="badge warn">草稿</span>' : m.enabled ? '<span class="badge ok">正常</span>' : '<span class="badge">已关闭</span>'}${m.compliance ? `<span class="badge danger">${esc(m.compliance)}</span>` : ''}</p></div>${adminTabs('apis')}</div>
-    <div class="seg" id="api-tabs">
-      <button class="active" data-tab="overview">概览</button>
-      <button data-tab="meta">文案</button>
-      <button data-tab="try">试跑</button>
-      <button data-tab="custom">${m.custom ? '接口定义' : '说明'}</button>
+    <div class="seg" id="api-tabs" role="group" aria-label="接口面板">
+      <button class="active" data-tab="overview" aria-pressed="true">概览</button>
+      <button data-tab="meta" aria-pressed="false">文案</button>
+      <button data-tab="try" aria-pressed="false">试跑</button>
+      <button data-tab="custom" aria-pressed="false">${m.custom ? '接口定义' : '说明'}</button>
     </div>
     <section data-panel="overview">
       <div class="card card-pad" style="margin-bottom:16px">
@@ -222,16 +274,21 @@ async function pageAdminApiDetail(name) {
         <div class="card-pad" id="meta-body">${metaBody || '<div class="empty">没有可编辑的文案</div>'}</div></div>
     </section>
     <section data-panel="try" hidden>
-      <div class="card"><div class="card-head"><h2>试跑</h2><span class="small faint">直接调用处理函数，不计额度、不写调用日志</span></div>
-        <div class="card-pad">${tryPanel(m)}</div></div>
+      <div class="card"><div class="card-head"><h2>试跑</h2><span class="small faint">不计调用额度；使用草稿及独立缓存，外部调用须确认并记录操作</span></div>
+        <div class="card-pad">${tryPanel(trialModule)}</div></div>
     </section>
     <section data-panel="custom" hidden>${customPanel}</section>
   </div>`;
 
+  const customText = main.querySelector('#custom-config')?.value;
+  workbenchDirty = () => main.isConnected && (Boolean(main.dataset.saving)
+    || [...main.querySelectorAll('[data-meta-target]')].some((el) => el.value !== el.dataset.saved || el.dataset.reset)
+    || (customText !== undefined && main.querySelector('#custom-config')?.value !== customText));
+
   // 标签切换
   for (const btn of $$('#api-tabs button')) {
     btn.addEventListener('click', () => {
-      for (const b of $$('#api-tabs button')) b.classList.toggle('active', b === btn);
+      for (const b of $$('#api-tabs button')) { b.classList.toggle('active', b === btn); b.setAttribute('aria-pressed', String(b === btn)); }
       for (const panel of $$('[data-panel]')) panel.hidden = panel.dataset.panel !== btn.dataset.tab;
     });
   }
@@ -240,34 +297,34 @@ async function pageAdminApiDetail(name) {
     try {
       await api('PUT', '/admin/modules', { names: [m.name], enabled: !m.enabled });
       toast(!m.enabled ? '接口已开启' : '接口已关闭');
-      pageAdminApiDetail(name);
+      refreshWorkbench(name, main);
     } catch (err) { toast(err.message, true); }
   };
 
   // 保存文案
   $('#meta-save')?.addEventListener('click', async () => {
-    const changes = [];
+    const changes = [], reset = [];
     for (const el of $$('[data-meta-target]')) {
-      if (el.value !== el.dataset.code) changes.push({ target: el.dataset.metaTarget, value: el.value });
+      if (el.dataset.reset || (el.value !== el.dataset.saved && el.value === el.dataset.code)) reset.push(el.dataset.metaTarget);
+      else if (el.value !== el.dataset.saved || el.dataset.stale) changes.push({ target: el.dataset.metaTarget, value: el.value });
     }
-    if (!changes.length) return toast('没有修改');
+    if (!changes.length && !reset.length) return toast('没有修改');
     try {
-      const r = await api('PUT', `${apiUrl(name)}/meta`, { changes });
+      const r = await workbenchWrite('PUT', `${apiUrl(name)}/meta`, { changes, reset }, d.editRev, main);
       toast(`已保存 ${r.applied.length} 项文案`);
-      pageAdminApiDetail(name);
+      refreshWorkbench(name, main);
     } catch (err) { toast(err.message, true); }
   });
   for (const btn of $$('[data-meta-reset]')) {
-    btn.addEventListener('click', async () => {
-      try {
-        await api('PUT', `${apiUrl(name)}/meta`, { reset: [btn.dataset.metaReset] });
-        toast('已恢复代码默认值');
-        pageAdminApiDetail(name);
-      } catch (err) { toast(err.message, true); }
+    btn.addEventListener('click', () => {
+      const input = [...main.querySelectorAll('[data-meta-target]')].find((el) => el.dataset.metaTarget === btn.dataset.metaReset);
+      input.value = input.dataset.code;
+      input.dataset.reset = '1';
+      btn.textContent = '待还原，点击保存生效';
     });
   }
 
-  bindTryPanel(m);
+  bindTryPanel(trialModule);
   if (m.custom) bindCustomEditor(d, m);
 }
 
@@ -277,7 +334,7 @@ function tryPanel(m) {
     <div class="row" style="gap:8px;flex-wrap:wrap;margin:8px 0">
       ${(route.params ?? []).filter((p) => p.in !== 'body').map((p) => `<label class="small">${esc(p.name)}${p.required ? ' *' : ''}
         <input class="input" data-param="${esc(p.name)}" data-required="${p.required ? '1' : ''}" value="${esc(p.example ?? '')}" placeholder="${esc(p.desc ?? '')}" style="height:32px;min-width:150px"></label>`).join('') || '<span class="small faint">无需参数</span>'}
-      ${route.method === 'POST' ? `<textarea class="input mono" data-body rows="2" placeholder='JSON body（可选）' style="height:auto;min-width:260px;padding:6px"></textarea>` : ''}
+      ${route.method === 'POST' ? `<textarea class="input mono" data-body aria-label="POST JSON 正文" rows="2" placeholder='JSON body（可选）' style="height:auto;width:100%;padding:6px"></textarea>` : ''}
       <button class="btn sm primary" data-run="${i}">运行</button>
     </div>
     <pre class="mono small" data-out="${i}" style="display:none;white-space:pre-wrap;background:var(--bg-soft,#f6f6f6);padding:10px;border-radius:8px;max-height:320px;overflow:auto"></pre>
@@ -285,6 +342,7 @@ function tryPanel(m) {
 }
 
 function bindTryPanel(m) {
+  const main = $('#main');
   for (const btn of $$('[data-run]')) {
     btn.addEventListener('click', async () => {
       const i = Number(btn.dataset.run);
@@ -300,13 +358,19 @@ function bindTryPanel(m) {
       if (bodyEl?.value.trim()) {
         try { body = JSON.parse(bodyEl.value); } catch { return toast('body 不是合法 JSON', true); }
       }
+      let reason;
+      if (route.requiresConfirmation) {
+        reason = await promptDialog('确认外部试跑', '将真实请求上游，可能发送数据、消耗配额或产生副作用。请填写试跑原因；本次使用当前已保存草稿。', { placeholder: '例如：核对草稿返回字段' });
+        if (!reason || !main.isConnected) return;
+      }
       const out = block.querySelector('[data-out]');
       out.style.display = '';
       out.textContent = '运行中…';
+      btn.disabled = true;
       try {
-        const r = await api('POST', `${apiUrl(m.name)}/try`, { path: route.path, query, body });
+        const r = await api('POST', `${apiUrl(m.name)}/try`, { path: route.path, query, body, confirmExternal: Boolean(reason), reason });
         out.textContent = r.ok ? JSON.stringify(r.data, null, 2) : `失败 ${r.error.status}：${r.error.message}`;
-      } catch (err) { out.textContent = err.message; }
+      } catch (err) { out.textContent = err.message; } finally { btn.disabled = false; }
     });
   }
 }
@@ -326,8 +390,8 @@ function customEditor(d, m) {
         ${d.custom.draft && d.custom.config ? '<button class="btn sm ghost" id="custom-discard">放弃草稿</button>' : ''}
         <button class="btn sm danger" id="custom-delete">删除</button></div></div>
     <div class="card-pad">
-      <p class="small faint" style="margin-top:0">声明式配置：url 里用 <code>{参数名}</code> 取值，<code>{env:变量名}</code> 引用环境变量；extract 取上游路径，map 映射成返回字段。保存草稿不影响线上，发布后才生效。</p>
-      <textarea class="input mono" id="custom-config" rows="22" style="height:auto;padding:12px;line-height:1.6">${esc(JSON.stringify(working, null, 2))}</textarea>
+      <p class="small faint" style="margin-top:0">声明式配置：url 里用 <code>{参数名}</code> 取值，<code>{env:CUSTOM_API_变量名}</code> 引用已声明的专用环境变量；extract 取上游路径，map 映射成返回字段。保存草稿不影响线上，发布后才生效。</p>
+      <textarea class="input mono" id="custom-config" aria-label="接口 JSON 配置" rows="22" style="height:auto;padding:12px;line-height:1.6">${esc(JSON.stringify(working, null, 2))}</textarea>
       <pre class="mono small" id="custom-out" style="display:none;white-space:pre-wrap;margin-top:12px"></pre>
       ${d.custom.config ? `<details style="margin-top:14px"><summary class="small faint">当前线上版本：v${d.custom.version}${d.custom.publishedAt ? ` · ${esc(fmtDate(d.custom.publishedAt))}` : ''}</summary>
         <pre class="mono small" style="white-space:pre-wrap;margin-top:8px">${esc(JSON.stringify(d.custom.config, null, 2))}</pre></details>` : ''}
@@ -340,6 +404,7 @@ function customEditor(d, m) {
 }
 
 function bindCustomEditor(d, m) {
+  const main = $('#main');
   const ta = $('#custom-config');
   const out = $('#custom-out');
   const configOf = () => {
@@ -355,26 +420,26 @@ function bindCustomEditor(d, m) {
   };
   $('#custom-save').onclick = async () => {
     try {
-      await api('PUT', `/admin/custom-apis/${encodeURIComponent(m.name)}`, { config: configOf() });
+      await workbenchWrite('PUT', `/admin/custom-apis/${encodeURIComponent(m.name)}`, { config: configOf() }, d.editRev, main);
       toast('草稿已保存');
-      pageAdminApiDetail(m.name);
+      refreshWorkbench(m.name, main);
     } catch (err) { toast(err.message, true); }
   };
   $('#custom-publish').onclick = async () => {
     const reason = await promptDialog('发布接口', '填写发布说明（会记录到操作日志）', { placeholder: '例如：新增热榜来源、修正上游地址' });
     if (!reason) return;
     try {
-      await api('POST', `/admin/custom-apis/${encodeURIComponent(m.name)}/publish`, { reason, note: reason });
+      await workbenchWrite('POST', `/admin/custom-apis/${encodeURIComponent(m.name)}/publish`, { config: configOf(), reason, note: reason }, d.editRev, main);
       toast('已发布，立即生效');
-      pageAdminApiDetail(m.name);
+      refreshWorkbench(m.name, main);
     } catch (err) { toast(err.message, true); }
   };
   $('#custom-discard')?.addEventListener('click', async () => {
     if (!(await confirmDialog('放弃草稿', '未发布的修改会丢失，确定继续？'))) return;
     try {
-      await api('POST', `/admin/custom-apis/${encodeURIComponent(m.name)}/discard`, {});
+      await workbenchWrite('POST', `/admin/custom-apis/${encodeURIComponent(m.name)}/discard`, {}, d.editRev, main);
       toast('已放弃草稿');
-      pageAdminApiDetail(m.name);
+      refreshWorkbench(m.name, main);
     } catch (err) { toast(err.message, true); }
   });
   $('#custom-delete').onclick = async () => {
@@ -382,9 +447,9 @@ function bindCustomEditor(d, m) {
     const reason = await promptDialog('删除接口', '填写删除原因（会记录到操作日志）', { placeholder: '例如：上游已停止服务' });
     if (!reason) return;
     try {
-      await api('DELETE', `/admin/custom-apis/${encodeURIComponent(m.name)}`, { reason });
+      await workbenchWrite('DELETE', `/admin/custom-apis/${encodeURIComponent(m.name)}`, { reason }, d.editRev, main);
       toast('接口已删除');
-      navigate('/admin/apis');
+      if (main.isConnected) navigate('/admin/apis');
     } catch (err) { toast(err.message, true); }
   };
   for (const btn of $$('[data-rollback]')) {
@@ -392,9 +457,9 @@ function bindCustomEditor(d, m) {
       const reason = await promptDialog('回滚接口', `回滚到 v${btn.dataset.rollback}，填写原因`, { placeholder: '例如：新版本上游不可用' });
       if (!reason) return;
       try {
-        await api('POST', `/admin/custom-apis/${encodeURIComponent(m.name)}/rollback`, { version: Number(btn.dataset.rollback), reason });
+        await workbenchWrite('POST', `/admin/custom-apis/${encodeURIComponent(m.name)}/rollback`, { version: Number(btn.dataset.rollback), reason }, d.editRev, main);
         toast(`已回滚到 v${btn.dataset.rollback}`);
-        pageAdminApiDetail(m.name);
+        refreshWorkbench(m.name, main);
       } catch (err) { toast(err.message, true); }
     });
   }

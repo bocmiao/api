@@ -337,6 +337,11 @@ try {
 // 文案覆盖层：一行 = 管理员改过的一个文字字段（标题、说明、参数说明、字段说明）。
 // 代码里的接口定义是唯一权威，这里只存"说法"；删掉一行即恢复代码默认值，结构永远只读。
 db.exec(`
+  CREATE TABLE IF NOT EXISTS api_workbench_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    rev INTEGER NOT NULL DEFAULT 0
+  );
+  INSERT OR IGNORE INTO api_workbench_state (id, rev) VALUES (1, 0);
   CREATE TABLE IF NOT EXISTS api_meta (
     name TEXT NOT NULL,
     target TEXT NOT NULL,

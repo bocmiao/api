@@ -27,7 +27,7 @@ export function shapeOf(mod) {
       method: r.method,
       path: r.path,
       raw: Boolean(r.raw),
-      params: (r.params ?? []).map((p) => [p.name, Boolean(p.required), p.in ?? 'query', p.type ?? null, Boolean(p.int), p.min ?? null, p.max ?? null, p.oneOf ?? null, p.default ?? null]),
+      params: (r.params ?? []).map((p) => [p.name, Boolean(p.required), p.in ?? 'query', p.type ?? null, Boolean(p.int), p.min ?? null, p.max ?? null, p.oneOf ?? null, p.default ?? null, p.maxLength ?? null, String(p.pattern ?? '')]),
       fields: (r.fields ?? []).map((f) => [f.name, f.type ?? null]),
     })),
   };
@@ -77,7 +77,7 @@ export function targetRev(mod, target) {
   if (t.kind === 'param') {
     const p = (route.params ?? []).find((x) => x.name === t.name);
     if (!p) return '';
-    return hash(['param', route.path, p.name, p.required ?? false, p.in ?? 'query', p.type ?? null, p.int ?? null, p.min ?? null, p.max ?? null, p.oneOf ?? null]);
+    return hash(['param', route.path, p.name, p.required ?? false, p.in ?? 'query', p.type ?? null, p.int ?? null, p.min ?? null, p.max ?? null, p.oneOf ?? null, p.default ?? null, p.maxLength ?? null, String(p.pattern ?? '')]);
   }
   const f = (route.fields ?? []).find((x) => x.name === t.name);
   return f ? hash(['field', route.path, f.name, f.type ?? null]) : '';
@@ -86,7 +86,7 @@ export function targetRev(mod, target) {
 function checkExample(param, value) {
   if (value === '') return;
   if (param.oneOf && !param.oneOf.includes(value)) throw new HttpError(400, `示例「${value}」不在可选值里：${param.oneOf.join(' / ')}`);
-  if (param.int) {
+  if (param.int || param.type === 'int') {
     const n = Number(value);
     if (!Number.isInteger(n)) throw new HttpError(400, '这个参数是整数，示例也必须是整数');
     if (param.min != null && n < param.min) throw new HttpError(400, `示例不能小于 ${param.min}`);
@@ -97,7 +97,8 @@ function checkExample(param, value) {
     const re = param.pattern instanceof RegExp ? param.pattern : new RegExp(param.pattern);
     if (!re.test(value)) throw new HttpError(400, `示例不符合参数格式：${re}`);
   }
-  if (param.max != null && String(value).length > param.max) throw new HttpError(400, `示例过长（最多 ${param.max} 个字符）`);
+  const maxLength = param.maxLength ?? param.max;
+  if (maxLength != null && String(value).length > maxLength) throw new HttpError(400, `示例过长（最多 ${maxLength} 个字符）`);
 }
 
 function checkValue(mod, target, value) {
@@ -134,6 +135,8 @@ export function applyMeta(mod, patch = loadPatch(mod.name)) {
   const take = (target, fallback) => {
     const hit = patch.get(target);
     if (!hit) return fallback;
+    if (!hit.baseRev || hit.baseRev !== targetRev(mod, target)) return fallback;
+    try { checkValue(mod, target, hit.value); } catch { return fallback; }
     used.add(target);
     return hit.value;
   };
@@ -153,7 +156,8 @@ export function applyMeta(mod, patch = loadPatch(mod.name)) {
     fields: (route.fields ?? []).map((f) => ({ ...f, desc: take(`field|${route.path}|${f.name}|desc`, f.desc ?? '') })),
   }));
   out.metaApplied = [...used];
-  out.metaOrphans = [...patch.keys()].filter((target) => !used.has(target));
+  out.metaOrphans = [...patch.keys()].filter((target) => { try { return !findTarget(mod, target); } catch { return true; } });
+  out.metaInactive = [...patch.keys()].filter((target) => !used.has(target));
   return out;
 }
 
@@ -170,7 +174,7 @@ export function metaTargets(mod, patch = loadPatch(mod.name)) {
       code: def.value, value: hit ? hit.value : def.value,
       overridden: Boolean(hit), limit: def.limit,
       baseRev: hit?.baseRev ?? null, currentRev: targetRev(mod, target),
-      stale: Boolean(hit?.baseRev && hit.baseRev !== targetRev(mod, target)),
+      stale: Boolean(hit && (!hit.baseRev || hit.baseRev !== targetRev(mod, target))),
       updatedAt: hit?.updatedAt ?? null, updatedBy: hit?.updatedBy ?? null,
     });
   };
@@ -192,7 +196,7 @@ export function saveMeta(mod, { changes = [], reset = [] } = {}, by = null) {
   if (!Array.isArray(changes) || !Array.isArray(reset)) throw new HttpError(400, 'changes / reset 必须是数组');
   const applied = [];
   const cleared = [];
-  db.exec('BEGIN IMMEDIATE');
+  db.exec('SAVEPOINT api_meta_save');
   try {
     for (const change of changes) {
       const target = String(change?.target ?? '');
@@ -210,9 +214,10 @@ export function saveMeta(mod, { changes = [], reset = [] } = {}, by = null) {
       sql('DELETE FROM api_meta WHERE name = ? AND target = ?').run(mod.name, target);
       cleared.push(target);
     }
-    db.exec('COMMIT');
+    db.exec('RELEASE api_meta_save');
   } catch (err) {
-    db.exec('ROLLBACK');
+    db.exec('ROLLBACK TO api_meta_save');
+    db.exec('RELEASE api_meta_save');
     throw err;
   }
   return { applied, cleared };
@@ -233,7 +238,7 @@ export function metaDoctor(modules = []) {
       let def;
       try { def = findTarget(mod, target); } catch { issues.push({ name, target, kind: 'invalid-target', value: row.value }); continue; }
       if (!def) { issues.push({ name, target, kind: 'orphan', value: row.value }); continue; }
-      if (row.baseRev && row.baseRev !== targetRev(mod, target)) { issues.push({ name, target, kind: 'stale', value: row.value }); continue; }
+      if (!row.baseRev || row.baseRev !== targetRev(mod, target)) { issues.push({ name, target, kind: 'stale', value: row.value }); continue; }
       if (row.value.length > def.limit || (def.required && !row.value) || CONTROL_RE.test(row.value)) issues.push({ name, target, kind: 'invalid', value: row.value });
     }
   }

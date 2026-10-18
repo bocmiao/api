@@ -1,14 +1,36 @@
 // 后台新增的接口：声明式配置（GET/POST + 取值 + 字段映射），不执行任意代码。
 // 配置存在 SQLite 里，跨在线更新存活；发布后由 registry 合并进路由表，无需重启。
 import { sql, db } from '../db.js';
-import { HttpError, fetchJSON, fetchText, param } from './http.js';
+import { createHash } from 'node:crypto';
+import { HttpError, param } from './http.js';
+import { requestCustom } from './custom-request.js';
+import { checkUrl } from './netguard.js';
+import { undocumented } from './fieldcheck.js';
+import { Router } from './router.js';
 import { cache } from './cache.js';
 import { SOURCE_TYPES } from './api-sources.js';
 import { coreModules, categories } from '../apis/index.js';
 
 const NAME_RE = /^[a-z][a-z0-9-]{2,39}$/;
 const PATH_RE = /^\/api\/[a-z0-9][a-z0-9/_-]{0,80}$/;
-const ENV_RE = /^[A-Z][A-Z0-9_]{2,40}$/;
+const ENV_RE = /^CUSTOM_API_[A-Z][A-Z0-9_]{0,29}$/;
+const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor']);
+const own = (object, key) => object != null && Object.hasOwn(Object(object), key);
+const digest = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+
+function safeTree(value, depth = 0, count = { n: 0 }) {
+  if (++count.n > 10000 || depth > 20) fail('配置过大或嵌套超过 20 层');
+  if (value && typeof value === 'object') for (const [key, child] of Object.entries(value)) {
+    if (FORBIDDEN.has(key)) fail(`不允许使用字段 ${key}`);
+    safeTree(child, depth + 1, count);
+  }
+}
+function knownKeys(raw, allowed, at) {
+  for (const key of Object.keys(raw)) if (!allowed.includes(key)) fail(`${at}含未知字段 ${key}`);
+}
+function safePath(path) {
+  return !String(path).split(/[.\[\]]/).some((p) => FORBIDDEN.has(p));
+}
 const PARAM_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,30}$/;
 const MAP_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const PATH_EXPR_RE = /^[A-Za-z0-9_$@]+(\.[A-Za-z0-9_$]+|\[\d+\])*$/;
@@ -19,7 +41,8 @@ const CATEGORY_IDS = new Set(categories.map((c) => c.id));
 const fail = (message) => { throw new HttpError(400, message); };
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const str = (v, label, min, max) => {
-  const s = typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim();
+  if (v != null && typeof v !== 'string') fail(`${label}必须是字符串`);
+  const s = v?.trim() ?? '';
   if (s.length < min) fail(`${label}不能为空`);
   if (s.length > max) fail(`${label}最多 ${max} 个字`);
   return s;
@@ -28,8 +51,11 @@ const str = (v, label, min, max) => {
 function normalizeParam(raw, routePath, index) {
   const at = `${routePath} 的第 ${index + 1} 个参数`;
   if (!isObject(raw)) fail(`${at}必须是对象`);
+  if (raw.required !== undefined && typeof raw.required !== 'boolean') fail(`${at}的 required 必须是布尔值`);
   const name = String(raw.name ?? '');
-  if (!PARAM_RE.test(name)) fail(`${at}的名字不合法（字母开头，可含数字和下划线）`);
+  if (!PARAM_RE.test(name) || FORBIDDEN.has(name)) fail(`${at}的名字不合法（字母开头，可含数字和下划线）`);
+  knownKeys(raw, ['name', 'required', 'type', 'int', 'desc', 'in', 'default', 'min', 'max', 'maxLength', 'oneOf', 'pattern', 'example'], at);
+  if (raw.in != null && !['query', 'body'].includes(raw.in)) fail(`${at}的 in 只能是 query 或 body`);
   const type = raw.type === 'int' || raw.int === true ? 'int' : 'string';
   if (raw.type != null && !['string', 'int'].includes(raw.type)) fail(`${at}的 type 只能是 string 或 int`);
   const out = {
@@ -40,15 +66,15 @@ function normalizeParam(raw, routePath, index) {
   };
   if (raw.in === 'body') out.in = 'body';
   if (raw.default !== undefined && raw.default !== null) {
-    if (type === 'int' && !Number.isInteger(Number(raw.default))) fail(`${at}的默认值必须是整数`);
+    if (type === 'int' && !Number.isSafeInteger(Number(raw.default))) fail(`${at}的默认值必须是整数`);
     out.default = type === 'int' ? Number(raw.default) : String(raw.default);
   }
   if (raw.min !== undefined) {
-    if (type !== 'int' || !Number.isInteger(raw.min)) fail(`${at}的 min 只适用于整数参数`);
+    if (type !== 'int' || !Number.isSafeInteger(raw.min)) fail(`${at}的 min 只适用于整数参数`);
     out.min = raw.min;
   }
   if (raw.max !== undefined) {
-    if (type !== 'int' || !Number.isInteger(raw.max)) fail(`${at}的 max 只适用于整数参数`);
+    if (type !== 'int' || !Number.isSafeInteger(raw.max)) fail(`${at}的 max 只适用于整数参数`);
     out.max = raw.max;
   }
   if (raw.maxLength !== undefined) {
@@ -59,15 +85,16 @@ function normalizeParam(raw, routePath, index) {
     if (!Array.isArray(raw.oneOf) || !raw.oneOf.length || raw.oneOf.length > 50) fail(`${at}的 oneOf 必须是 1~50 个可选值`);
     out.oneOf = raw.oneOf.map((v) => String(v));
   }
-  if (raw.pattern !== undefined) {
-    if (type !== 'string') fail(`${at}的 pattern 只适用于字符串参数`);
-    try { new RegExp(raw.pattern); } catch { fail(`${at}的 pattern 不是合法正则`); }
-    out.pattern = String(raw.pattern);
-  }
+  if (raw.pattern !== undefined) fail(`${at}暂不支持自定义正则，请使用 oneOf 和 maxLength`);
+  if (type === 'string') out.maxLength ??= 2000;
+  if (out.min != null && out.max != null && out.min > out.max) fail(`${at}的 min 不能大于 max`);
   if (raw.example !== undefined && raw.example !== null && raw.example !== '') {
     out.example = String(raw.example).slice(0, 200);
   } else if (out.required) {
     fail(`${at}是必填参数，请填写示例值（自动检测和巡检会用它）`);
+  }
+  for (const value of [out.default, out.example]) if (value != null) {
+    param(new URLSearchParams({ [name]: String(value) }), name, { ...out, int: type === 'int', max: type === 'string' ? out.maxLength : out.max });
   }
   return out;
 }
@@ -77,7 +104,7 @@ function checkTemplate(text, params, env, where) {
     const token = m[1];
     if (token.startsWith('env:')) {
       if (!ENV_RE.test(token.slice(4))) fail(`${where}里的环境变量占位符不合法：{${token}}`);
-      if (env.length && !env.includes(token.slice(4))) fail(`${where}用到了未声明的环境变量 ${token.slice(4)}`);
+      if (!env.includes(token.slice(4))) fail(`${where}用到了未声明的环境变量 ${token.slice(4)}`);
       continue;
     }
     if (!params.includes(token)) fail(`${where}引用了未声明的参数 {${token}}`);
@@ -93,18 +120,25 @@ function checkDeep(value, params, env, where) {
 
 function normalizeRoute(raw, config, index) {
   if (!isObject(raw)) fail(`第 ${index + 1} 个路由必须是对象`);
+  knownKeys(raw, ['method', 'path', 'summary', 'params', 'url', 'headers', 'body', 'extract', 'map', 'fields', 'cacheTtlSec', 'timeoutMs', 'responseType'], '路由');
   const method = String(raw.method ?? 'GET').toUpperCase();
   if (!['GET', 'POST'].includes(method)) fail('method 只能是 GET 或 POST');
   const path = String(raw.path ?? '');
-  if (!PATH_RE.test(path)) fail(`路径 ${path || '(空)'} 不合法：必须以 /api/ 开头，只含小写字母、数字、/ _ -`);
+  if (!PATH_RE.test(path) || path.endsWith('/') || path.includes('//')) fail(`路径 ${path || '(空)'} 不合法：必须以 /api/ 开头，只含小写字母、数字、/ _ -`);
   const summary = str(raw.summary, `路由 ${path} 的说明`, 1, 120);
+  if (raw.params !== undefined && !Array.isArray(raw.params)) fail('params 必须是数组');
   const params = Array.isArray(raw.params) ? raw.params.map((p, i) => normalizeParam(p, path, i)) : [];
+  if (params.length > 30) fail('每个路由最多 30 个参数');
+  if (method === 'GET' && params.some((p) => p.in === 'body')) fail('GET 不支持 body 参数');
   const names = params.map((p) => p.name);
   if (new Set(names).size !== names.length) fail(`${path} 的参数名重复`);
   const env = config.env;
   const url = String(raw.url ?? '').trim();
   if (!/^https?:\/\//i.test(url)) fail(`${path} 的 url 必须是 http(s) 地址`);
-  try { new URL(url.replace(/\{[^}]*\}/g, 'x')); } catch { fail(`${path} 的 url 不是合法地址`); }
+  const authority = url.match(/^https?:\/\/([^/?#]*)/i)?.[1] ?? '';
+  if (/[{}]/.test(authority)) fail('上游域名和端口必须固定，不能使用占位符');
+  const checked = checkUrl(url.replace(/\{[^}]*\}/g, 'x'));
+  if (config.env.length && checked.protocol !== 'https:') fail('使用专用环境变量的上游必须采用 HTTPS');
   checkTemplate(url, names, env, `${path} 的 url`);
 
   const headers = {};
@@ -112,8 +146,9 @@ function normalizeRoute(raw, config, index) {
     if (!isObject(raw.headers)) fail(`${path} 的 headers 必须是对象`);
     for (const [k, v] of Object.entries(raw.headers)) {
       if (!/^[a-zA-Z0-9-]{1,40}$/.test(k)) fail(`${path} 的请求头名不合法：${k}`);
-      if (/^(host|content-length|connection)$/i.test(k)) fail(`${path} 不能自定义 ${k} 请求头`);
-      headers[k.toLowerCase()] = String(v);
+      if (/^(host|content-length|connection|transfer-encoding|upgrade|proxy-.*|accept-encoding|cookie|set-cookie)$/i.test(k)) fail(`${path} 不能自定义 ${k} 请求头`);
+      if (typeof v !== 'string' || /[\r\n\0]/.test(v)) fail('请求头必须是单行字符串');
+      headers[k.toLowerCase()] = v;
       checkTemplate(v, names, env, `${path} 的请求头 ${k}`);
     }
   }
@@ -129,7 +164,7 @@ function normalizeRoute(raw, config, index) {
 
   let extract;
   if (raw.extract !== undefined && raw.extract !== '') {
-    if (!PATH_EXPR_RE.test(raw.extract)) fail(`${path} 的 extract 不合法（例：data.items）`);
+    if (!PATH_EXPR_RE.test(raw.extract) || !safePath(raw.extract)) fail(`${path} 的 extract 不合法（例：data.items）`);
     extract = raw.extract;
   }
   let map;
@@ -137,17 +172,18 @@ function normalizeRoute(raw, config, index) {
     if (!isObject(raw.map) || !Object.keys(raw.map).length) fail(`${path} 的 map 必须是非空对象`);
     map = {};
     for (const [k, v] of Object.entries(raw.map)) {
-      if (!MAP_KEY_RE.test(k)) fail(`${path} 的 map 输出字段名不合法：${k}`);
-      if (typeof v !== 'string' || !PATH_EXPR_RE.test(v)) fail(`${path} 的 map.${k} 必须是取值路径（例：name 或 data.name）`);
+      if (!MAP_KEY_RE.test(k) || FORBIDDEN.has(k)) fail(`${path} 的 map 输出字段名不合法：${k}`);
+      if (typeof v !== 'string' || (!PATH_EXPR_RE.test(v) || !safePath(v))) fail(`${path} 的 map.${k} 必须是取值路径（例：name 或 data.name）`);
       map[k] = v;
     }
   }
 
-  if (!Array.isArray(raw.fields) || !raw.fields.length) fail(`${path} 必须写返回字段说明（fields）`);
+  if (!Array.isArray(raw.fields) || !raw.fields.length || raw.fields.length > 100) fail(`${path} 必须写 1~100 条返回字段说明（fields）`);
   const fields = raw.fields.map((f, i) => {
     if (!isObject(f)) fail(`${path} 的第 ${i + 1} 个返回字段必须是对象`);
+    knownKeys(f, ['name', 'type', 'desc'], '返回字段');
     const name = String(f.name ?? '');
-    if (!/^[A-Za-z0-9_$@.[\]*]+$/.test(name)) fail(`${path} 的返回字段名不合法：${name || '(空)'}`);
+    if (name.length > 120 || !/^[A-Za-z0-9_$@.[\]*]+$/.test(name) || !safePath(name)) fail(`${path} 的返回字段名不合法：${name || '(空)'}`);
     const type = String(f.type ?? 'string');
     if (!type.split('|').every((t) => FIELD_TYPES.has(t))) fail(`${path} 的字段 ${name} 类型不合法`);
     return { name, type, desc: str(f.desc, `${path} 字段 ${name} 的说明`, 1, 300) };
@@ -159,7 +195,8 @@ function normalizeRoute(raw, config, index) {
     }
   }
 
-  const cacheTtlSec = raw.cacheTtlSec === undefined ? 300 : Number(raw.cacheTtlSec);
+  const cacheTtlSec = raw.cacheTtlSec === undefined ? (method === 'POST' ? 0 : 300) : Number(raw.cacheTtlSec);
+  if (method === 'POST' && cacheTtlSec !== 0) fail('POST 必须关闭缓存（cacheTtlSec: 0）');
   if (!Number.isInteger(cacheTtlSec) || cacheTtlSec < 0 || cacheTtlSec > 86400) fail(`${path} 的 cacheTtlSec 须为 0~86400 的整数`);
   const timeoutMs = raw.timeoutMs === undefined ? 10000 : Number(raw.timeoutMs);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 500 || timeoutMs > 20000) fail(`${path} 的 timeoutMs 须为 500~20000 的整数`);
@@ -173,11 +210,12 @@ function normalizeRoute(raw, config, index) {
 // 解析并校验配置，返回规范化后的对象（多余字段会被拒绝，避免拼写错误静默生效）
 export function parseConfig(raw) {
   if (!isObject(raw)) fail('配置必须是 JSON 对象');
+  safeTree(raw);
   const allowed = new Set(['name', 'category', 'title', 'description', 'source', 'sourceInfo', 'env', 'unofficial', 'routes']);
   for (const key of Object.keys(raw)) if (!allowed.has(key)) fail(`未知字段 ${key}`);
 
   const name = String(raw.name ?? '');
-  if (!NAME_RE.test(name)) fail('name 必须是 3~40 位小写字母、数字或 -，并以字母开头');
+  if (!NAME_RE.test(name) || ['new', 'doctor'].includes(name)) fail('name 必须是 3~40 位小写字母、数字或 -，并以字母开头');
   if (coreModules.some((m) => m.name === name)) fail(`name ${name} 与已有接口重名`);
 
   const category = String(raw.category ?? '');
@@ -190,7 +228,7 @@ export function parseConfig(raw) {
     if (!Array.isArray(raw.env) || raw.env.length > 10) fail('env 必须是 0~10 个环境变量名');
     for (const item of raw.env) {
       const v = typeof item === 'string' ? item : item?.name;
-      if (!ENV_RE.test(String(v ?? ''))) fail(`环境变量名不合法：${v}`);
+      if (!ENV_RE.test(String(v ?? ''))) fail('只允许显式声明 CUSTOM_API_ 前缀的专用环境变量');
       env.push(String(v));
     }
     if (new Set(env).size !== env.length) fail('环境变量名重复');
@@ -200,8 +238,9 @@ export function parseConfig(raw) {
   if (raw.sourceInfo !== undefined) {
     if (!isObject(raw.sourceInfo)) fail('sourceInfo 必须是对象');
     const kind = String(raw.sourceInfo.kind ?? '');
-    if (!(kind in SOURCE_TYPES)) fail(`sourceInfo.kind 只能是 ${Object.keys(SOURCE_TYPES).join(' / ')}`);
+    if (!Object.hasOwn(SOURCE_TYPES, kind)) fail(`sourceInfo.kind 只能是 ${Object.keys(SOURCE_TYPES).join(' / ')}`);
     const network = String(raw.sourceInfo.network ?? (kind.startsWith('local-') ? 'none' : 'required'));
+    if (kind.startsWith('local-') || network !== 'required') fail('声明式接口会请求上游，来源必须标记为联网 required，不能声称本地计算或本地数据');
     if (!NETWORKS.has(network)) fail(`sourceInfo.network 只能是 ${[...NETWORKS].join(' / ')}`);
     sourceInfo = {
       kind,
@@ -227,8 +266,9 @@ function getPath(value, path) {
   for (const part of String(path).split('.')) {
     const m = part.match(/^([^[]+)((?:\[\d+\])*)$/);
     if (!m) return undefined;
-    cur = cur?.[m[1]];
-    for (const n of m[2].match(/\d+/g) ?? []) cur = cur?.[Number(n)];
+    if (FORBIDDEN.has(m[1]) || !own(cur, m[1])) return undefined;
+    cur = cur[m[1]];
+    for (const n of m[2].match(/\d+/g) ?? []) { if (!own(cur, Number(n))) return undefined; cur = cur[Number(n)]; }
     if (cur === undefined) return undefined;
   }
   return cur;
@@ -265,18 +305,21 @@ function fillDeep(value, values) {
   return value;
 }
 
-function readValues(params, query) {
-  const values = {};
+function readValues(params, query, body) {
+  const values = Object.create(null);
   for (const p of params) {
-    values[p.name] = param(query ?? new URLSearchParams(), p.name, {
+    const input = p.in === 'body' ? body?.[p.name] : query?.get(p.name);
+    if (input != null && typeof input !== 'string' && typeof input !== 'number' && typeof input !== 'boolean') fail(`参数 ${p.name} 必须是单个值`);
+    values[p.name] = param(new URLSearchParams(input == null ? {} : { [p.name]: String(input) }), p.name, {
       default: p.default,
       required: p.required,
       pattern: p.pattern ? new RegExp(p.pattern) : undefined,
       oneOf: p.oneOf,
       int: p.type === 'int',
       min: p.min,
-      max: p.max,
+      max: p.type === 'int' ? p.max : p.maxLength,
     });
+    if (p.type === 'int' && values[p.name] != null && !Number.isSafeInteger(values[p.name])) fail(`参数 ${p.name} 超出安全整数范围`);
   }
   return values;
 }
@@ -292,30 +335,46 @@ function mapData(source, map) {
   return out;
 }
 
-function makeHandler(route) {
+function redact(value, secrets, depth = 0, count = { n: 0 }) {
+  if (++count.n > 10000 || depth > 40) throw new HttpError(502, '上游正文嵌套过深');
+  if (typeof value === 'string') { for (const secret of secrets) if (secret) value = value.split(secret).join('[已隐藏]').split(encodeURIComponent(secret)).join('[已隐藏]'); return value; }
+  if (Array.isArray(value)) return value.map((v) => redact(v, secrets, depth + 1, count));
+  if (isObject(value)) return Object.fromEntries(Object.entries(value).map(([k, v]) => [redact(k, secrets), redact(v, secrets, depth + 1, count)]));
+  if (value != null && secrets.includes(String(value))) return '[已隐藏]';
+  return value;
+}
+
+function makeHandler(route, config, namespace, request) {
   return async (ctx) => {
-    const values = readValues(route.params, ctx?.query);
+    const values = readValues(route.params, ctx?.query, ctx?.body);
     const url = fillText(route.url, values, route.path);
     const headers = {};
-    for (const [k, v] of Object.entries(route.headers ?? {})) headers[k] = fillDeep(v, values);
-    const init = { method: route.method, timeoutMs: route.timeoutMs, headers };
+    for (const [k, v] of Object.entries(route.headers ?? {})) {
+      const value = fillDeep(v, values);
+      if (/[\r\n\0]/.test(value)) fail('参数不能向请求头插入换行或控制字符');
+      headers[k] = value;
+    }
+    const init = { method: route.method, timeoutMs: route.timeoutMs, headers, signal: ctx?.signal, responseType: route.responseType };
     if (route.body !== undefined) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(fillDeep(route.body, values));
     }
     const load = async () => {
-      const raw = route.responseType === 'text' ? { text: await fetchText(url, init) } : await fetchJSON(url, init);
+      const raw = await request(url, init);
       const picked = route.extract ? getPath(raw, route.extract) : raw;
       if (route.extract && picked === undefined) throw new HttpError(502, `上游返回结构可能已变化：找不到 ${route.extract}`);
-      return route.map ? mapData(picked, route.map) : (picked ?? null);
+      const data = route.map ? mapData(picked, route.map) : (picked ?? null);
+      const safe = redact(data, config.env.map((key) => process.env[key]).filter(Boolean));
+      if (undocumented(route.fields, safe).length) throw new HttpError(502, '上游返回了未声明的字段，请检查字段映射和说明');
+      return safe;
     };
-    if (!route.cacheTtlSec) return { data: await load() };
-    const key = `custom:${route.path}:${JSON.stringify(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))}`;
+    if (ctx?.trial || !route.cacheTtlSec) return { data: await load() };
+    const key = `custom:${namespace}:${route.method}:${route.path}:${digest([values, config.env.map((key) => process.env[key] ?? '')])}`;
     return cache.wrap(key, route.cacheTtlSec * 1000, load);
   };
 }
 
-export function buildModule(config) {
+export function buildModule(config, { namespace = digest(config), request = requestCustom } = {}) {
   const route = config.routes[0];
   const host = (() => { try { return new URL(route.url.replace(/\{[^}]*\}/g, 'x')).hostname; } catch { return null; } })();
   const sourceInfo = config.sourceInfo ?? {
@@ -339,10 +398,11 @@ export function buildModule(config) {
       method: r.method,
       path: r.path,
       summary: r.summary,
-      params: r.params.map((p) => ({ ...p, max: p.type === 'int' ? p.max : (p.maxLength ?? p.max) })),
+      params: r.params.map((p) => ({ ...p, int: p.type === 'int', max: p.type === 'int' ? p.max : (p.maxLength ?? p.max) })),
       fields: r.fields,
       returns: null,
-      handler: makeHandler(r),
+      inspectSkip: '自定义上游须在接口工作台确认试跑，不参与自动巡检',
+      handler: makeHandler(r, config, namespace, request),
     })),
   };
 }
@@ -376,11 +436,12 @@ export function customVersions(name) {
     .map((v) => ({ version: v.version, note: v.note, createdBy: v.created_by, createdAt: v.created_at }));
 }
 
-export function saveCustomDraft(raw, { by = null } = {}) {
+export function saveCustomDraft(raw, { by = null, createOnly = false } = {}) {
   const config = parseConfig(raw);
   const json = JSON.stringify(config);
   const ts = Date.now();
   const exists = Boolean(rowOf(config.name));
+  if (exists && createOnly) throw new HttpError(409, '同名接口已存在，请打开已有接口编辑');
   if (exists) {
     sql("UPDATE custom_apis SET draft = ?, status = 'draft', updated_at = ? WHERE name = ?").run(json, ts, config.name);
   } else {
@@ -393,6 +454,8 @@ export function saveCustomDraft(raw, { by = null } = {}) {
 // 发布时不允许和核心接口、其他已发布接口的路径冲突
 export function assertNoConflict(config) {
   if (coreModules.some((m) => m.name === config.name)) throw new HttpError(409, `name ${config.name} 与已有接口重名`);
+  const coreRouter = new Router();
+  for (const mod of coreModules) for (const route of mod.routes) coreRouter.add(route.method, route.path, route.handler);
   const used = new Set(coreModules.flatMap((m) => m.routes.map((r) => `${r.method} ${r.path}`)));
   for (const row of sql('SELECT name, config FROM custom_apis WHERE config IS NOT NULL AND name <> ?').all(config.name)) {
     let other;
@@ -400,7 +463,7 @@ export function assertNoConflict(config) {
     for (const r of other.routes ?? []) used.add(`${r.method} ${r.path}`);
   }
   for (const r of config.routes) {
-    if (used.has(`${r.method} ${r.path}`)) throw new HttpError(409, `路径 ${r.method} ${r.path} 已被占用（核心接口或其他自定义接口）`);
+    if (used.has(`${r.method} ${r.path}`) || coreRouter.match(r.method, r.path)?.route) throw new HttpError(409, `路径 ${r.method} ${r.path} 已被占用（核心接口或其他自定义接口）`);
   }
 }
 
@@ -413,15 +476,16 @@ export function publishCustomApi(name, { by = null, note = null } = {}) {
   const prev = sql('SELECT MAX(version) AS v FROM custom_api_versions WHERE name = ?').get(name)?.v ?? row.version ?? 0;
   const version = prev + 1;
   const ts = Date.now();
-  db.exec('BEGIN IMMEDIATE');
+  db.exec('SAVEPOINT custom_api_publish');
   try {
     sql(`UPDATE custom_apis SET config = ?, draft = NULL, version = ?, status = 'published', published_at = ?, published_by = ?, updated_at = ? WHERE name = ?`)
       .run(JSON.stringify(config), version, ts, by, ts, name);
     sql('INSERT INTO custom_api_versions (name, version, config, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)')
       .run(name, version, JSON.stringify(config), note, by, ts);
-    db.exec('COMMIT');
+    db.exec('RELEASE custom_api_publish');
   } catch (err) {
-    db.exec('ROLLBACK');
+    db.exec('ROLLBACK TO custom_api_publish');
+    db.exec('RELEASE custom_api_publish');
     throw err;
   }
   return { name, version };
@@ -434,8 +498,9 @@ export function rollbackCustomApi(name, version, { by = null, note = null } = {}
   if (!target) throw new HttpError(404, `没有第 ${version} 版`);
   const config = parseConfig(JSON.parse(target.config));
   assertNoConflict(config);
-  sql(`UPDATE custom_apis SET config = ?, version = ?, status = CASE WHEN draft IS NULL THEN 'published' ELSE 'draft' END, updated_at = ? WHERE name = ?`)
-    .run(JSON.stringify(config), Number(version), Date.now(), name);
+  const ts = Date.now();
+  sql(`UPDATE custom_apis SET config = ?, version = ?, status = CASE WHEN draft IS NULL THEN 'published' ELSE 'draft' END, updated_at = ?, published_at = ?, published_by = ? WHERE name = ?`)
+    .run(JSON.stringify(config), Number(version), ts, ts, by, name);
   return { name, version: Number(version), by, note };
 }
 
@@ -448,23 +513,26 @@ export function removeCustomApi(name) {
 }
 
 // 启动/发布时加载线上版本；单条配置坏了只跳过它，不能让整个服务起不来
-export function loadCustomModules() {
+export function loadCustomModules({ strict = false } = {}) {
   const list = [];
   const names = new Set(coreModules.map((m) => m.name));
   const paths = new Set(coreModules.flatMap((m) => m.routes.map((r) => `${r.method} ${r.path}`)));
-  for (const row of sql("SELECT name, config FROM custom_apis WHERE config IS NOT NULL ORDER BY name").all()) {
+  for (const row of sql("SELECT name, config, version, updated_at FROM custom_apis WHERE config IS NOT NULL ORDER BY name").all()) {
     try {
       const config = parseConfig(JSON.parse(row.config));
-      const mod = buildModule(config);
+      if (config.name !== row.name) throw new Error('存储名称与配置名称不一致');
+      assertNoConflict(config);
+      const mod = buildModule(config, { namespace: `${row.name}:${row.version}:${sql('SELECT rev FROM api_workbench_state WHERE id = 1').get().rev}:${digest(config)}` });
       if (names.has(mod.name)) throw new Error('模块名与已有接口重复');
       for (const r of mod.routes) {
         const key = `${r.method} ${r.path}`;
         if (paths.has(key)) throw new Error(`路径重复：${key}`);
-        paths.add(key);
       }
+      for (const r of mod.routes) paths.add(`${r.method} ${r.path}`);
       names.add(mod.name);
       list.push(mod);
     } catch (err) {
+      if (strict) throw err;
       console.error(`[custom-api] 跳过 ${row.name}：${err.message}`);
     }
   }

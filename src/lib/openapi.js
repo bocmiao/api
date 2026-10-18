@@ -9,11 +9,12 @@ const slug = (s) => s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toL
 const oaPath = (path) => path.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, '{$1}');
 
 function paramSchema(p) {
-  const schema = { type: p.int ? 'integer' : 'string' };
-  if (p.oneOf?.length) schema.enum = p.oneOf;
-  if (p.min != null) schema.minimum = p.min;
-  if (p.max != null && p.int) schema.maximum = p.max;
-  if (p.max != null && !p.int) schema.maxLength = p.max;
+  const isInt = p.int || p.type === 'int';
+  const schema = { type: isInt ? 'integer' : 'string' };
+  if (p.oneOf?.length) schema.enum = isInt ? p.oneOf.map(Number) : p.oneOf;
+  if (p.min != null && isInt) schema.minimum = p.min;
+  if (p.max != null && isInt) schema.maximum = p.max;
+  if (p.max != null && !isInt) schema.maxLength = p.max;
   if (p.default !== undefined) schema.default = p.default;
   if (p.pattern) schema.pattern = String(p.pattern?.source ?? p.pattern);
   return schema;
@@ -26,23 +27,24 @@ export function openapi(origin) {
     if (!isModuleEnabled(mod.name)) continue;
     const info = mod.sourceInfo ?? null;
     for (const route of mod.routes) {
-      const query = (route.params ?? []).filter((p) => p.in !== 'body');
+      const pathNames = [...route.path.matchAll(/:([a-zA-Z_][a-zA-Z0-9_]*)/g)].map((m) => m[1]);
+      const query = (route.params ?? []).filter((p) => p.in !== 'body' && !pathNames.includes(p.name));
       const bodyParams = (route.params ?? []).filter((p) => p.in === 'body');
       const key = oaPath(route.path);
-      const operationId = `${slug(mod.name)}-${route.method.toLowerCase()}-${slug(route.path)}`;
+      const operationId = `${slug(mod.name)}-${route.method.toLowerCase()}-${Buffer.from(route.path).toString('base64url')}`;
       const operation = {
         tags: [mod.category],
         summary: route.summary ?? route.path,
         description: mod.description ?? '',
         operationId,
-        parameters: query.map((p) => ({
+        parameters: [...pathNames.map((name) => ({ name, in: 'path', required: true, schema: { type: 'string' } })), ...query.map((p) => ({
           name: p.name,
           in: 'query',
           required: Boolean(p.required),
           description: p.desc ?? '',
           schema: paramSchema(p),
-          ...(p.example != null && p.example !== '' ? { example: p.example } : {}),
-        })),
+          ...(p.example != null && p.example !== '' ? { example: p.int || p.type === 'int' ? Number(p.example) : p.example } : {}),
+        }))],
         responses: {
           200: {
             description: '统一 JSON 返回',

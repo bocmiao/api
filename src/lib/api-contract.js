@@ -1,5 +1,5 @@
 // 接口契约自检：命令行（npm run api:check）和测试（test/api-contract.test.js）共用同一份规则。
-// 只依赖接口模块和 api-sources 表，不初始化 registry / 数据库，避免检查本身引入副作用。
+// 只构建核心目录，不初始化运行时 registry；命令行使用内存数据库，不修改运行数据。
 import { moduleSourceInfo } from './api-sources.js';
 
 // 接口清单快照：新增、删除、改名都会让快照变化，必须在 diff 里显式确认

@@ -1,5 +1,8 @@
+import { mockCustomUpstream } from './helpers/custom-upstream.js';
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+
+mockCustomUpstream((...args) => globalThis.fetch(...args));
 
 process.env.DB_FILE = ':memory:';
 const { sql } = await import('../src/db.js');

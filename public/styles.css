@@ -614,7 +614,24 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .meta-row > button { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
 .try-block { padding: 12px 0; border-top: 1px solid var(--border); }
 .try-block:first-child { border-top: 0; padding-top: 0; }
+.api-workbench .card-head { flex-wrap: wrap; align-items: flex-start; }
+.api-workbench .card-head h2 { flex: none; }
+.api-workbench .table { min-width: 720px; }
+.api-workbench .table th { white-space: nowrap; }
+.api-workbench .card-head > .row { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.api-workbench .page-head > * { min-width: 0; max-width: 100%; }
+.api-workbench .meta-code, .api-workbench .page-head h1, .workbench-error { overflow-wrap: anywhere; }
+.meta-details { border-top: 1px solid var(--border); padding: 14px 0; }
+.meta-details > summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.meta-details .meta-group { margin: 14px 0 0; }
+.workbench-error { margin: 0 0 16px; padding: 12px; border: 1px solid var(--danger); border-radius: 8px; }
+.api-workbench button:focus-visible, .api-workbench a:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
 @media (max-width: 720px) {
+  .api-workbench .page-head > .seg { display: flex; flex-wrap: nowrap; width: 100%; overflow-x: auto; white-space: nowrap; }
+  .api-workbench .page-head > .seg a { flex: none; }
+  .api-workbench .card-head { padding: 14px 16px 0; }
+  .api-workbench .input { font-size: 16px; max-width: 100%; }
+  .api-workbench .btn { min-height: 40px; }
   .meta-row { grid-template-columns: 1fr; }
   .meta-label, .meta-code, .meta-row > .input, .meta-row > button { grid-column: 1; grid-row: auto; }
 }

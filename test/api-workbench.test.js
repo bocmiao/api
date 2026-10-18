@@ -1,15 +1,20 @@
+import { mockCustomUpstream } from './helpers/custom-upstream.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+
+mockCustomUpstream((...args) => globalThis.fetch(...args));
 
 process.env.DB_FILE = ':memory:';
 const { accountRouter } = await import('../src/routes/account.js');
 await import('../src/routes/api-admin.js');
+const { workbenchRev } = await import('../src/registry.js');
 const { catalog } = await import('../src/registry.js');
 
 const admin = { id: 1, email: 'admin@example.com', is_admin: 1 };
 const call = (method, path, { body = null, query = {} } = {}) => {
   const hit = accountRouter.match(method, path);
   assert.ok(hit?.route, `路由应存在：${method} ${path}`);
+  if (method !== 'GET' && !path.endsWith('/try') && !path.endsWith('/validate')) body = { ...body, expectedRev: workbenchRev() };
   return hit.route.handler({ user: admin, ip: '127.0.0.1', params: hit.params, query: new URLSearchParams(query), body, req: { headers: {} } });
 };
 
@@ -106,7 +111,7 @@ test('只有草稿的接口也能在列表、详情里看到并试跑', async ()
     assert.equal(detail.data.custom.config, null);
 
     globalThis.fetch = async () => new Response(JSON.stringify({ data: { name: '草稿数据' } }), { headers: { 'content-type': 'application/json' } });
-    const tried = await call('POST', '/admin/apis/custom-draft-only/try', { body: { path: '/api/custom/draft-only', query: { q: 'x' } } });
+    const tried = await call('POST', '/admin/apis/custom-draft-only/try', { body: { path: '/api/custom/draft-only', query: { q: 'x' }, confirmExternal: true, reason: '本地模拟试跑' } });
     assert.equal(tried.data.ok, true);
     assert.deepEqual(tried.data.data, { title: '草稿数据' });
   } finally {

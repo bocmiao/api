@@ -23,7 +23,7 @@ const surfaceText = existsSync(surfacePath) ? readFileSync(surfacePath, 'utf8') 
 const routeTotal = modules.reduce((n, m) => n + m.routes.length, 0);
 const result = checkContract({ modules, categories, readmeText, surfaceText, sync });
 
-if (sync) {
+if (sync && !result.errors.length) {
   const countRe = /(\d+) 个常用接口（(\d+) 个调用地址）/;
   const nextReadme = countRe.test(readmeText)
     ? readmeText.replace(countRe, `${modules.length} 个常用接口（${routeTotal} 个调用地址）`)
