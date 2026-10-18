@@ -177,6 +177,15 @@ r('PUT', '/admin/apis/:name/meta', (ctx) => {
   return { data: { ...result, rev } };
 });
 
+// 清理某个接口的全部文案补丁（接口已删除时体检里的一键清理）
+r('DELETE', '/admin/apis/:name/meta', (ctx) => {
+  requireAdmin(ctx);
+  const result = sql('DELETE FROM api_meta WHERE name = ?').run(ctx.params.name);
+  const { rev } = rebuildRegistry({ reason: `meta-clear:${ctx.params.name}` });
+  audit(ctx, 'api.meta.clear', { target: ctx.params.name, detail: { cleared: result.changes, rev } });
+  return { data: { cleared: result.changes, rev } };
+});
+
 // ---------- 试跑 ----------
 // body: { path, query, body }；直接调用处理函数，不计额度、不写调用日志
 

@@ -65,7 +65,7 @@ async function pageAdminApiList() {
     : `<span class="badge danger">${doctor.issues.length} 项待处理</span>
        <div class="small" style="margin-top:8px;line-height:1.9">${doctor.issues.slice(0, 8).map((i) => {
         const label = { orphan: '代码里已没有该字段', stale: '代码结构变过', invalid: '内容不合法', 'module-missing': '接口已被删除', 'invalid-target': '目标格式不合法' }[i.kind] ?? i.kind;
-        return `<div><code class="mono">${esc(i.target)}</code> · ${esc(label)} ${i.name ? `<a class="small" href="${apiUrl(i.name)}">去处理</a>` : ''}</div>`;
+        return `<div><code class="mono">${esc(i.target)}</code> · ${esc(label)} ${i.name ? `<a class="small" href="${apiUrl(i.name)}">去处理</a>` : ''}${i.kind === 'module-missing' && i.name ? ` <button class="btn sm" data-clear-meta="${esc(i.name)}">清理</button>` : ''}</div>`;
       }).join('')}${doctor.issues.length > 8 ? '<div class="faint">…还有更多，请在对应接口里处理</div>' : ''}</div>`;
   $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>接口</h1><p>可视化编辑接口文案、试跑、体检；也可以在后台新增声明式接口，发布后立即生效</p></div>${adminTabs('apis')}</div>
@@ -87,6 +87,16 @@ async function pageAdminApiList() {
     const q = e.target.value.trim().toLowerCase();
     for (const tr of $$('#api-rows tr[data-search]')) tr.hidden = Boolean(q) && !tr.dataset.search.includes(q);
   });
+  for (const btn of $$('[data-clear-meta]')) {
+    btn.addEventListener('click', async () => {
+      if (!(await confirmDialog('清理失效文案', `删除 ${btn.dataset.clearMeta} 留下的全部文案补丁？`, { okText: '清理' }))) return;
+      try {
+        const r = await api('DELETE', `/admin/apis/${encodeURIComponent(btn.dataset.clearMeta)}/meta`);
+        toast(`已清理 ${r.cleared} 条`);
+        pageAdminApiList();
+      } catch (err) { toast(err.message, true); }
+    });
+  }
 }
 
 // ---------- 新建 ----------

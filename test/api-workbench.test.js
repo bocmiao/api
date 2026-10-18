@@ -115,6 +115,18 @@ test('只有草稿的接口也能在列表、详情里看到并试跑', async ()
   }
 });
 
+test('已删除接口留下的文案可以在体检里清理', async () => {
+  const { sql } = await import('../src/db.js');
+  sql("INSERT INTO api_meta (name, target, value, base_rev, rev, updated_at) VALUES ('ghost-module', 'module|title', '旧文案', '', 1, ?)").run(Date.now());
+  const doctor = await call('GET', '/admin/apis/doctor');
+  assert.ok(doctor.data.issues.some((i) => i.kind === 'module-missing' && i.name === 'ghost-module'));
+
+  const cleared = await call('DELETE', '/admin/apis/ghost-module/meta');
+  assert.equal(cleared.data.cleared, 1);
+  const after = await call('GET', '/admin/apis/doctor');
+  assert.equal(after.data.ok, true);
+});
+
 test('自定义接口：校验 → 保存草稿 → 发布 → 详情 → 删除', async () => {
   const config = {
     name: 'custom-audit-demo',
