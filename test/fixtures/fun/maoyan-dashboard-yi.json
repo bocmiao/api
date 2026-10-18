@@ -1,0 +1,44 @@
+{
+  "movieList": {
+    "list": [
+      {
+        "box": 6739520000,
+        "splitBox": 6400000000,
+        "boxRate": "62.4%",
+        "showCount": 220000,
+        "showCountRate": "38.2%",
+        "avgShowView": "12.5",
+        "avgSeatView": "31.5%",
+        "sumBoxDesc": "12.30亿",
+        "sumSplitBoxDesc": "11.10亿",
+        "movieInfo": {
+          "movieId": 1492913,
+          "movieName": "示例电影甲",
+          "releaseInfo": "上映3天"
+        }
+      },
+      {
+        "box": 12400000,
+        "splitBox": null,
+        "boxRate": null,
+        "showCount": "--",
+        "showCountRate": null,
+        "avgShowView": null,
+        "avgSeatView": null,
+        "sumBoxDesc": null,
+        "sumSplitBoxDesc": null,
+        "movieInfo": {
+          "movieId": null,
+          "movieName": "示例电影乙",
+          "releaseInfo": ""
+        }
+      }
+    ],
+    "nationBoxInfo": {
+      "nationBoxSplitUnit": { "num": "1.08", "unit": "亿" },
+      "nationSplitBoxSplitUnit": { "num": "9868.3", "unit": "万" }
+    },
+    "updateInfo": { "updateTimestamp": 1792285920000 }
+  },
+  "calendar": { "selectDate": "2026-10-18" }
+}

@@ -27,7 +27,7 @@ try {
   });
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
-  const scenarios = [['/', 'home'], ['/docs/poem', 'poem'], ['/docs/hitokoto', 'hitokoto'], ['/docs/ip', 'ip'], ['/docs/phone', 'phone'], ['/docs/mc-server', 'minecraft'], ['/docs/steam-info', 'steam'], ['/docs/hot-weibo', 'weibo'], ['/docs/psplus', 'psplus'], ['/docs/qq-avatar', 'qq-avatar'], ['/docs', 'docs']];
+  const scenarios = [['/', 'home'], ['/docs/boxoffice', 'boxoffice'], ['/docs/poem', 'poem'], ['/docs/hitokoto', 'hitokoto'], ['/docs/ip', 'ip'], ['/docs/phone', 'phone'], ['/docs/mc-server', 'minecraft'], ['/docs/steam-info', 'steam'], ['/docs/hot-weibo', 'weibo'], ['/docs/psplus', 'psplus'], ['/docs/qq-avatar', 'qq-avatar'], ['/docs', 'docs']];
   for (const [width, height] of [[1360, 1000], [390, 844], [320, 800]]) {
     await page.setViewportSize({ width, height });
     for (const [path, name] of scenarios) {
@@ -36,12 +36,17 @@ try {
       assert.equal(await page.locator('#main > .wrap > .empty').count(), 0, 'main page renders without a load error');
       if (name === 'home') {
         assert.equal(await page.locator('.api-card').count(), 129);
+        assert.doesNotMatch(await page.locator('a.api-card[href="/docs/boxoffice"]').innerText(), /暂不可用|已关闭/);
         assert.equal(await page.locator('.api-card .badge').filter({ hasText: /^非官方$/ }).count(), 0);
         for (const text of ['本地计算', '本地数据', '目标直查', '平台网页源', '官方公开源', '第三方数据', '混合来源', '默认本地']) assert.ok((await page.locator('.api-card .badge').filter({ hasText: new RegExp('^' + text + '$') }).count()) > 0, text);
       } else if (name === 'docs') assert.match(await page.locator('#main').innerText(), /不表示经过第三方代理/);
       else {
         assert.ok(await page.locator('.source-note').isVisible(), path);
         assert.ok((await page.locator('.source-note').innerText()).length > 10);
+        if (name === 'boxoffice') {
+          assert.match(await page.locator('#main').innerText(), /piaofang\.maoyan\.com\/dashboard-ajax\/movie/);
+          assert.doesNotMatch(await page.locator('#main').innerText(), /该接口暂不可用/);
+        }
         if (['poem', 'hitokoto'].includes(name)) assert.match(await page.locator('#main').innerText(), /provider/);
         if (['ip', 'phone'].includes(name)) assert.match(await page.locator('#main').innerText(), /offline/);
         if (name === 'minecraft') assert.match(await page.locator('.source-note').innerText(), /Server List Ping/);

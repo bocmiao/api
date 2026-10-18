@@ -5,14 +5,15 @@ import { createHash } from 'node:crypto';
 import { parseChangelog, parseUpdateNotes, compareVersions } from '../src/lib/updater.js';
 import { releaseFiles, legacyReleaseCheck } from './helpers/update-release.js';
 
-test('v0.13.0元数据一致，中文日志包含本地能力和升级边界', () => {
+test('发布元数据一致，保留中文功能说明和升级边界', () => {
   const files = releaseFiles();
   const pkg = JSON.parse(files['package.json']);
   const entry = parseChangelog(files['CHANGELOG.md'])[0];
-  assert.equal(pkg.version, '0.13.0');
+  assert.equal(compareVersions(pkg.version, '0.13.0'), 1);
   assert.equal(entry.version, pkg.version);
   assert.equal(compareVersions(pkg.version, '0.11.1'), 1);
-  const text = entry.items.join('\n');
+  assert.ok(entry.items.length > 0);
+  const text = parseChangelog(files['CHANGELOG.md']).find((e) => e.version === '0.13.0').items.join('\n');
   for (const re of [/默认/, /本地/, /provider=jinrishici/, /provider=hitokoto/, /fallback=true/, /mode=offline/, /404/, /2023-12/, /129个模块/, /204个调用地址/]) assert.match(text, re);
   const previous = parseChangelog(files['CHANGELOG.md']).find((e) => e.version === '0.12.0').items.join('\n');
   for (const re of [/60 秒简报/, /首次导入/, /503/, /404/, /全自动发现/, /账号 ID\/Key ID/]) assert.match(previous, re);
@@ -44,10 +45,10 @@ test('四个说明映射到真实功能/修复提交，保留提交当时版本�
 test('历史v0.11.1真实解析函数读取新日志，显示新功能版本而非同版本修复', async () => {
   const { result, requests } = await legacyReleaseCheck();
   assert.equal(result.current.version, '0.11.1');
-  assert.equal(result.latest.version, '0.13.0');
+  assert.equal(result.latest.version, JSON.parse(releaseFiles()['package.json']).version);
   assert.equal(result.hasUpdate, true);
   assert.equal(result.patch, false);
-  assert.deepEqual(result.changes.map((c) => c.version), ['0.13.0', '0.12.0']);
+  assert.deepEqual(result.changes.map((c) => c.version), parseChangelog(releaseFiles()['CHANGELOG.md']).filter((e) => compareVersions(e.version, '0.11.1') > 0).map((e) => e.version));
   const visible = result.changes.flatMap((c) => c.items).join('\n');
   assert.match(visible, /60 秒简报/);
   assert.match(visible, /内部测试/);
@@ -72,4 +73,23 @@ test('历史解析夹具来自固定提交，验收不依赖线上SHA或安装�
   const bytes = readFileSync(new URL('./fixtures/update-v0.11.1-reader.txt', import.meta.url));
   assert.match(bytes.toString('utf8'), /2f0ded7d62e6c5ec923055812d0a7a041924d7f7/);
   assert.equal(createHash('sha256').update(bytes).digest('hex'), '0aa5c9467d8ff0391845766a9fce862dabaede52d0b991b528c73b15b7fc83d7');
+});
+
+
+test('票房恢复有中文发布说明与原始无正文提交映射', () => {
+  const files = releaseFiles();
+  const note = parseChangelog(files['CHANGELOG.md']).find((e) => e.version === '0.13.1');
+  assert.ok(note);
+  for (const re of [/票房/, /万元/, /空榜/, /502/, /验证码/]) assert.match(note.items.join('\n'), re);
+  const mapped = parseUpdateNotes(files['UPDATE_NOTES.json']).find((e) => e.sha.startsWith('6f64019'));
+  assert.match(mapped.items.join('\n'), /恢复猫眼实时票房/);
+});
+
+
+test('重试发布说明明确显式启用、总预算、取消与限流边界', () => {
+  const files = releaseFiles();
+  const note = parseChangelog(files['CHANGELOG.md']).find((e) => e.version === '0.13.2');
+  assert.ok(note);
+  for (const re of [/显式/, /未知GET默认不重试/, /总超时预算/, /取消/, /Retry-After/, /无需/]) assert.match(note.items.join('\n'), re);
+  for (const prefix of ['5e11cb7', 'abeac6d']) assert.ok(parseUpdateNotes(files['UPDATE_NOTES.json']).some((e) => e.sha.startsWith(prefix)));
 });
