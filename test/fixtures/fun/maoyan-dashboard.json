@@ -1,0 +1,54 @@
+{
+  "movieList": {
+    "list": [
+      {
+        "box": 295242755,
+        "splitBox": 261944190,
+        "boxRate": "31.1%",
+        "showCount": 106557,
+        "showCountRate": "25.1%",
+        "avgShowView": "0.7",
+        "avgSeatView": "0.4%",
+        "sumBoxDesc": "3.57亿",
+        "sumSplitBoxDesc": "3.18亿",
+        "movieInfo": {
+          "movieId": 1586199,
+          "movieName": "生化危机：爆发夜",
+          "releaseInfo": "上映14天"
+        }
+      },
+      {
+        "box": 185268499,
+        "splitBox": 164123456,
+        "boxRate": "19.5%",
+        "showCount": 94955,
+        "showCountRate": "22.3%",
+        "avgShowView": "0.5",
+        "avgSeatView": "0.3%",
+        "sumBoxDesc": "5.53亿",
+        "sumSplitBoxDesc": "4.90亿",
+        "movieInfo": {
+          "movieId": 1552906,
+          "movieName": "神探之痕迹",
+          "releaseInfo": "上映18天"
+        }
+      }
+    ],
+    "nationBoxInfo": {
+      "nationBoxSplitUnit": { "num": "950.2", "unit": "万" },
+      "nationSplitBoxSplitUnit": { "num": "843.6", "unit": "万" },
+      "showCountDesc": "42.4万",
+      "viewCountDesc": "24.5万",
+      "title": "实时大盘"
+    },
+    "updateInfo": { "updateGapSecond": 5, "updateTimestamp": 1792285920000 }
+  },
+  "calendar": {
+    "selectDate": "2026-10-18",
+    "selectMaxDate": "2026-12-17",
+    "selectMinDate": "2025-10-18",
+    "today": "2026-10-18"
+  },
+  "fontStyle": "",
+  "buildId": "fixture"
+}

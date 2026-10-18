@@ -5,7 +5,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { legacyReleaseCheck } from '../test/helpers/update-release.js';
 
-const out = resolve(process.env.UI_EVIDENCE_DIR || 'data/release-0.13.0-evidence');
+const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
+const out = resolve(process.env.UI_EVIDENCE_DIR || `data/release-${version}-evidence`);
 mkdirSync(out, { recursive: true });
 const { result: legacy, requests } = await legacyReleaseCheck();
 writeFileSync(out + '/legacy-read-result.json', JSON.stringify({ synthetic: true, result: legacy, localMockRequests: requests }, null, 2));
@@ -31,8 +32,8 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.setContent(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
-      <title>本地 v0.13.0 更新说明验收</title><style>${css}</style></head><body>
-      <main><div class="wrap" style="padding:28px 20px 80px"><p class="small faint">本地合成验收 · ${name} → v0.13.0 · 非线上运行状态</p>
+      <title>本地 v${version} 更新说明验收</title><style>${css}</style></head><body>
+      <main><div class="wrap" style="padding:28px 20px 80px"><p class="small faint">本地合成验收 · ${name} → v${version} · 非线上运行状态</p>
       <div class="card" id="update-card"><div class="card-head"><h2>系统更新</h2><button class="btn sm" id="check-update">检查更新</button></div>
       <div class="card-pad" id="update-body"></div></div></div></main></body></html>`);
     await page.evaluate((value) => { globalThis.__fixture = value; }, fixture);
@@ -43,9 +44,11 @@ try {
     const visible = await page.locator('.upd-changes').innerText();
     for (const re of [/60 秒简报/, /首次导入/, /503/, /全自动发现/, /账号 ID\/Key ID/]) assert.match(visible, re);
     assert.doesNotMatch(visible, /Git blob|ahead\/identical|launcher|Chromium|20 秒/);
-    assert.match(await page.locator('.upd-status').innerText(), /发现新版本 v0\.13\.0/);
+    assert.ok((await page.locator('.upd-status').innerText()).includes('发现新版本 v' + version));
     assert.doesNotMatch(await page.locator('#update-body').innerText(), /部分提交未提供面向用户的说明/);
-    assert.equal(await page.locator('.upd-changes li').count(), 15);
+    const expectedNotes = fixture.changes.reduce((n, e) => n + e.items.length, 0);
+    assert.equal(await page.locator('.upd-changes li').count(), expectedNotes);
+    assert.match(visible, /恢复猫眼实时票房/);
     for (const [label, width, height] of [['desktop', 1360, 1000], ['mobile-390', 390, 844], ['mobile-320', 320, 800]]) {
       await page.setViewportSize({ width, height });
       await page.evaluate(() => document.fonts.ready);
@@ -53,7 +56,7 @@ try {
       assert.ok(layout.scrollWidth <= layout.width, name + ' overflow: ' + JSON.stringify(layout));
       const file = `${name}-${label}.png`;
       await page.screenshot({ path: out + '/' + file, fullPage: true });
-      checks.push({ renderer: name, viewport: { width, height }, layout, screenshot: file, notes: 15, newVersionLabel: true, firstImportAndDiscoveryWarnings: true });
+      checks.push({ renderer: name, viewport: { width, height }, layout, screenshot: file, notes: expectedNotes, newVersionLabel: true, firstImportAndDiscoveryWarnings: true });
     }
     await page.close();
   }
