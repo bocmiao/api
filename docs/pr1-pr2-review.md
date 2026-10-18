@@ -28,7 +28,7 @@
 | 用户取消或总预算用完 | 等待立即停止，不再发下一次请求 |
 | 最终/中间错误响应 | 发起body.cancel并处理失败，不无限等待不可信cancel钩子 |
 
-一个AbortSignal总预算覆盖首请求、200ms退避、第二次请求及正文读取；额外用单调时钟检查截止时间。不是把每次尝试重开一个timeout。真实本地HTTP服务验证了等待响应头及读取未结束正文的超时行为。
+一个AbortSignal总预算覆盖首请求、200ms退避、第二次请求及正文读取；额外用单调时钟检查截止时间。同步JSON解析/文本解码不能在JavaScript主线程上强制中断，但结束后若已过截止时间会返回504，不把超预算解析报为成功。不是把每次尝试重开一个timeout。真实本地HTTP服务验证了等待响应头及读取未结束正文的超时行为。
 
 当前只有猫眼公开榜单和IANA静态列表显式开启重试。快递识别、带Key的其他数据服务及未知GET没有被全局重放。上游故障时这两项读取的请求量最多增加一次；429和Retry-After继续尊重。JSON解析失败/业务格式不符不通过重试掩盖。
 
@@ -46,8 +46,8 @@
 | PR #1原始head复核 | 1245 / 1245 | 0 |
 | PR #1修复后的全量 | 1250 / 1250 | 0 |
 | PR #2修复专项（含网络/参数校验） | 97 / 97 | 0 |
-| 两PR联合专项 | 162 / 162 | 0 |
-| 最终联合全量 | 1270 / 1270 | 0 |
+| 两PR联合专项 | 162 / 162，追加正文截止专项34 / 34 | 0 |
+| 最终联合全量 | 1271 / 1271 | 0 |
 | 新旧更新页，1360/390/320px | 6 / 6 | 0 |
 | 来源/详情页，含票房恢复卡片，1360/390/320px | 36 / 36 | 0 |
 
@@ -65,9 +65,10 @@
 
 - 原基线及两PR原始head均只有`.github/workflows/ci.yml`，事件仅`workflow_dispatch`；无push、pull_request、workflow_run等自动触发，未新增或修改工作流。
 - 树内未发现CNB配置；原工作区及隔离检出没有启用的本地Git hooks。
-- 远端仓库hooks尚未能在本执行环境读出：正常CLI `GET /repos/bocmiao/api/hooks`返回Forbidden；GitHub连接器fetch该URL返回“不在允许的endpoint列表”。这不是hooks为空的证据。未试图绕过，也未扩大连接器权限。
-- 未完成正常授权的远端hooks核对前，不执行push、PR元数据写入或merge。`[skip ci]`不能代替该核查，尤其不能证明外部CNB/webhook不会触发。
+- 本执行环境的CLI hooks只读请求返回Forbidden，连接器fetch不支持该endpoint，未尝试绕过。
+- 随后通过父线程正常登录的GitHub授权网页核实：[Webhooks](https://github.com/bocmiao/api/settings/hooks)列表为空；[安装应用](https://github.com/bocmiao/api/settings/installations)为ChatGPT Codex Connector、Claude、Cursor、Meta Muse AI和Xcode Cloud，没有CNB。未修改设置。父线程核对三分支的ci.yml blob均为`9bd8e995c2d8e4f2b75ec56180578705e64d7c23`，仅workflow_dispatch。
+- 上述证据消除了已配置Actions、仓库webhook和CNB App的阻塞；`[skip ci]`只是补充，不代替触发条件核查，也不能据此宣称不存在外部独立轮询。
 
-用户已授权正常推送修复和合并两PR；剩余若有阻塞是读取远端触发配置的技术限制，不是再次等待用户许可。应由可正常读取设置的连接器/网页完成核对，确认不会触发被禁止任务，再刷新base/head并执行无force的快进推送和带expected_head_sha的合并。若任何分支有他人新提交，先纳入并重新核验差异，不能覆盖。
+用户已授权正常推送和合并。合并前须再次刷新base/head，使用无force快进推送及带expected_head_sha的合并；他人如有新提交，先纳入并重新核验，不能覆盖。
 
 最终已测head、tree、两PR状态与远端SHA随交付验收记录回读；本报告不把本地合并或测试通过冒称GitHub已合并。

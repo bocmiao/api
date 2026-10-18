@@ -103,28 +103,32 @@ async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', 
       }
       throw new HttpError(502, `上游返回 HTTP ${res.status}`);
     }
-    return { res, signal: requestSignal };
+    return { res, signal: requestSignal, checkStopped };
   }
 }
 
 export async function fetchJSON(url, opts = {}) {
-  const { res, signal } = await request(url, { ...opts, headers: { accept: 'application/json', ...opts.headers } });
+  const { res, checkStopped } = await request(url, { ...opts, headers: { accept: 'application/json', ...opts.headers } });
   try {
-    return await res.json();
+    const data = await res.json();
+    checkStopped();
+    return data;
   } catch {
-    opts.signal?.throwIfAborted();
-    if (signal.aborted) throw upstreamError(signal.reason, url);
+    discardResponse(res);
+    checkStopped();
     throw new HttpError(502, '上游返回的不是合法 JSON');
   }
 }
 
 // encoding 用于 GBK 等非 UTF-8 页面，例如 fetchText(url, { encoding: 'gbk' })
 export async function fetchText(url, { encoding = 'utf-8', ...opts } = {}) {
-  const { res, signal } = await request(url, opts);
+  const { res, checkStopped } = await request(url, opts);
   let body;
-  try { body = await res.arrayBuffer(); }
-  catch (err) { opts.signal?.throwIfAborted(); throw upstreamError(signal.aborted ? signal.reason : err, url); }
-  return new TextDecoder(encoding).decode(body);
+  try { body = await res.arrayBuffer(); checkStopped(); }
+  catch (err) { discardResponse(res); checkStopped(); throw upstreamError(err, url); }
+  const text = new TextDecoder(encoding).decode(body);
+  checkStopped();
+  return text;
 }
 
 export function requireEnv(name) {

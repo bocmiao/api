@@ -175,3 +175,21 @@ test('真实本地传输：超时不重试，预算也约束读取正文', async
     assert.deepEqual(counts, { headers: 1, body: 1 });
   } finally { server.closeAllConnections(); await new Promise((r) => server.close(r)); }
 });
+
+
+test('正文读取/解析结束后也检查预算，不把同步解析超时记为成功', async () => {
+  for (const type of ['json', 'text']) {
+    let read = false;
+    const res = new Response('{}');
+    const consume = async () => {
+      read = true; const until = performance.now() + 140;
+      while (performance.now() < until) { /* 模拟同步解析/解码 */ }
+      return type === 'json' ? { ok: true } : new TextEncoder().encode('ok').buffer;
+    };
+    if (type === 'json') res.json = consume;
+    else res.arrayBuffer = consume;
+    globalThis.fetch = async () => res;
+    await assert.rejects((type === 'json' ? fetchJSON : fetchText)('https://example.com/body', { timeoutMs: 100, retry: true }), (e) => e.status === 504);
+    assert.equal(read, true);
+  }
+});
