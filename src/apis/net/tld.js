@@ -110,7 +110,7 @@ async function loadList() {
   if (!hit?.fresh && Date.now() - lastFailure < RETRY_AFTER_FAILURE_MS) return hit ? { data: hit.value, cached: true, stale: true, updatedAt: hit.updatedAt } : builtin();
   try {
     return await cache.wrap('net:tld-list', DAY_MS, async () => {
-      const { version, tlds } = parseTldList(await fetchText(IANA_URL, { timeoutMs: 5000 }));
+      const { version, tlds } = parseTldList(await fetchText(IANA_URL, { timeoutMs: 5000, retry: true }));
       return { source: 'iana', fallback: false, version, items: tlds.map(toItem) };
     });
   } catch {

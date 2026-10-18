@@ -1,3 +1,5 @@
+import { setTimeout as delay } from 'node:timers/promises';
+
 export class HttpError extends Error {
   // code：可选的错误代码（如 QUOTA_EXCEEDED），不传时按状态码给一个通用的
   constructor(status, message, code) {
@@ -50,51 +52,59 @@ export function upstreamError(err, url, what = '上游服务') {
 }
 
 const RETRY_STATUS = new Set([502, 503, 504]);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const TRANSIENT_NETWORK = new Set(['ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT']);
+const transientNetworkError = (error) => !error?.proxy && (TRANSIENT_NETWORK.has(error?.cause?.code ?? error?.code)
+  || (error instanceof TypeError && /fetch failed|failed to fetch|network/i.test(error.message)));
 
-// 幂等请求失败后重试一次：网络错误或 502/503/504 才重试，POST 等不重试。
-// 总耗时仍受 timeoutMs 约束：最后一次尝试只使用剩余时间。
-async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body, signal } = {}) {
+// 不能等待不可信响应体的cancel钩子完成；发起取消并接住失败，保证重试/最终错误仍受总预算约束。
+function discardResponse(res) {
+  try { Promise.resolve(res.body?.cancel()).catch(() => {}); } catch {}
+}
+
+// retry必须由已确认只读、可重复且可承担额外请求的调用方显式启用。
+// GET/HEAD本身不能证明无副作用；带body的请求和POST等永不重放。
+async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body, signal, retry = false } = {}) {
   signal?.throwIfAborted();
-  const idempotent = method === 'GET' || method === 'HEAD';
-  const attempts = idempotent ? 2 : 1;
-  const deadline = Date.now() + timeoutMs;
-  const remaining = () => Math.max(1, deadline - Date.now());
-  let lastError;
-  let lastStatus;
+  method = String(method).toUpperCase();
+  const attempts = retry === true && (method === 'GET' || method === 'HEAD') && body == null ? 2 : 1;
+  // 一个信号贯穿首次请求、退避、第二次请求和调用方读取正文，不为每次尝试重开预算。
+  const budgetSignal = AbortSignal.timeout(timeoutMs);
+  const deadline = performance.now() + timeoutMs;
+  const requestSignal = signal ? AbortSignal.any([signal, budgetSignal]) : budgetSignal;
+  const checkStopped = () => {
+    signal?.throwIfAborted();
+    if (requestSignal.aborted || performance.now() >= deadline) throw upstreamError(requestSignal.reason ?? new DOMException('请求总预算已用完', 'TimeoutError'), url);
+  };
+  const pause = async () => {
+    try { await delay(200, undefined, { signal: requestSignal }); }
+    catch (err) { checkStopped(); throw err; }
+    checkStopped();
+  };
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const requestSignal = signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(remaining())])
-      : AbortSignal.timeout(remaining());
+    checkStopped();
     let res;
     try {
       res = await outboundFetch(url, {
-        method,
-        body,
-        headers: { 'user-agent': UA, ...headers },
-        signal: requestSignal,
+        method, body, headers: { 'user-agent': UA, ...headers }, signal: requestSignal,
       });
     } catch (err) {
-      signal?.throwIfAborted();
-      lastError = requestSignal.aborted ? requestSignal.reason : err;
-      if (attempt < attempts) { await sleep(200); continue; }
-      throw upstreamError(lastError, url);
+      checkStopped();
+      if (attempt < attempts && transientNetworkError(err)) { await pause(); continue; }
+      throw upstreamError(err, url);
     }
-
-    // 上游 5xx 视为可重试；其余非 2xx 直接报错，避免把 4xx 当成故障重试
-    if (RETRY_STATUS.has(res.status) && attempt < attempts) {
-      lastStatus = res.status;
-      try { await res.body?.cancel(); } catch {}
-      await sleep(200);
-      continue;
+    try { checkStopped(); } catch (err) { discardResponse(res); throw err; }
+    if (!res.ok) {
+      discardResponse(res);
+      // 429/4xx、认证/证书错误及要求Retry-After的响应均不自动重试。
+      if (attempt < attempts && RETRY_STATUS.has(res.status) && !res.headers?.has('retry-after')) {
+        await pause();
+        continue;
+      }
+      throw new HttpError(502, `上游返回 HTTP ${res.status}`);
     }
-    if (!res.ok) throw new HttpError(502, `上游返回 HTTP ${res.status}`);
     return { res, signal: requestSignal };
   }
-
-  if (lastStatus) throw new HttpError(502, `上游返回 HTTP ${lastStatus}`);
-  throw upstreamError(lastError, url);
 }
 
 export async function fetchJSON(url, opts = {}) {

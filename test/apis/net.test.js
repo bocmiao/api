@@ -1333,7 +1333,7 @@ describe('域名后缀列表', () => {
   });
 
   test('上游失败时回退到内置列表，10 分钟内不重复请求', async (t) => {
-    const calls = mockIana(t, new Error('down'));
+    const calls = mockIana(t, Object.assign(new Error('reset'), { code: 'ECONNRESET' }));
     const r = route('/api/tld');
     const res = await r.handler({ query: q({ q: '公司' }) });
     assert.equal(res.data.source, 'builtin');
@@ -1342,7 +1342,7 @@ describe('域名后缀列表', () => {
     assert.equal(res.data.total, 107);
     assert.equal(res.data.items[0].unicode, '公司');
     await r.handler({ query: q({}) });
-    // 幂等 GET 失败会重试一次，再回退到内置列表；第二次调用命中 10 分钟缓存，不再请求上游
+    // IANA读取显式启用重试，瞬时网络错误重试一次后回退；第二次调用命中 10 分钟缓存，不再请求上游
     assert.equal(calls.length, 2);
     // 内置列表没有 version，这里只做正向校验（反向覆盖在上一个用例中完成）
     assertFieldsDocumented(r, res.data);
