@@ -172,6 +172,8 @@ await fetch('https://api.example.com/api/shorturl', {
 
 升级注意：`/api/poem` 与 `/api/hitokoto` 默认使用现有本地有限句库（保留字段，`fallback=true`）；若需要原服务，显式传 `provider=jinrishici` 或 `provider=hitokoto`。`/api/ip`、`/api/phone` 新增 `mode=offline`（无记录返回404），默认仍为 `auto`，不会关闭正常在线补全。2025/2026年节假日直接用内置安排，其余年份仍可能联网。
 
+上游重试采用显式启用：目前仅猫眼公开榜单和IANA列表可在瞬时网络错误或502/503/504后多试一次；未知GET默认不重放，POST及有请求体的请求不重放。总超时覆盖等待和正文读取，取消后不再重试；429、Retry-After和证书/配置错误不重试。详见 [两条PR联合审查记录](docs/pr1-pr2-review.md)。
+
 每个接口的请求参数和**返回字段说明**（字段名、类型、单位、含义）见网站上的接口详情页，或 `GET /api` 返回的 `fields`。
 
 ### 游戏

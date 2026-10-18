@@ -95,6 +95,7 @@ export function parseBoxOffice(raw) {
 
 export async function loadBoxOffice() {
   return parseBoxOffice(await fetchJSON(UPSTREAM, {
+    retry: true, // 固定的公开只读榜单；不对其他未知GET默认重放
     headers: {
       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
       referer: 'https://piaofang.maoyan.com/dashboard',

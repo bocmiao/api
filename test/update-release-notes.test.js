@@ -84,3 +84,12 @@ test('票房恢复有中文发布说明与原始无正文提交映射', () => {
   const mapped = parseUpdateNotes(files['UPDATE_NOTES.json']).find((e) => e.sha.startsWith('6f64019'));
   assert.match(mapped.items.join('\n'), /恢复猫眼实时票房/);
 });
+
+
+test('重试发布说明明确显式启用、总预算、取消与限流边界', () => {
+  const files = releaseFiles();
+  const note = parseChangelog(files['CHANGELOG.md']).find((e) => e.version === '0.13.2');
+  assert.ok(note);
+  for (const re of [/显式/, /未知GET默认不重试/, /总超时预算/, /取消/, /Retry-After/, /无需/]) assert.match(note.items.join('\n'), re);
+  for (const prefix of ['5e11cb7', 'abeac6d']) assert.ok(parseUpdateNotes(files['UPDATE_NOTES.json']).some((e) => e.sha.startsWith(prefix)));
+});
