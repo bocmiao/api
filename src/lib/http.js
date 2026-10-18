@@ -49,22 +49,52 @@ export function upstreamError(err, url, what = '上游服务') {
   return new HttpError(502, `无法连接${what}（${host}${reason ? `：${reason}` : ''}）${overseasHint(url)}`);
 }
 
+const RETRY_STATUS = new Set([502, 503, 504]);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 幂等请求失败后重试一次：网络错误或 502/503/504 才重试，POST 等不重试。
+// 总耗时仍受 timeoutMs 约束：最后一次尝试只使用剩余时间。
 async function request(url, { timeoutMs = 10_000, headers = {}, method = 'GET', body, signal } = {}) {
-  let res;
-  const requestSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
-  try {
-    res = await outboundFetch(url, {
-      method,
-      body,
-      headers: { 'user-agent': UA, ...headers },
-      signal: requestSignal,
-    });
-  } catch (err) {
-    signal?.throwIfAborted();
-    throw upstreamError(requestSignal.aborted ? requestSignal.reason : err, url);
+  signal?.throwIfAborted();
+  const idempotent = method === 'GET' || method === 'HEAD';
+  const attempts = idempotent ? 2 : 1;
+  const deadline = Date.now() + timeoutMs;
+  const remaining = () => Math.max(1, deadline - Date.now());
+  let lastError;
+  let lastStatus;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(remaining())])
+      : AbortSignal.timeout(remaining());
+    let res;
+    try {
+      res = await outboundFetch(url, {
+        method,
+        body,
+        headers: { 'user-agent': UA, ...headers },
+        signal: requestSignal,
+      });
+    } catch (err) {
+      signal?.throwIfAborted();
+      lastError = requestSignal.aborted ? requestSignal.reason : err;
+      if (attempt < attempts) { await sleep(200); continue; }
+      throw upstreamError(lastError, url);
+    }
+
+    // 上游 5xx 视为可重试；其余非 2xx 直接报错，避免把 4xx 当成故障重试
+    if (RETRY_STATUS.has(res.status) && attempt < attempts) {
+      lastStatus = res.status;
+      try { await res.body?.cancel(); } catch {}
+      await sleep(200);
+      continue;
+    }
+    if (!res.ok) throw new HttpError(502, `上游返回 HTTP ${res.status}`);
+    return { res, signal: requestSignal };
   }
-  if (!res.ok) throw new HttpError(502, `上游返回 HTTP ${res.status}`);
-  return { res, signal: requestSignal };
+
+  if (lastStatus) throw new HttpError(502, `上游返回 HTTP ${lastStatus}`);
+  throw upstreamError(lastError, url);
 }
 
 export async function fetchJSON(url, opts = {}) {

@@ -1342,7 +1342,8 @@ describe('域名后缀列表', () => {
     assert.equal(res.data.total, 107);
     assert.equal(res.data.items[0].unicode, '公司');
     await r.handler({ query: q({}) });
-    assert.equal(calls.length, 1);
+    // 幂等 GET 失败会重试一次，再回退到内置列表；第二次调用命中 10 分钟缓存，不再请求上游
+    assert.equal(calls.length, 2);
     // 内置列表没有 version，这里只做正向校验（反向覆盖在上一个用例中完成）
     assertFieldsDocumented(r, res.data);
   });
