@@ -4,12 +4,14 @@ import { extname, join, normalize } from 'node:path';
 import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { apiRouter, catalog } from './registry.js';
+import { apiRouter, catalog, refreshRegistry } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import './routes/site.js';
 import './routes/news60s.js';
+import './routes/api-admin.js';
 import { HttpError, errorCode } from './lib/http.js';
 import { renderPage, renderAbout, siteOrigin, sitemap, robots } from './lib/seo.js';
+import { openapi, llmsTxt } from './lib/openapi.js';
 import { la51Tags, pageCsp } from './lib/la51.js';
 import { parseCookies, userFromSession, userFromApiKey, extractApiKey, publicUser } from './lib/auth.js';
 import { isModuleEnabled, moduleOptions } from './lib/modules.js';
@@ -116,7 +118,11 @@ async function readBody(req) {
 // 基于 Cookie 的写操作：要求 JSON 且同源，防止 CSRF
 function assertSameOrigin(req, { raw = false } = {}) {
   const origin = req.headers.origin;
-  if (origin && new URL(origin).host !== req.headers.host) throw new HttpError(403, '跨站请求被拒绝');
+  if (origin) {
+    let source;
+    try { source = new URL(origin); } catch { throw new HttpError(403, '跨站请求被拒绝'); }
+    if (!['http:', 'https:'].includes(source.protocol) || source.username || source.password || source.host !== req.headers.host) throw new HttpError(403, '跨站请求被拒绝');
+  }
   if (raw) {
     // 上传文件：必须是本站页面发出的请求（浏览器会带 Origin），且类型为二进制
     if (!origin) throw new HttpError(403, '跨站请求被拒绝');
@@ -152,7 +158,7 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
     // 页面里引用的脚本和样式加上内容指纹，文件一变地址就变，旧缓存自动失效
     if (file.endsWith('.html')) {
       let html = body.toString('utf8');
-      for (const asset of ['app.js', 'admin-stats.js', 'status-page.js', 'styles.css', 'theme-init.js', 'about.js', 'site.js']) {
+      for (const asset of ['app.js', 'admin-stats.js', 'admin-apis.js', 'status-page.js', 'styles.css', 'theme-init.js', 'about.js', 'site.js']) {
         try {
           const h = createHash('sha1').update(await readFile(join(PUBLIC_DIR, asset))).digest('base64url').slice(0, 10);
           html = html.replaceAll(`"/${asset}"`, `"/${asset}?v=${h}"`);
@@ -224,6 +230,7 @@ export async function handle(req, res) {
       ip = clientIp(req);
       cookies = parseCookies(req.headers.cookie);
     } catch { throw new HttpError(400, '请求地址或 Cookie 格式不合法'); }
+    refreshRegistry();
     if (req.method === 'OPTIONS') return send(res, 204, '', CORS);
     // 产品发布页：独立的静态页面，服务端填入接口数量等信息（about.html 是模板，不直接对外）
     if (req.method === 'GET' && (path === '/about' || path === '/about.html')) {
@@ -242,6 +249,13 @@ export async function handle(req, res) {
     }
     if (req.method === 'GET' && path === '/robots.txt') return send(res, 200, robots(siteOrigin(req)), { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' });
     if (req.method === 'GET' && path === '/sitemap.xml') return send(res, 200, sitemap(siteOrigin(req)), { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+    // 对外契约：从运行时接口注册表生成，后台改文案或新增接口后自动同步
+    if (req.method === 'GET' && path === '/openapi.json') {
+      return send(res, 200, JSON.stringify(openapi(siteOrigin(req))), { ...CORS, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    }
+    if (req.method === 'GET' && path === '/llms.txt') {
+      return send(res, 200, llmsTxt(siteOrigin(req)), { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+    }
     if (req.method === 'GET' && path === '/health') return send(res, 200, envelope({ data: { status: 'up' } }));
     if (req.method === 'GET' && path === '/api') {
       const viewer = userFromSession(cookies.sid);

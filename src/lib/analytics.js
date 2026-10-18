@@ -10,6 +10,7 @@ import { flushStats, percentile, LAT_EDGES, CLIENT_NAMES } from './stats.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
 import { isModuleEnabled } from './modules.js';
 import { healthStatus } from './health.js';
+import { onRegistryChange } from '../registry.js';
 
 const HOUR = 3600_000;
 const DAY = 86400_000;
@@ -18,9 +19,14 @@ const bjMidnight = (ts) => Date.parse(`${bjDay(ts)}T00:00:00+08:00`);
 const round = (n, d = 1) => (n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** d) / 10 ** d);
 const ratio = (a, b) => (b ? a / b : null);
 
-// 接口地址 -> 所属模块
-const routeIndex = new Map();
-for (const m of apiModules) for (const r of m.routes) routeIndex.set(r.path, { module: m.name, title: m.title, category: m.category, method: r.method, summary: r.summary ?? '' });
+// 接口地址 -> 所属模块（后台发布新接口后重建，避免统计页把新地址当成未知路径）
+let routeIndex = new Map();
+function rebuildRouteIndex() {
+  routeIndex = new Map();
+  for (const m of apiModules) for (const r of m.routes) routeIndex.set(r.path, { module: m.name, title: m.title, category: m.category, method: r.method, summary: r.summary ?? '' });
+}
+rebuildRouteIndex();
+onRegistryChange(rebuildRouteIndex);
 export const routeInfo = (path) => routeIndex.get(path) ?? null;
 
 // ---------- 时间范围 ----------

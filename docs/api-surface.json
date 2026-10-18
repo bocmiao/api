@@ -1,0 +1,1595 @@
+{
+  "generatedBy": "npm run api:sync",
+  "modules": [
+    {
+      "name": "games-free",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/games/free"
+        }
+      ]
+    },
+    {
+      "name": "epic",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/epic/free"
+        }
+      ]
+    },
+    {
+      "name": "steam",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/steam/free"
+        },
+        {
+          "method": "GET",
+          "path": "/api/steam/specials"
+        }
+      ]
+    },
+    {
+      "name": "gog",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/gog/free"
+        }
+      ]
+    },
+    {
+      "name": "psplus",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/psplus/monthly"
+        }
+      ]
+    },
+    {
+      "name": "gamepass",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/gamepass"
+        }
+      ]
+    },
+    {
+      "name": "steam-info",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/steam/app"
+        },
+        {
+          "method": "GET",
+          "path": "/api/steam/search"
+        },
+        {
+          "method": "GET",
+          "path": "/api/steam/players"
+        }
+      ]
+    },
+    {
+      "name": "mc-server",
+      "category": "games",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/mc/server"
+        }
+      ]
+    },
+    {
+      "name": "hot-weibo",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/weibo"
+        }
+      ]
+    },
+    {
+      "name": "hot-zhihu",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/zhihu"
+        }
+      ]
+    },
+    {
+      "name": "hot-bilibili",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/bilibili"
+        }
+      ]
+    },
+    {
+      "name": "hot-douyin",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/douyin"
+        }
+      ]
+    },
+    {
+      "name": "hot-baidu",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/baidu"
+        }
+      ]
+    },
+    {
+      "name": "hot-toutiao",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/toutiao"
+        }
+      ]
+    },
+    {
+      "name": "hot-github",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/github"
+        }
+      ]
+    },
+    {
+      "name": "hot-v2ex",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/v2ex"
+        }
+      ]
+    },
+    {
+      "name": "hot-news",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/news"
+        }
+      ]
+    },
+    {
+      "name": "hot-hackernews",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/hackernews"
+        }
+      ]
+    },
+    {
+      "name": "hot-juejin",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/juejin"
+        }
+      ]
+    },
+    {
+      "name": "hot-csdn",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/csdn"
+        }
+      ]
+    },
+    {
+      "name": "hot-tieba",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/tieba"
+        }
+      ]
+    },
+    {
+      "name": "hot-all",
+      "category": "hot",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hot/all"
+        },
+        {
+          "method": "GET",
+          "path": "/api/hot/sources"
+        }
+      ]
+    },
+    {
+      "name": "weather",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/weather"
+        },
+        {
+          "method": "GET",
+          "path": "/api/weather/city"
+        }
+      ]
+    },
+    {
+      "name": "holiday",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/holiday"
+        },
+        {
+          "method": "GET",
+          "path": "/api/holiday/next"
+        },
+        {
+          "method": "GET",
+          "path": "/api/holiday/year"
+        }
+      ]
+    },
+    {
+      "name": "lunar",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/lunar"
+        }
+      ]
+    },
+    {
+      "name": "oil",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/oil"
+        }
+      ]
+    },
+    {
+      "name": "express",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/express"
+        },
+        {
+          "method": "GET",
+          "path": "/api/express/companies"
+        }
+      ]
+    },
+    {
+      "name": "ip",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ip"
+        }
+      ]
+    },
+    {
+      "name": "phone",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/phone"
+        }
+      ]
+    },
+    {
+      "name": "history-today",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/history/today"
+        }
+      ]
+    },
+    {
+      "name": "news-60s",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/news/60s"
+        },
+        {
+          "method": "GET",
+          "path": "/api/news/60s/assets/:revision/:file"
+        }
+      ]
+    },
+    {
+      "name": "moyu",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/moyu"
+        }
+      ]
+    },
+    {
+      "name": "bmi",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/bmi"
+        }
+      ]
+    },
+    {
+      "name": "garbage",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/garbage"
+        }
+      ]
+    },
+    {
+      "name": "tax",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tax/income"
+        }
+      ]
+    },
+    {
+      "name": "idcard",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/idcard/check"
+        }
+      ]
+    },
+    {
+      "name": "geo",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/geo/distance"
+        }
+      ]
+    },
+    {
+      "name": "unit",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/unit"
+        },
+        {
+          "method": "GET",
+          "path": "/api/unit/list"
+        }
+      ]
+    },
+    {
+      "name": "age",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/age"
+        }
+      ]
+    },
+    {
+      "name": "workdays",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/workdays"
+        }
+      ]
+    },
+    {
+      "name": "health",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/health/calc"
+        }
+      ]
+    },
+    {
+      "name": "sudoku",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/sudoku"
+        }
+      ]
+    },
+    {
+      "name": "jieqi",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/jieqi"
+        },
+        {
+          "method": "GET",
+          "path": "/api/jieqi/next"
+        }
+      ]
+    },
+    {
+      "name": "sun",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/sun"
+        },
+        {
+          "method": "GET",
+          "path": "/api/moon"
+        }
+      ]
+    },
+    {
+      "name": "worldtime",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/time/world"
+        },
+        {
+          "method": "GET",
+          "path": "/api/time/convert"
+        }
+      ]
+    },
+    {
+      "name": "progress",
+      "category": "life",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/progress"
+        }
+      ]
+    },
+    {
+      "name": "fx",
+      "category": "finance",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/fx/rates"
+        },
+        {
+          "method": "GET",
+          "path": "/api/fx/convert"
+        }
+      ]
+    },
+    {
+      "name": "stock",
+      "category": "finance",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/stock/quote"
+        },
+        {
+          "method": "GET",
+          "path": "/api/stock/search"
+        }
+      ]
+    },
+    {
+      "name": "fund",
+      "category": "finance",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/fund/estimate"
+        },
+        {
+          "method": "GET",
+          "path": "/api/fund/history"
+        }
+      ]
+    },
+    {
+      "name": "crypto",
+      "category": "finance",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/crypto/price"
+        },
+        {
+          "method": "GET",
+          "path": "/api/crypto/markets"
+        }
+      ]
+    },
+    {
+      "name": "metals",
+      "category": "finance",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/metals"
+        }
+      ]
+    },
+    {
+      "name": "hitokoto",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hitokoto"
+        }
+      ]
+    },
+    {
+      "name": "poem",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/poem"
+        }
+      ]
+    },
+    {
+      "name": "bing",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/bing"
+        },
+        {
+          "method": "GET",
+          "path": "/api/bing/image"
+        }
+      ]
+    },
+    {
+      "name": "wallpaper",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/wallpaper/random"
+        },
+        {
+          "method": "GET",
+          "path": "/api/wallpaper/random.jpg"
+        }
+      ]
+    },
+    {
+      "name": "anime-calendar",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/anime/calendar"
+        }
+      ]
+    },
+    {
+      "name": "douban",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/douban/top250"
+        },
+        {
+          "method": "GET",
+          "path": "/api/douban/nowplaying"
+        }
+      ]
+    },
+    {
+      "name": "boxoffice",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/boxoffice"
+        }
+      ]
+    },
+    {
+      "name": "english-daily",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/english/daily"
+        }
+      ]
+    },
+    {
+      "name": "answer",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/answer"
+        }
+      ]
+    },
+    {
+      "name": "fortune",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/fortune"
+        }
+      ]
+    },
+    {
+      "name": "numerology",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/numerology"
+        }
+      ]
+    },
+    {
+      "name": "quotes",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/quotes"
+        },
+        {
+          "method": "GET",
+          "path": "/api/quotes/types"
+        }
+      ]
+    },
+    {
+      "name": "greeting",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/greeting"
+        }
+      ]
+    },
+    {
+      "name": "avatar",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/avatar"
+        }
+      ]
+    },
+    {
+      "name": "idiom",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/idiom"
+        },
+        {
+          "method": "GET",
+          "path": "/api/idiom/chain"
+        }
+      ]
+    },
+    {
+      "name": "xiehouyu",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/xiehouyu"
+        }
+      ]
+    },
+    {
+      "name": "brain-teaser",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/brain-teaser"
+        },
+        {
+          "method": "GET",
+          "path": "/api/brain-teaser/answer"
+        }
+      ]
+    },
+    {
+      "name": "cold-fact",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/cold-fact"
+        }
+      ]
+    },
+    {
+      "name": "compliment",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/compliment"
+        }
+      ]
+    },
+    {
+      "name": "joke",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/joke"
+        }
+      ]
+    },
+    {
+      "name": "hanzi",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/hanzi"
+        }
+      ]
+    },
+    {
+      "name": "poetry",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/poem/search"
+        },
+        {
+          "method": "GET",
+          "path": "/api/poem/random"
+        }
+      ]
+    },
+    {
+      "name": "music",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/music/toplist"
+        }
+      ]
+    },
+    {
+      "name": "music-play",
+      "category": "fun",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/music/search"
+        },
+        {
+          "method": "GET",
+          "path": "/api/music/song"
+        },
+        {
+          "method": "GET",
+          "path": "/api/music/lyric"
+        },
+        {
+          "method": "GET",
+          "path": "/api/music/url"
+        },
+        {
+          "method": "GET",
+          "path": "/api/music/player"
+        }
+      ]
+    },
+    {
+      "name": "ai",
+      "category": "ai",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/api/ai/summary"
+        },
+        {
+          "method": "POST",
+          "path": "/api/ai/sentiment"
+        },
+        {
+          "method": "POST",
+          "path": "/api/ai/translate"
+        },
+        {
+          "method": "POST",
+          "path": "/api/ai/chat"
+        }
+      ]
+    },
+    {
+      "name": "qrcode",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/qrcode"
+        }
+      ]
+    },
+    {
+      "name": "shorturl",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/api/shorturl"
+        },
+        {
+          "method": "GET",
+          "path": "/api/shorturl/stats"
+        },
+        {
+          "method": "GET",
+          "path": "/s/:code"
+        }
+      ]
+    },
+    {
+      "name": "webmeta",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/webmeta"
+        }
+      ]
+    },
+    {
+      "name": "whois",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/whois"
+        }
+      ]
+    },
+    {
+      "name": "translate",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/translate"
+        }
+      ]
+    },
+    {
+      "name": "devtools",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/timestamp"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/uuid"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/hash"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/base64"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/urlencode"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/password"
+        }
+      ]
+    },
+    {
+      "name": "captcha",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/captcha"
+        },
+        {
+          "method": "GET",
+          "path": "/api/captcha/verify"
+        }
+      ]
+    },
+    {
+      "name": "visitor",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/visitor"
+        }
+      ]
+    },
+    {
+      "name": "useragent",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ua/parse"
+        },
+        {
+          "method": "GET",
+          "path": "/api/ua/random"
+        }
+      ]
+    },
+    {
+      "name": "color",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/color/random"
+        },
+        {
+          "method": "GET",
+          "path": "/api/color/convert"
+        }
+      ]
+    },
+    {
+      "name": "ipcard",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ipcard"
+        }
+      ]
+    },
+    {
+      "name": "netcalc",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/cidr"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/ip-int"
+        }
+      ]
+    },
+    {
+      "name": "codec",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/radix"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/unicode"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/cipher"
+        }
+      ]
+    },
+    {
+      "name": "security-tools",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/jwt"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/jwt"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/totp"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/totp"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/password-strength"
+        }
+      ]
+    },
+    {
+      "name": "debug-tools",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/echo"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/echo"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/mock"
+        }
+      ]
+    },
+    {
+      "name": "text-tools",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/text-stat"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/text-stat"
+        },
+        {
+          "method": "GET",
+          "path": "/api/tools/rmb"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/json"
+        }
+      ]
+    },
+    {
+      "name": "svg-image",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/placeholder"
+        },
+        {
+          "method": "GET",
+          "path": "/api/badge"
+        },
+        {
+          "method": "GET",
+          "path": "/api/text-image"
+        }
+      ]
+    },
+    {
+      "name": "cron",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/cron"
+        }
+      ]
+    },
+    {
+      "name": "regex",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/regex"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/regex"
+        }
+      ]
+    },
+    {
+      "name": "pinyin",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/pinyin"
+        }
+      ]
+    },
+    {
+      "name": "chinese-convert",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/chinese/convert"
+        }
+      ]
+    },
+    {
+      "name": "barcode",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/barcode"
+        }
+      ]
+    },
+    {
+      "name": "random",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/random/number"
+        },
+        {
+          "method": "GET",
+          "path": "/api/random/pick"
+        },
+        {
+          "method": "GET",
+          "path": "/api/random/shuffle"
+        },
+        {
+          "method": "GET",
+          "path": "/api/random/string"
+        }
+      ]
+    },
+    {
+      "name": "diff",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tools/diff"
+        },
+        {
+          "method": "POST",
+          "path": "/api/tools/diff"
+        }
+      ]
+    },
+    {
+      "name": "format-convert",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/api/tools/convert"
+        }
+      ]
+    },
+    {
+      "name": "markdown",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/api/tools/markdown"
+        }
+      ]
+    },
+    {
+      "name": "devref",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/devref/http-status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devref/mime"
+        },
+        {
+          "method": "GET",
+          "path": "/api/devref/port"
+        }
+      ]
+    },
+    {
+      "name": "qq-avatar",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/qq/avatar"
+        },
+        {
+          "method": "GET",
+          "path": "/api/qq/avatar/urls"
+        }
+      ]
+    },
+    {
+      "name": "qq-nickname",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/qq/nickname"
+        }
+      ]
+    },
+    {
+      "name": "qq-profile",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/qq/profile"
+        },
+        {
+          "method": "GET",
+          "path": "/api/qq/profile/open"
+        }
+      ]
+    },
+    {
+      "name": "notify-message",
+      "category": "tools",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/api/notify/message"
+        }
+      ]
+    },
+    {
+      "name": "dns",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/dns"
+        }
+      ]
+    },
+    {
+      "name": "ssl-cert",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ssl"
+        }
+      ]
+    },
+    {
+      "name": "site-check",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/site/check"
+        }
+      ]
+    },
+    {
+      "name": "tcping",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tcping"
+        }
+      ]
+    },
+    {
+      "name": "ping",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ping"
+        }
+      ]
+    },
+    {
+      "name": "domain-available",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/domain/available"
+        }
+      ]
+    },
+    {
+      "name": "robots",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/robots"
+        }
+      ]
+    },
+    {
+      "name": "favicon",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/favicon"
+        }
+      ]
+    },
+    {
+      "name": "link-check",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/links/check"
+        }
+      ]
+    },
+    {
+      "name": "tld",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/tld"
+        }
+      ]
+    },
+    {
+      "name": "site-headers",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/site/headers"
+        }
+      ]
+    },
+    {
+      "name": "email-security",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/email/security"
+        }
+      ]
+    },
+    {
+      "name": "email-check",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/email/check"
+        }
+      ]
+    },
+    {
+      "name": "rss",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/rss"
+        }
+      ]
+    },
+    {
+      "name": "web-content",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/web/text"
+        },
+        {
+          "method": "GET",
+          "path": "/api/web/markdown"
+        }
+      ]
+    },
+    {
+      "name": "crawl",
+      "category": "net",
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/api/crawl"
+        },
+        {
+          "method": "GET",
+          "path": "/api/crawl/result"
+        }
+      ]
+    },
+    {
+      "name": "appstore",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/appstore/search"
+        }
+      ]
+    },
+    {
+      "name": "probe",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/probe/ping"
+        },
+        {
+          "method": "GET",
+          "path": "/api/probe/http"
+        },
+        {
+          "method": "GET",
+          "path": "/api/probe/dns"
+        },
+        {
+          "method": "GET",
+          "path": "/api/probe/traceroute"
+        }
+      ]
+    },
+    {
+      "name": "dns-propagation",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/dns/propagation"
+        }
+      ]
+    },
+    {
+      "name": "batch-check",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/batch/tcping"
+        },
+        {
+          "method": "POST",
+          "path": "/api/batch/tcping"
+        },
+        {
+          "method": "GET",
+          "path": "/api/batch/http"
+        },
+        {
+          "method": "POST",
+          "path": "/api/batch/http"
+        },
+        {
+          "method": "GET",
+          "path": "/api/batch/ping"
+        },
+        {
+          "method": "POST",
+          "path": "/api/batch/ping"
+        }
+      ]
+    },
+    {
+      "name": "ip-reputation",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ip/reputation"
+        }
+      ]
+    },
+    {
+      "name": "asn",
+      "category": "net",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/ip/asn"
+        },
+        {
+          "method": "GET",
+          "path": "/api/asn"
+        }
+      ]
+    }
+  ]
+}

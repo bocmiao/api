@@ -93,6 +93,7 @@ async function callOnce(hit, method, { query: q, body: b }, user) {
 export async function callTarget(t, user) {
   const hit = apiRouter.match(t.method, t.path);
   if (!hit?.route) return { status: 'fail', httpStatus: 404, ms: 0, error: '接口不存在' };
+  if (hit.route.module.custom) return { status: 'fail', httpStatus: 403, ms: 0, error: '自定义上游须在接口工作台确认试跑' };
   const attempts = t.attempts ?? [{ query: t.query ?? {}, body: t.body ?? {} }];
   let r;
   const tried = new Set();

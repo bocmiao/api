@@ -55,6 +55,7 @@ ${links.length ? `<ul>${links.map((l) => `<li><a href="${esc(l.url)}" rel="noope
 }
 
 function moduleBody(m, cat) {
+  const info = m.sourceInfo ?? moduleSourceInfo(m.name);
   const routes = m.routes.map((r) => {
     const params = (r.params ?? []).map((p) => `<li><code>${esc(p.name)}</code>${p.required ? '（必填）' : ''}：${esc(p.desc ?? '')}${p.example != null && p.example !== '' ? `，示例 <code>${esc(p.example)}</code>` : ''}</li>`).join('');
     const fields = (r.fields ?? []).slice(0, 30).map((f) => `<li><code>${esc(f.name)}</code>（${esc(f.type)}）：${esc(f.desc)}</li>`).join('');
@@ -69,7 +70,7 @@ ${fields ? `<h3>返回字段</h3><ul>${fields}</ul>` : ''}</section>`;
 <p>${esc(m.description ?? '')}</p>
 ${m.suspended ? `<p><b>该接口暂不可用</b>：${esc(m.suspended)}</p>` : ''}
 ${m.source ? `<p>数据来源：${esc(m.source)}</p>` : ''}
-<p>${esc(moduleSourceInfo(m.name).label)}：${esc(moduleSourceInfo(m.name).summary)}</p>
+<p>${esc(info.label)}：${esc(info.summary)}</p>
 <p>返回统一的 JSON 格式 <code>{ code, message, cached, stale, updatedAt, data }</code>，支持跨域，免注册每天可免费调用 100 次，注册后每天 10000 次。</p>
 ${routes}
 </div>`;

@@ -18,4 +18,6 @@ export const categories = [
   { id: 'net', title: '网络', icon: 'globe' },
 ];
 
-export const modules = [...games, ...hot, ...life, ...finance, ...fun, ...ai, ...tools, ...net];
+// coreModules 永远不会被修改；modules 是运行时视图，registry 会把后台新增的接口合并进来并原地更新它
+export const coreModules = [...games, ...hot, ...life, ...finance, ...fun, ...ai, ...tools, ...net];
+export const modules = [...coreModules];
