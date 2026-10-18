@@ -2,22 +2,23 @@ import { cache } from '../../lib/cache.js';
 import { fetchJSON, HttpError, param } from '../../lib/http.js';
 
 // 猫眼专业版网页端「实时票房」接口。
-// 2026-10 核对：返回全国大盘 + 影片榜，数字单位为「分」，无需签名；
+// 作者提供的2026-10响应含全国大盘 + 影片榜，影片金额为「分」；当前环境未独立验源。
 // 旧接口 box.maoyan.com/promovie/api/box/second.json 已下线（域名无法解析）。
 const UPSTREAM = 'https://piaofang.maoyan.com/dashboard-ajax/movie';
 const TTL_MS = 2 * 60_000;
 
-const numOrNull = (s) => {
-  if (s == null || s === '') return null;
-  const n = Number(String(s).replace(/[,%]/g, ''));
+const numOrNull = (value) => {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  const text = String(value).trim();
+  if (!/^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(text)) return null;
+  const n = Number(text.replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
 };
 
 // 上游以「分」为单位：295242755 分 = 295.24 万元
 const fenToWan = (v) => {
-  if (v == null || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.round(n / 1e4) / 100 : null;
+  const n = numOrNull(v);
+  return Number.isSafeInteger(n) ? Math.round(n / 1e4) / 100 : null;
 };
 
 const textOrNull = (v) => (v == null || v === '' ? null : String(v));
@@ -29,29 +30,49 @@ const timeFmt = new Intl.DateTimeFormat('sv-SE', {
   timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
 });
 
+const invalidData = () => new HttpError(502, '猫眼票房返回的数据格式无法识别');
+const dateOrNull = (value) => {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw invalidData();
+  const time = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(time.getTime()) || time.toISOString().slice(0, 10) !== value) throw invalidData();
+  return value;
+};
+const unitOrDefault = (value) => {
+  if (value == null || value === '') return '万';
+  if (value !== '万' && value !== '亿') throw invalidData();
+  return value;
+};
+
 // 响应：{ movieList: { list: [{ box, splitBox, boxRate, showCount, showCountRate, avgShowView,
-//   avgSeatView, sumBoxDesc, splitSumBoxDesc, movieInfo: { movieId, movieName, releaseInfo } }],
+//   avgSeatView, sumBoxDesc, sumSplitBoxDesc, movieInfo: { movieId, movieName, releaseInfo } }],
 //   nationBoxInfo: { nationBoxSplitUnit: { num, unit }, nationSplitBoxSplitUnit: { num, unit } },
 //   updateInfo: { updateTimestamp } }, calendar: { selectDate } }
 export function parseBoxOffice(raw) {
   const list = raw?.movieList?.list;
-  if (!Array.isArray(list)) throw new HttpError(502, '猫眼票房返回的数据格式无法识别');
+  if (!Array.isArray(list) || raw.success === false || list.some((m) => !m || typeof m !== 'object' || Array.isArray(m))) throw invalidData();
 
   const nation = raw.movieList.nationBoxInfo || {};
-  const ts = Number(raw.movieList.updateInfo?.updateTimestamp);
-  const serverTime = Number.isFinite(ts) && ts > 0
-    ? `${dateFmt.format(new Date(ts))} ${timeFmt.format(new Date(ts))}`
-    : null;
+  const timestamp = raw.movieList.updateInfo?.updateTimestamp;
+  const ts = numOrNull(timestamp);
+  const time = ts == null ? null : new Date(ts);
+  if (timestamp != null && timestamp !== '' && (!Number.isSafeInteger(ts) || ts <= 0 || !Number.isFinite(time?.getTime()))) throw invalidData();
+  const serverTime = time ? `${dateFmt.format(time)} ${timeFmt.format(time)}` : null;
+  const date = dateOrNull(raw.calendar?.selectDate) ?? (serverTime ? serverTime.slice(0, 10) : null);
+  const totalBox = numOrNull(nation.nationBoxSplitUnit?.num);
+  const splitTotalBox = numOrNull(nation.nationSplitBoxSplitUnit?.num);
+  // 合法零票房空榜仍有统计日期和至少一个大盘数值；全缺失的壳不能覆盖有效缓存。
+  if (!list.length && (!date || (totalBox == null && splitTotalBox == null))) throw invalidData();
 
   return {
-    date: raw.calendar?.selectDate ?? (serverTime ? serverTime.slice(0, 10) : null),
+    date,
     updateInfo: serverTime ? `北京时间 ${serverTime.slice(11)} 更新` : null,
     serverTime,
-    totalBox: numOrNull(nation.nationBoxSplitUnit?.num),
-    totalBoxUnit: nation.nationBoxSplitUnit?.unit ?? '万',
-    splitTotalBox: numOrNull(nation.nationSplitBoxSplitUnit?.num),
+    totalBox,
+    totalBoxUnit: unitOrDefault(nation.nationBoxSplitUnit?.unit),
+    splitTotalBox,
     // 分账总票房有自己的单位：综合已过亿时分账可能仍以"万"计
-    splitTotalBoxUnit: nation.nationSplitBoxSplitUnit?.unit ?? '万',
+    splitTotalBoxUnit: unitOrDefault(nation.nationSplitBoxSplitUnit?.unit),
     list: list.map((m, i) => ({
       rank: i + 1,
       movieId: m.movieInfo?.movieId ?? null,
