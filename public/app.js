@@ -257,8 +257,8 @@ async function loadMe() {
   }
 }
 
-async function loadCatalog() {
-  if (!state.catalog) state.catalog = await api('GET', '/api');
+async function loadCatalog({ refresh = false } = {}) {
+  if (refresh || !state.catalog) state.catalog = await api('GET', '/api');
   return state.catalog;
 }
 
@@ -446,7 +446,8 @@ async function loadToday() {
 
 function renderToday(t, savedCity) {
   const grid = $('#today-grid');
-  const card = (api, title, inner, cls = '') => `<a class="card today-card ${cls}" href="/docs/${api}"><div class="today-title">${title}</div>${inner}</a>`;
+  const visible = (name) => Boolean(state.catalog?.modules.some((m) => m.name === name));
+  const card = (api, title, inner, cls = '') => !visible(api) ? '' : `<a class="card today-card ${cls}" href="/docs/${api}"><div class="today-title">${title}</div>${inner}</a>`;
   const cards = [];
 
   if (t.greeting) {
@@ -487,7 +488,7 @@ function renderToday(t, savedCity) {
       <div class="small faint">—— ${esc([t.hitokoto.fromWho, t.hitokoto.from].filter(Boolean).join('《') + (t.hitokoto.fromWho && t.hitokoto.from ? '》' : ''))}</div>`));
   }
   const bing = Array.isArray(t.bing) ? t.bing[0] : null;
-  if (bing?.url) {
+  if (bing?.url && visible('bing')) {
     cards.push(`<a class="card today-card today-bing wide" href="/docs/bing" style="background-image:url('${esc(bing.url1080 ?? bing.url)}')">
       <div class="today-bing-text"><div class="today-title">必应今日壁纸</div><b>${esc(bing.title ?? '')}</b><div class="small">${esc(bing.description ?? '')}</div></div></a>`);
   }
@@ -1322,7 +1323,7 @@ async function consoleKeys(panel) {
         <span class="hint">服务器调用填服务器 IP；网页里调用填网站域名（按浏览器带的来源判断，只能防止 Key 被直接拿去别的网站用）</span></div>
       <div class="field"><label>接口范围 <span class="faint">不勾选表示全部接口</span></label>
         <input class="input" id="ks-q" placeholder="搜索接口" style="height:32px;margin-bottom:6px">
-        <div class="scope-list" id="ks">${cat.modules.map((m) => `<label data-t="${esc(`${m.title} ${m.name}`.toLowerCase())}"><input type="checkbox" value="${esc(m.name)}" ${k?.scopes.includes(m.name) ? 'checked' : ''}> ${esc(m.title)}</label>`).join('')}</div></div>
+        ${k?.scopes.some((name) => !cat.modules.some((m) => m.name === name)) ? '<p class="hint">修改名称或来源会保留原接口范围；主动调整范围时按新的勾选结果保存。</p>' : ''}<div class="scope-list" id="ks">${cat.modules.map((m) => `<label data-t="${esc(`${m.title} ${m.name}`.toLowerCase())}"><input type="checkbox" value="${esc(m.name)}" ${k?.scopes.includes(m.name) ? 'checked' : ''}> ${esc(m.title)}</label>`).join('')}</div></div>
       <div class="actions"><button class="btn" type="button" data-close>取消</button><button class="btn primary" type="submit">${k ? '保存' : '创建'}</button></div>
     </form>`, (root, close) => {
     $('[data-close]', root).onclick = close;
@@ -1330,8 +1331,11 @@ async function consoleKeys(panel) {
       const q = e.target.value.trim().toLowerCase();
       $$('#ks label', root).forEach((l) => { l.hidden = Boolean(q) && !l.dataset.t.includes(q); });
     };
+    let scopesEdited = false;
+    $('#ks', root).onchange = () => { scopesEdited = true; };
     bindForm($('#kf', root), async (v) => {
-      const body = { name: v.name, allow: v.allow, scopes: $$('#ks input:checked', root).map((x) => x.value) };
+      const body = { name: v.name, allow: v.allow };
+      if (!k || scopesEdited) body.scopes = $$('#ks input:checked', root).map((x) => x.value);
       if (k) {
         await api('PATCH', `/account/keys/${k.id}`, body);
         close();
@@ -1529,12 +1533,12 @@ async function consoleSettings(panel) {
 // ---------- 管理后台 ----------
 async function pageAdmin() {
   if (!state.user?.isAdmin) return pageNotFound();
-  $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
+  $('#main').innerHTML = '<div class="wrap admin-overview"><div class="loading"><span class="spinner"></span></div></div>';
   const s = await cachedGet('/admin/stats');
   const t = s.totals;
   const rows = s.daily.map((d) => ({ day: d.day, user: d.count - d.anon, anon: d.anon }));
   const chart = barChart(rows, [{ key: 'user', label: '注册用户' }, { key: 'anon', label: '未登录', cls: 's2' }]);
-  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+  $('#main').innerHTML = `<div class="wrap admin-overview" style="padding:28px 20px 80px">
     <div class="page-head"><div><h1>管理后台</h1><p>全站调用统计、系统更新与接口开关</p></div>${adminTabs('overview')}</div>
     <div class="card card-pad" style="margin-bottom:16px"><form id="rid-form" class="row" style="gap:8px;flex-wrap:wrap">
       <b style="font-size:15px">按请求 ID 查调用</b><span class="small faint">用户反馈问题时让他附上返回内容里的 requestId（或响应头 X-Request-Id）</span>
@@ -1562,9 +1566,9 @@ async function pageAdmin() {
             <td class="num">${e.path.startsWith('/api/') ? `<button class="btn sm" type="button" data-diagnose="${esc(e.path)}">AI 分析</button>` : ''}</td></tr>`).join('')}
         </tbody></table>` : '<div class="empty">一切正常</div>'}</div></div>
     </div>
-    <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>接口开关</h2>
-      <div class="row"><span class="small faint" id="mod-count"></span><input class="input" id="mod-q" placeholder="搜索接口" style="width:180px;height:32px"></div></div>
-      <div class="card-pad" id="mod-body"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div></div>
+    <div class="card" id="module-switches" style="margin-bottom:16px"><div class="card-head"><h2>接口开关与展示</h2>
+      <div class="row" style="flex-wrap:wrap"><span class="small faint" id="mod-count"></span><label class="small">可见性 <select class="input" id="mod-visibility" style="width:auto;height:32px"><option value="all">全部</option><option value="visible">显示</option><option value="hidden">隐藏</option></select></label><input class="input" id="mod-q" placeholder="搜索接口" style="width:180px;height:32px"></div></div>
+      <p class="small faint" style="margin:12px 20px 0">隐藏只移出公开目录和文档，已有调用仍可用；是否允许调用由启用开关决定。</p><div class="form-error" id="mod-error" role="alert" hidden style="margin:12px 20px 0"></div><div class="card-pad" id="mod-body"><div class="loading" style="padding:12px 0"><span class="spinner"></span></div></div></div>
   </div>`;
   chart.mount($('#main'));
   $('#rid-form').onsubmit = (e) => { e.preventDefault(); lookupRequest(new FormData(e.target).get('rid').trim()); };
@@ -1871,47 +1875,81 @@ async function pageAdminSettings(focusGroup, focusKeys) {
 // ---------- 接口开关 ----------
 async function loadModuleSwitches() {
   const body = $('#mod-body');
-  let data;
-  try {
-    data = await api('GET', '/admin/modules');
-  } catch (err) {
-    body.innerHTML = `<div class="form-error">${esc(err.message)}</div>`;
-    return;
-  }
-  if (!body.isConnected) return; // 数据回来前已经切到别的页面
+  const main = $('#main');
+  let data, visibilitySaving = false;
+  const report = (err) => {
+    if (!body.isConnected) return;
+    const error = $('#mod-error', main);
+    error.hidden = false;
+    error.textContent = `${err.message}。请重新读取状态后再操作。 `;
+    const reload = document.createElement('button'); reload.type = 'button'; reload.className = 'btn sm'; reload.textContent = '重新读取';
+    reload.onclick = () => loadModuleSwitches(); error.append(reload);
+  };
+  try { data = await api('GET', '/admin/modules'); }
+  catch (err) { report(err); body.innerHTML = ''; return; }
+  if (!body.isConnected) return;
+  $('#mod-error', main).hidden = true;
   const draw = () => {
-    const q = $('#mod-q').value.trim().toLowerCase();
+    if (!body.isConnected) return;
+    const q = $('#mod-q', main).value.trim().toLowerCase();
+    const filter = $('#mod-visibility', main).value;
     const on = data.modules.filter((m) => m.enabled).length;
-    const needKey = data.modules.filter((m) => m.keys?.mode === 'required' && !m.keys.configured).length;
-    $('#mod-count').textContent = `已开放 ${on} / ${data.modules.length}${needKey ? ` · ${needKey} 个待填 Key` : ''}`;
+    const hidden = data.modules.filter((m) => m.hidden).length;
+    $('#mod-count', main).textContent = `已启用 ${on} / ${data.modules.length} · 已隐藏 ${hidden}`;
     const legend = `<div class="key-legend small faint"><span class="badge danger">需填 Key</span> 不填写无法使用
       <span class="badge ok">已填 Key</span> 已配置可用 <span class="badge">可选 Key</span> 不填也能用，填了效果更好或限额更高 · 点标签去设置里填写</div>`;
-    body.innerHTML = legend + data.categories.map((c) => {
-      const list = data.modules.filter((m) => m.category === c.id && (!q || `${m.title} ${m.name} ${m.routes.join(' ')}`.toLowerCase().includes(q)));
+    const groups = data.categories.map((c) => {
+      const list = data.modules.filter((m) => m.category === c.id && (filter === 'all' || (filter === 'hidden') === Boolean(m.hidden)) && (!q || `${m.title} ${m.name} ${m.routes.join(' ')}`.toLowerCase().includes(q)));
       if (!list.length) return '';
       return `<div class="mod-group">
         <div class="mod-group-head"><b>${icon(c.icon)}${esc(c.title)}</b>
           <span class="row"><button class="btn sm ghost" data-bulk="${c.id}" data-on="1">全部开启</button><button class="btn sm ghost" data-bulk="${c.id}" data-on="0">全部关闭</button></span></div>
         <div class="mod-grid">${list.map((m) => `
-          <label class="mod-item ${m.enabled && !m.compliance ? '' : 'off'}" title="${esc(m.compliance ? `备案合规模式已下线：${m.compliance}` : m.routes.join('\n'))}">
-            <span class="switch"><input type="checkbox" data-mod="${esc(m.name)}" ${m.enabled ? 'checked' : ''}><span></span></span>
-            <span class="grow"><span class="mod-title">${esc(m.title)}${optBadges(m.options)}${keyBadge(m.keys)}${m.compliance ? ' <span class="badge warn">合规模式下线</span>' : ''}</span><span class="mod-meta mono">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
-            <span class="small faint" title="近 7 天调用">${fmtNum(m.calls7d)}</span>
-            <button class="btn sm ghost mod-opt" type="button" data-opt="${esc(m.name)}" title="置顶、推荐、缓存时长、每分钟上限、清除缓存">参数</button>
-          </label>`).join('')}</div></div>`;
-    }).join('') || '<div class="empty">没有匹配的接口</div>';
+          <div class="mod-item ${m.enabled && !m.compliance ? '' : 'off'}" data-module="${esc(m.name)}">
+            <div class="mod-main"><label class="mod-enable">
+              <span class="switch"><input type="checkbox" data-mod="${esc(m.name)}" aria-label="启用 ${esc(m.title)}" ${m.enabled ? 'checked' : ''}><span></span></span>
+              <span class="grow"><span class="mod-title">${esc(m.title)}${optBadges(m.options)}${keyBadge(m.keys)}${m.compliance ? ' <span class="badge warn">合规模式下线</span>' : ''}</span><span class="mod-meta mono" title="${esc(m.routes.join(' · '))}">${esc(m.routes[0])}${m.routes.length > 1 ? ` +${m.routes.length - 1}` : ''}</span></span>
+            </label><span class="small faint" title="近 7 天调用">${fmtNum(m.calls7d)}</span>
+            <button class="btn sm ghost mod-opt" type="button" data-opt="${esc(m.name)}" title="置顶、推荐、缓存时长、每分钟上限、清除缓存">参数</button></div>
+            <div class="mod-visibility"><label><span class="switch"><input type="checkbox" data-visible="${esc(m.name)}" aria-label="公开显示 ${esc(m.title)}" ${m.hidden ? '' : 'checked'}><span></span></span><span>${m.hidden ? '已隐藏' : '公开显示'}</span></label><span class="small faint">调用开关不变</span></div>
+          </div>`).join('')}</div></div>`;
+    }).join('');
+    body.innerHTML = legend + (groups || '<div class="empty">没有匹配的接口，请调整搜索或可见性筛选。</div>');
+    if (visibilitySaving) for (const el of body.querySelectorAll('input, button')) el.disabled = true;
   };
   const save = async (names, enabled) => {
     await api('PUT', '/admin/modules', { names, enabled });
     for (const m of data.modules) if (names.includes(m.name)) m.enabled = enabled;
-    state.catalog = null; // 首页目录重新加载
-    draw();
+    state.catalog = null; draw();
     toast(enabled ? `已开启 ${names.length} 个接口` : `已关闭 ${names.length} 个接口`);
   };
   body.onchange = async (e) => {
+    const shown = e.target.closest('input[data-visible]');
+    if (shown) {
+      const m = data.modules.find((m) => m.name === shown.dataset.visible);
+      if (visibilitySaving) { shown.checked = !m.hidden; return; }
+      const hidden = !shown.checked;
+      const returnFocus = document.activeElement === shown;
+      visibilitySaving = true;
+      for (const el of body.querySelectorAll('input, button')) el.disabled = true;
+      body.setAttribute('aria-busy', 'true');
+      try {
+        const saved = await api('PUT', `/admin/apis/${encodeURIComponent(m.name)}/visibility`, { hidden, expectedRev: data.editRev });
+        m.hidden = saved.hidden; data.editRev = saved.editRev; state.catalog = null;
+        if (body.isConnected) { $('#mod-error', main).hidden = true; toast(hidden ? '已从公开目录和文档隐藏，调用保持可用' : '已恢复公开显示'); }
+      } catch (err) { report(err); }
+      finally {
+        visibilitySaving = false; body.removeAttribute('aria-busy'); draw();
+        if (returnFocus && body.isConnected) {
+          const target = body.querySelector(`input[data-visible="${m.name}"]`);
+          (target ?? $('#mod-visibility', main)).focus();
+        }
+      }
+      return;
+    }
     const cb = e.target.closest('input[data-mod]');
     if (!cb) return;
-    try { await save([cb.dataset.mod], cb.checked); } catch (err) { cb.checked = !cb.checked; toast(err.message, true); }
+    try { await save([cb.dataset.mod], cb.checked); } catch (err) { cb.checked = !cb.checked; report(err); }
   };
   body.onclick = async (e) => {
     const o = e.target.closest('[data-opt]');
@@ -1926,9 +1964,10 @@ async function loadModuleSwitches() {
     const names = data.modules.filter((m) => m.category === b.dataset.bulk && m.enabled !== enabled).map((m) => m.name);
     if (!names.length) return toast(enabled ? '该分类已全部开启' : '该分类已全部关闭');
     if (!enabled && !(await confirmDialog('关闭接口', `确定关闭该分类下的 ${names.length} 个接口？关闭后普通用户调用会返回 403。`, { okText: '关闭' }))) return;
-    try { await save(names, enabled); } catch (err) { toast(err.message, true); }
+    try { await save(names, enabled); } catch (err) { report(err); }
   };
-  $('#mod-q').oninput = draw;
+  $('#mod-q', main).oninput = draw;
+  $('#mod-visibility', main).onchange = draw;
   draw();
 }
 
@@ -2255,7 +2294,8 @@ async function uploadUpdate(file) {
 // ---------- Ctrl+K 快速搜索 ----------
 async function openSearch() {
   if ($('.search-modal')) return;
-  const cat = await loadCatalog();
+  let cat;
+  try { cat = await loadCatalog({ refresh: true }); } catch (err) { return toast(err.message, true); }
   let sel = 0;
   modal(`<div class="search-modal"><input class="input" id="sk" placeholder="搜索接口名称、路径或用途，回车打开" autocomplete="off">
     <div class="sk-list" id="sk-list"></div><div class="small faint" style="margin-top:8px">↑ ↓ 选择 · 回车打开 · Esc 关闭</div></div>`, (root, close) => {
@@ -2348,7 +2388,7 @@ async function router({ keepScroll = false } = {}) {
   if (!keepScroll) window.scrollTo(0, 0);
   if (!prefetched) { prefetched = true; setTimeout(prefetchPages, 1500); }
   try {
-    await loadCatalog();
+    await loadCatalog({ refresh: true });
     if (token !== navToken) return;
     switch (page) {
       case '': await pageHome(); break;

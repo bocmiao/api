@@ -248,7 +248,7 @@ export async function handle(req, res) {
       if (await serveStatic(req, res, '/', url.searchParams, { page: true, status: pageStatus, transform })) return;
     }
     if (req.method === 'GET' && path === '/robots.txt') return send(res, 200, robots(siteOrigin(req)), { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' });
-    if (req.method === 'GET' && path === '/sitemap.xml') return send(res, 200, sitemap(siteOrigin(req)), { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=3600' });
+    if (req.method === 'GET' && path === '/sitemap.xml') return send(res, 200, sitemap(siteOrigin(req)), { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'no-store' });
     // 对外契约：从运行时接口注册表生成，后台改文案或新增接口后自动同步
     if (req.method === 'GET' && path === '/openapi.json') {
       return send(res, 200, JSON.stringify(openapi(siteOrigin(req))), { ...CORS, 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });

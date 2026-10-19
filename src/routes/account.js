@@ -19,12 +19,12 @@ import { startInspect, stopInspect, inspectStatus, COSTLY } from '../lib/inspect
 import { checkCaptcha, sendEmailCode, consumeEmailCode } from '../lib/emailcode.js';
 import { createCaptcha } from '../apis/tools/captcha.js';
 import { modules as apiModules, categories as apiCategories } from '../apis/index.js';
-import { isModuleEnabled, isModuleSwitchedOn, setModulesEnabled } from '../lib/modules.js';
+import { isModuleEnabled, isModuleSwitchedOn, isModuleHidden, isModuleListed, setModulesEnabled } from '../lib/modules.js';
 import { complianceBlocks, COMPLIANCE_MODULES } from '../lib/compliance.js';
 import { listSettings, saveSettings, SETTING_GROUPS } from '../lib/settings.js';
 import { testService, serviceOfKey, linkOfKey } from '../lib/keytest.js';
 import { sendMail } from '../notify/smtp.js';
-import { invoke, apiRouter } from '../registry.js';
+import { invoke, apiRouter, readWorkbench, workbenchRev } from '../registry.js';
 import { localVersion, RUNNING_VERSION } from '../lib/updater.js';
 import { cache } from '../lib/cache.js';
 import { isBlockedIP } from '../lib/netguard.js';
@@ -557,16 +557,17 @@ r('GET', '/admin/update/progress', (ctx) => {
 
 r('GET', '/admin/modules', (ctx) => {
   requireAdmin(ctx);
+  return readWorkbench(() => {
   const since = Date.now() - 7 * 86400_000;
   const calls = new Map(statsSql('SELECT path, COUNT(*) AS n FROM request_log WHERE ts >= ? GROUP BY path').all(since).map((x) => [x.path, x.n]));
   return {
     data: {
-      categories: apiCategories,
+      categories: apiCategories, editRev: workbenchRev(),
       modules: apiModules.map((m) => ({
         name: m.name,
         title: m.title,
         category: m.category,
-        enabled: isModuleSwitchedOn(m.name),
+        enabled: isModuleSwitchedOn(m.name), hidden: isModuleHidden(m.name),
         options: moduleOptions(m.name),
         // 备案合规模式下线的原因；不为空时无论开关如何都不对外提供
         compliance: complianceBlocks(m.name) ? COMPLIANCE_MODULES[m.name] : null,
@@ -576,6 +577,7 @@ r('GET', '/admin/modules', (ctx) => {
       })),
     },
   };
+  });
 });
 
 // 接口需要的第三方密钥：required 不填就用不了（含「任选其一」），optional 不填也能用、填了更好
@@ -660,6 +662,11 @@ const TODAY_SOURCES = {
   history: ['/api/history/today'],
   metals: ['/api/metals'],
 };
+const todaySourceListed = (key) => {
+  const route = apiRouter.match('GET', TODAY_SOURCES[key]?.[0] ?? '')?.route;
+  return Boolean(route && isModuleListed(route.module.name));
+};
+const listedToday = (data) => Object.fromEntries(Object.entries(data ?? {}).map(([key, value]) => [key, todaySourceListed(key) ? value : null]));
 const DEFAULT_CITY = '北京';
 
 // 天气按访客所在城市：优先用访客自己选的 city，否则按 IP 定位（城市级精度），都不行时用默认城市
@@ -694,7 +701,7 @@ const todayState = { data: null, at: 0, pending: null };
 function refreshToday() {
   todayState.pending ??= (async () => {
     const keys = Object.keys(TODAY_SOURCES);
-    const settled = await Promise.allSettled(keys.map((k) => invoke(...TODAY_SOURCES[k])));
+    const settled = await Promise.allSettled(keys.map((k) => todaySourceListed(k) ? invoke(...TODAY_SOURCES[k]) : Promise.resolve(null)));
     const data = Object.fromEntries(keys.map((k, i) => [k, settled[i].status === 'fulfilled' ? settled[i].value : null]));
     // 某一项这次失败时沿用上一次的数据，避免卡片时有时无
     if (todayState.data) for (const k of keys) data[k] ??= todayState.data[k];
@@ -711,13 +718,14 @@ export function warmToday() {
 }
 
 r('GET', '/home/today', async () => {
-  if (!todayState.data) return { data: await refreshToday() };
+  if (!todayState.data) return { data: listedToday(await refreshToday()) };
   if (Date.now() - todayState.at > TODAY_TTL) refreshToday().catch(() => {});
-  return { data: todayState.data };
+  // 内部可保留旧值供恢复；每次公开响应重新过滤，旧值回填不能泄露隐藏推荐。
+  return { data: listedToday(todayState.data) };
 });
 
 // 天气按访客城市单独取（同一城市、同一 IP 都有缓存），和公共部分分开请求，慢了也不拖累其他卡片
-r('GET', '/home/weather', async (ctx) => ({ data: await todayWeather(ctx).catch(() => null) }));
+r('GET', '/home/weather', async (ctx) => ({ data: isModuleListed('weather') ? await todayWeather(ctx).catch(() => null) : null }));
 
 // ---------- 运行状态 ----------
 const STARTED_AT = Date.now();
@@ -734,8 +742,9 @@ const moduleHealth = () => cachedStatus().modules;
 
 // 首页接口卡片：运行状态、累计调用、今日调用（公开，缓存 1 分钟）
 let cardStats = null;
+const listedCardStats = (data) => Object.fromEntries(Object.entries(data).filter(([name]) => isModuleListed(name)));
 r('GET', '/stats/modules', () => {
-  if (cardStats && Date.now() - cardStats.at < 60_000) return { data: cardStats.data };
+  if (cardStats && Date.now() - cardStats.at < 60_000) return { data: listedCardStats(cardStats.data) };
   const totals = new Map(statsSql('SELECT path, total FROM api_calls').all().map((x) => [x.path, x.total]));
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0); // 服务器时区为北京时间
@@ -748,7 +757,7 @@ r('GET', '/stats/modules', () => {
     data[m.name] = { total: sum(totals), today: sum(today), status: health.get(m.name) ?? 'idle' };
   }
   cardStats = { at: Date.now(), data };
-  return { data };
+  return { data: listedCardStats(data) };
 });
 
 r('GET', '/status', () => {
@@ -760,6 +769,8 @@ r('GET', '/status', () => {
       uptimeSec: Math.round((Date.now() - STARTED_AT) / 1000),
       categories: apiCategories,
       ...st,
+      modules: st.modules.filter((m) => isModuleListed(m.name)),
+      incidents: st.incidents.filter((i) => isModuleListed(i.module)),
     },
   };
 });

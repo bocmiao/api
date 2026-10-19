@@ -21,6 +21,14 @@ export function setModulesEnabled(names, enabled) {
   disabled = null;
 }
 
+// 可见性直接读持久状态，其他进程的修改不依赖本进程缓存失效。
+export const isModuleHidden = (name) => Boolean(sql('SELECT hidden FROM module_settings WHERE name = ?').get(name)?.hidden);
+export const isModuleListed = (name) => isModuleEnabled(name) && !isModuleHidden(name);
+export function setModuleHidden(name, hidden) {
+  sql(`INSERT INTO module_settings (name, hidden) VALUES (?, ?)
+       ON CONFLICT(name) DO UPDATE SET hidden = excluded.hidden, updated_at = datetime('now')`).run(name, hidden ? 1 : 0);
+}
+
 // ---------- 接口运行参数（后台可改）：置顶、推荐、缓存时长、每分钟限流 ----------
 let options = null;
 const loadOptions = () => (options ??= new Map(sql('SELECT * FROM module_options').all().map((r) => [r.name, {

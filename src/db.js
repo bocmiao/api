@@ -113,6 +113,8 @@ db.exec(`
 
 // 老数据库补列：调用日志记录失败原因（供管理员排查、AI 分析）
 const hasColumn = (table, col) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+// 隐藏只控制公开展示，与 enabled（调用开关）独立；旧记录默认公开。
+if (!hasColumn('module_settings', 'hidden')) db.exec('ALTER TABLE module_settings ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1))');
 if (!hasColumn('request_log', 'error')) db.exec('ALTER TABLE request_log ADD COLUMN error TEXT');
 
 // 每个接口地址的累计调用次数（不随调用日志清理而减少）；首次建表时用现有日志初始化

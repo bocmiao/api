@@ -7,8 +7,9 @@ import { siteOrigin } from '../lib/origin.js';
 import { checkCaptcha, sendEmailCode, consumeEmailCode } from '../lib/emailcode.js';
 import { fetchFollow, readLimited, reasonOf } from '../apis/net/common.js';
 import { accountRouter, requireUser, requireAdmin } from './account.js';
+import { workbenchRev } from '../registry.js';
 import { modules as apiModules } from '../apis/index.js';
-import { isModuleEnabled } from '../lib/modules.js';
+import { isModuleListed } from '../lib/modules.js';
 import { today } from '../lib/limits.js';
 import { flushStats } from '../lib/stats.js';
 import { metrics, sumRows } from '../lib/analytics.js';
@@ -38,7 +39,7 @@ export const clearSiteCache = () => memo.clear();
 // ---------- 首页平台数据 ----------
 export function siteOverview(now = Date.now()) {
   flushStats();
-  const mods = apiModules.filter((m) => isModuleEnabled(m.name));
+  const mods = apiModules.filter((m) => isModuleListed(m.name));
   const pathToModule = new Map(mods.flatMap((m) => m.routes.map((x) => [x.path, m])));
   // 趋势只画已经过完的 7 天，今天单独显示，避免最后一天看起来像流量暴跌
   const all = lastDays(8, now);
@@ -73,7 +74,7 @@ export function siteOverview(now = Date.now()) {
 
 r('GET', '/site/overview', () => {
   if (!flag('HOME_STATS')) return { data: null };
-  return { data: cached('overview', () => siteOverview()) };
+  return { data: cached(`overview:${workbenchRev()}`, () => siteOverview()) };
 });
 
 // ---------- 接口文档页：本周与上周调用、状态码分布、耗时 ----------
@@ -111,7 +112,7 @@ export function moduleStats(m, now = Date.now()) {
 
 r('GET', '/stats/module/:name', (ctx) => {
   const m = apiModules.find((x) => x.name === ctx.params.name);
-  if (!m || !isModuleEnabled(m.name)) throw new HttpError(404, '接口不存在');
+  if (!m || !isModuleListed(m.name)) throw new HttpError(404, '接口不存在');
   return { data: cached(`module:${m.name}`, () => moduleStats(m)) };
 });
 
