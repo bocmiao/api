@@ -509,6 +509,7 @@ export function removeCustomApi(name) {
   if (!row) throw new HttpError(404, '接口不存在');
   sql('DELETE FROM custom_api_versions WHERE name = ?').run(name);
   sql('DELETE FROM custom_apis WHERE name = ?').run(name);
+  sql('UPDATE module_settings SET hidden = 0 WHERE name = ?').run(name);
   return { name };
 }
 

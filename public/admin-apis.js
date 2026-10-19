@@ -90,11 +90,11 @@ async function pageAdminApiList() {
         : m.enabled ? '<span class="badge ok">正常</span>' : '<span class="badge">已关闭</span>';
     const health = m.health ? (m.health.ok ? '<span class="badge ok">最近正常</span>' : `<span class="badge danger" title="${esc(m.health.error ?? '')}">最近失败</span>`) : '<span class="faint">未检测</span>';
     const search = `${m.name} ${m.title} ${m.category} ${m.routes.map((r) => r.path).join(' ')}`.toLowerCase();
-    return `<tr data-search="${esc(search)}">
+    return `<tr data-search="${esc(search)}" data-hidden="${m.hidden ? '1' : '0'}">
       <td><a href="${apiUrl(m.name)}"><b>${esc(m.title)}</b></a><div class="small faint mono">${esc(m.name)}</div></td>
       <td class="small">${esc(m.category)}</td>
       <td>${originBadge(m)}</td>
-      <td>${stateBadge}${m.customDraft ? ' <span class="badge warn">有草稿</span>' : ''}</td>
+      <td>${stateBadge}${m.hidden ? ' <span class="badge warn">已隐藏</span>' : ''}${m.customDraft ? ' <span class="badge warn">有草稿</span>' : ''}</td>
       <td class="num">${fmtNum(m.calls7d)}</td>
       <td class="num">${m.overrides ? `<span class="badge">${m.overrides}</span>` : '<span class="faint">—</span>'}</td>
       <td>${health}</td>
@@ -119,18 +119,20 @@ async function pageAdminApiList() {
     </div>
     <div class="card">
       <div class="card-head"><h2>接口列表 <span class="small faint" style="font-weight:400">共 ${d.modules.length} 个</span></h2>
-        <div class="row" style="gap:8px"><input class="input" id="api-q" placeholder="搜索名称、路径、说明" style="width:220px;height:32px">
+        <div class="row" style="gap:8px"><select class="input" id="api-visibility" aria-label="可见性筛选" style="width:auto;height:32px"><option value="all">全部</option><option value="visible">显示</option><option value="hidden">隐藏</option></select><input class="input" id="api-q" placeholder="搜索名称、路径、说明" style="width:220px;height:32px">
         <a class="btn sm" href="/openapi.json" target="_blank" rel="noopener">OpenAPI</a></div></div>
       <div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th>分类</th><th>类型</th><th>状态</th><th class="num">7 天调用</th><th class="num">文案覆盖</th><th>最近检测</th><th></th></tr></thead>
       <tbody id="api-rows">${rows || '<tr><td colspan="8"><div class="empty">还没有接口</div></td></tr>'}<tr id="api-no-matches" hidden><td colspan="8" class="empty">没有匹配的接口，请修改关键词。</td></tr></tbody></table></div>
     </div>
   </div>`;
-  $('#api-q').addEventListener('input', (e) => {
-    const q = e.target.value.trim().toLowerCase();
+  const filterRows = () => {
+    const q = $('#api-q').value.trim().toLowerCase(), visible = $('#api-visibility').value;
     const rows = $$('#api-rows tr[data-search]');
-    for (const tr of rows) tr.hidden = Boolean(q) && !tr.dataset.search.includes(q);
+    for (const tr of rows) tr.hidden = (Boolean(q) && !tr.dataset.search.includes(q)) || (visible !== 'all' && (visible === 'hidden') !== (tr.dataset.hidden === '1'));
     $('#api-no-matches').hidden = rows.some((tr) => !tr.hidden) || !rows.length;
-  });
+  };
+  $('#api-q').addEventListener('input', filterRows);
+  $('#api-visibility').addEventListener('change', filterRows);
   for (const btn of $$('[data-clear-meta]')) {
     btn.addEventListener('click', async () => {
       if (!(await confirmDialog('清理失效文案', `删除 ${btn.dataset.clearMeta} 留下的全部文案补丁？`, { okText: '清理' }))) return;
@@ -242,7 +244,7 @@ async function pageAdminApiDetail(name) {
   $('#main').innerHTML = `<div class="wrap api-workbench" style="padding:28px 20px 80px">
     <div class="page-head"><div><a class="small" href="/admin/apis">← 接口列表</a>
       <h1 style="margin-top:6px">${esc(m.title)}</h1>
-      <p><span class="mono">${esc(m.name)}</span> · ${esc(m.category)} · ${originBadge(m)} ${draftOnly ? '<span class="badge warn">草稿</span>' : m.enabled ? '<span class="badge ok">正常</span>' : '<span class="badge">已关闭</span>'}${m.compliance ? `<span class="badge danger">${esc(m.compliance)}</span>` : ''}</p></div>${adminTabs('apis')}</div>
+      <p><span class="mono">${esc(m.name)}</span> · ${esc(m.category)} · ${originBadge(m)} ${m.hidden ? '<span class="badge warn">已隐藏</span>' : ''} ${draftOnly ? '<span class="badge warn">草稿</span>' : m.enabled ? '<span class="badge ok">正常</span>' : '<span class="badge">已关闭</span>'}${m.compliance ? `<span class="badge danger">${esc(m.compliance)}</span>` : ''}</p></div>${adminTabs('apis')}</div>
     <div class="seg" id="api-tabs" role="group" aria-label="接口面板">
       <button class="active" data-tab="overview" aria-pressed="true">概览</button>
       <button data-tab="meta" aria-pressed="false">文案</button>
@@ -259,7 +261,7 @@ async function pageAdminApiDetail(name) {
         </div>
       </div>
       <div class="card" style="margin-bottom:16px"><div class="card-head"><h2>接口地址</h2>
-        <div class="row" style="gap:8px"><a class="btn sm" href="/docs/${encodeURIComponent(m.name)}" target="_blank" rel="noopener">查看文档</a>
+        <div class="row" style="gap:8px">${m.hidden ? '<span class="small faint">公开文档已隐藏</span>' : `<a class="btn sm" href="/docs/${encodeURIComponent(m.name)}" target="_blank" rel="noopener">查看文档</a>`}<button class="btn sm" id="toggle-visibility">${m.hidden ? '恢复显示' : '隐藏接口'}</button>
         <button class="btn sm" id="toggle-module">${m.enabled ? '关闭接口' : '开启接口'}</button></div></div>
         <div class="card-pad">${routesHtml}</div></div>
       <div class="card card-pad"><div class="row" style="gap:16px;flex-wrap:wrap">
@@ -297,6 +299,14 @@ async function pageAdminApiDetail(name) {
     try {
       await api('PUT', '/admin/modules', { names: [m.name], enabled: !m.enabled });
       toast(!m.enabled ? '接口已开启' : '接口已关闭');
+      refreshWorkbench(name, main);
+    } catch (err) { toast(err.message, true); }
+  };
+
+  $('#toggle-visibility').onclick = async () => {
+    try {
+      await workbenchWrite('PUT', `${apiUrl(name)}/visibility`, { hidden: !m.hidden }, d.editRev, main);
+      toast(m.hidden ? '已恢复公开显示' : '已隐藏公开目录和文档，调用保持可用');
       refreshWorkbench(name, main);
     } catch (err) { toast(err.message, true); }
   };

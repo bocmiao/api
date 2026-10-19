@@ -3,7 +3,7 @@
 // 并在 <main> 里预先放入页面主要内容（接口列表、接口文档），浏览器加载完脚本后由前端正常渲染替换。
 // 另外提供 sitemap.xml 和 robots.txt。
 import { categories, modules } from '../apis/index.js';
-import { isModuleEnabled } from './modules.js';
+import { isModuleListed } from './modules.js';
 import { config } from '../config.js';
 import { localChangelog, RUNNING_VERSION } from './updater.js';
 import { sql } from '../db.js';
@@ -19,7 +19,7 @@ const SITE = 'Miao API';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-const enabled = () => modules.filter((m) => isModuleEnabled(m.name));
+const enabled = () => modules.filter((m) => isModuleListed(m.name));
 const routeCount = (list) => list.reduce((n, m) => n + m.routes.length, 0);
 
 export { siteOrigin } from './origin.js';

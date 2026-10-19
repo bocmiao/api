@@ -2,7 +2,7 @@
 // 参数、字段说明都来自同一份 registry，后台改了文案或新增接口后自动同步，不需要另写文档。
 import { getModules } from '../registry.js';
 import { categories } from '../apis/index.js';
-import { isModuleEnabled } from './modules.js';
+import { isModuleListed } from './modules.js';
 import { RUNNING_VERSION } from './updater.js';
 
 const slug = (s) => s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
@@ -24,7 +24,7 @@ export function openapi(origin) {
   const paths = {};
   const operations = [];
   for (const mod of getModules()) {
-    if (!isModuleEnabled(mod.name)) continue;
+    if (!isModuleListed(mod.name)) continue;
     const info = mod.sourceInfo ?? null;
     for (const route of mod.routes) {
       const pathNames = [...route.path.matchAll(/:([a-zA-Z_][a-zA-Z0-9_]*)/g)].map((m) => m[1]);
@@ -112,12 +112,12 @@ export function llmsTxt(origin) {
   const lines = [
     '# Miao API',
     '',
-    `> ${getModules().filter((m) => isModuleEnabled(m.name)).length} 个常用接口的聚合平台，统一返回 { code, message, cached, stale, updatedAt, data }。`,
+    `> ${getModules().filter((m) => isModuleListed(m.name)).length} 个常用接口的聚合平台，统一返回 { code, message, cached, stale, updatedAt, data }。`,
     `> 文档：${origin}/docs　接口目录：${origin}/api　OpenAPI：${origin}/openapi.json`,
     '',
   ];
   for (const cat of categories) {
-    const mods = getModules().filter((m) => m.category === cat.id && isModuleEnabled(m.name));
+    const mods = getModules().filter((m) => m.category === cat.id && isModuleListed(m.name));
     if (!mods.length) continue;
     lines.push(`## ${cat.title}`, '');
     for (const mod of mods) {

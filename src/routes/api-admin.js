@@ -13,7 +13,7 @@ import {
   listCustomApis, getCustomApi, customVersions, saveCustomDraft, publishCustomApi,
   rollbackCustomApi, removeCustomApi, parseConfig, buildModule, assertNoConflict,
 } from '../lib/custom-api.js';
-import { isModuleSwitchedOn, moduleOptions } from '../lib/modules.js';
+import { isModuleSwitchedOn, isModuleHidden, setModuleHidden, moduleOptions } from '../lib/modules.js';
 import { complianceBlocks, COMPLIANCE_MODULES } from '../lib/compliance.js';
 import { audit, requireReason } from '../lib/audit.js';
 import { cacheScope, clearModuleCache } from '../lib/cache.js';
@@ -63,7 +63,7 @@ r('GET', '/admin/apis', (ctx) => {
       source: mod.source ?? null,
       sourceInfo: mod.sourceInfo ?? null,
       routes: mod.routes.map((route) => ({ method: route.method, path: route.path, summary: route.summary ?? '' })),
-      enabled: isModuleSwitchedOn(mod.name),
+      enabled: isModuleSwitchedOn(mod.name), hidden: isModuleHidden(mod.name),
       compliance: complianceBlocks(mod.name) ? COMPLIANCE_MODULES[mod.name] : null,
       overrides: (mod.metaApplied ?? []).length,
       calls7d: calls7d(mod, calls),
@@ -89,7 +89,7 @@ r('GET', '/admin/apis', (ctx) => {
       source: cfg.source ?? null,
       sourceInfo: cfg.sourceInfo ?? null,
       routes: cfg.routes.map((r) => ({ method: r.method, path: r.path, summary: r.summary ?? '' })),
-      enabled: true,
+      enabled: true, hidden: isModuleHidden(row.name),
       compliance: null,
       overrides: 0,
       calls7d: 0,
@@ -149,7 +149,7 @@ r('GET', '/admin/apis/:name', (ctx) => {
           method: route.method, path: route.path, summary: route.summary ?? '',
           params: route.params ?? [], fields: route.fields ?? [], returns: route.returns ?? null, raw: Boolean(route.raw),
         })),
-        enabled: isModuleSwitchedOn(mod.name),
+        enabled: isModuleSwitchedOn(mod.name), hidden: isModuleHidden(mod.name),
         compliance: complianceBlocks(mod.name) ? COMPLIANCE_MODULES[mod.name] : null,
         options: moduleOptions(mod.name),
         calls7d: calls7d(mod),
@@ -170,6 +170,22 @@ r('GET', '/admin/apis/:name', (ctx) => {
       } : null,
     },
   };
+});
+
+// 隐藏只影响公开目录和文档；不改变调用开关、Key 范围或路由。
+r('PUT', '/admin/apis/:name/visibility', (ctx) => {
+  requireAdmin(ctx);
+  const { hidden, expectedRev } = ctx.body ?? {};
+  if (typeof hidden !== 'boolean') throw new HttpError(400, 'hidden 须为 true 或 false');
+  const name = ctx.params.name;
+  const saved = mutateWorkbench(expectedRev, () => {
+    if (!sourceModule(name) && !getCustomApi(name)) throw new HttpError(404, '接口不存在');
+    const before = isModuleHidden(name);
+    setModuleHidden(name, hidden);
+    audit(ctx, 'api.visibility.save', { target: name, detail: { before, hidden } });
+    return { name, hidden };
+  }, { reason: `visibility:${name}`, rebuild: false });
+  return { data: saved };
 });
 
 // ---------- 保存文案 ----------
@@ -362,6 +378,7 @@ r('DELETE', '/admin/custom-apis/:name', (ctx) => {
   const saved = mutateWorkbench(ctx.body?.expectedRev, () => {
     const row = removeCustomApi(ctx.params.name);
     sql('DELETE FROM api_meta WHERE name = ?').run(ctx.params.name);
+    sql('UPDATE module_settings SET hidden = 0 WHERE name = ?').run(ctx.params.name);
     audit(ctx, 'api.custom.delete', { target: ctx.params.name, reason });
     return row;
   }, { reason: `delete:${ctx.params.name}` });

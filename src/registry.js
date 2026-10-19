@@ -7,7 +7,7 @@ import { categories, modules, coreModules } from './apis/index.js';
 import { community } from './lib/seo.js';
 import { HttpError } from './lib/http.js';
 import { config } from './config.js';
-import { isModuleEnabled, moduleOptions } from './lib/modules.js';
+import { isModuleEnabled, isModuleHidden, moduleOptions } from './lib/modules.js';
 import { routeTtl } from './lib/routecache.js';
 import { moduleSourceInfo } from './lib/api-sources.js';
 import { applyMeta, loadAllPatches } from './lib/api-meta.js';
@@ -136,12 +136,13 @@ const envStatus = (env = []) => env.map((e) => {
 
 // includeDisabled：管理员可见被关闭的模块（带 enabled: false）
 export function catalog({ includeDisabled = false } = {}) {
+  const listed = modules.filter((m) => !isModuleHidden(m.name) && (includeDisabled || isModuleEnabled(m.name)));
   return {
     auth: { registrationOpen: config.registrationOpen, emailVerify: config.emailVerify },
     community: community(),
     limits: { anonDaily: config.limits.anonDaily, userDaily: config.limits.userDaily, anonMinute: config.limits.anonMinute, userMinute: config.limits.userMinute },
-    categories: categories.map((c) => ({ ...c, count: modules.filter((m) => m.category === c.id && (includeDisabled || isModuleEnabled(m.name))).length })),
-    modules: modules.filter((m) => includeDisabled || isModuleEnabled(m.name)).map((m) => {
+    categories: categories.map((c) => ({ ...c, count: listed.filter((m) => m.category === c.id).length })),
+    modules: listed.map((m) => {
       const env = envStatus(m.env);
       return {
         name: m.name,
