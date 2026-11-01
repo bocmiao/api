@@ -69,7 +69,7 @@
       <div class="topbar-right">
         ${q ? `<span class="quota-pill" title="今日调用额度，北京时间 0 点重置">今日剩余 ${fmt(q.remaining)} / ${fmt(q.limit)}</span>` : ''}
         <button class="btn ghost icon" id="theme" title="切换主题" aria-label="切换主题">${isDark() ? '☀' : '☾'}</button>
-        ${u ? `<a class="btn ghost" href="/console">控制台</a><button class="btn ghost icon" id="logout" title="退出登录" aria-label="退出登录">⎋</button>`
+        ${u ? `<button class="btn ghost icon" id="logout" title="退出登录" aria-label="退出登录">⎋</button>`
             : '<a class="btn ghost" href="/login">登录</a><a class="btn primary" href="/register">免费注册</a>'}
         <button class="btn ghost icon menu-btn" id="menu" aria-label="菜单">☰</button>
       </div></div>`;
