@@ -206,6 +206,11 @@ function renderTopbar(route) {
   const q = state.quota;
   const nav = [
     ['/', '接口', route === 'home' || route === 'api'],
+    ['/square', '广场', false],
+    ['/tools', '工具箱', false],
+    ['/ranking', '排行', false],
+    ['/packages', '套餐', false],
+    ['/nav', '导航', false],
     ['/docs', '文档', route === 'docs'],
     ...(u ? [['/console', '控制台', route === 'console']] : []),
     // 管理后台的「概览 / 用户 / 更新记录 / 系统设置」在页面右上角切换，导航栏只放一个入口
@@ -662,6 +667,11 @@ async function pageApi(name) {
         ${m.sourceInfo ? `<p class="source-note">${esc(m.sourceInfo.summary)}</p>` : ''}
         ${m.env.length ? `<div class="small faint" style="margin-top:6px">配置项：${m.env.map((e) => `<code>${esc(e.name)}</code>${e.optional ? '（可选）' : ''} ${e.configured ? '✓' : '未配置'}`).join('，')}
           ${state.user?.isAdmin ? ` · <a href="/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a>` : ''}</div>` : ''}
+        <div class="row" style="margin-top:12px;gap:8px">
+          <button class="btn sm ghost" id="share-api" type="button">${icon('copy')}分享</button>
+          ${state.user ? '<button class="btn sm ghost" id="fav-api" type="button">☆ 收藏</button>' : '<a class="btn sm ghost" href="/login">☆ 收藏</a>'}
+          <a class="btn sm ghost" href="/square?cat=${encodeURIComponent(m.category)}">同类接口</a>
+        </div>
       </div>
     </div>
     ${!m.available && state.user?.isAdmin ? `<div class="notice" style="margin-bottom:16px">该接口需要配置第三方密钥后才能使用。<a class="btn sm primary" href="/admin/settings/keys/${m.env.map((e) => e.name).join(',')}">去后台配置</a></div>` : ''}
@@ -673,7 +683,46 @@ async function pageApi(name) {
       </div>
       <div id="route"></div>
     </div>
+    <section class="card card-pad" style="margin-top:16px" id="related">
+      <div class="card-head"><h2>相关接口</h2><a class="small" href="/square?cat=${encodeURIComponent(m.category)}">查看全部 →</a></div>
+      <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:10px">
+        ${cat.modules.filter((x) => x.name !== m.name && x.category === m.category).slice(0, 6).map((x) => `<a class="card api-card" href="/docs/${encodeURIComponent(x.name)}">
+          <div class="card-title">${esc(x.title)}</div><p>${esc(x.description || x.routes[0]?.summary || '')}</p>
+          <div class="foot"><span class="path">${esc(x.routes[0]?.path || '')}${x.routes.length > 1 ? ` +${x.routes.length - 1}` : ''}</span>${moduleBadges(x, { card: true })}</div></a>`).join('')}
+      </div>
+    </section>
+    <section class="card card-pad" id="report" style="margin-top:16px">
+      <div class="card-head"><h2>异常上报</h2><span class="small faint">描述问题，管理员会处理</span></div>
+      ${state.user ? `<form id="report-form" style="margin-top:12px">
+        <div class="field"><label for="report-desc">问题描述<span class="req">*</span></label><textarea class="input" id="report-desc" name="description" rows="3" maxlength="500" placeholder="例如：返回 502、字段缺失、数据不对，附上请求参数和返回内容更好定位"></textarea></div>
+        <div class="field"><label for="report-contact">联系方式（可选）</label><input class="input" id="report-contact" name="contact" maxlength="100" placeholder="邮箱 / QQ，方便管理员联系你"></div>
+        <button class="btn primary" type="submit">提交反馈</button>
+      </form>` : `<p class="small faint" style="margin-top:8px">登录后可以提交异常反馈。<a href="/login">去登录 →</a></p>`}
+    </section>
   </div>`;
+
+  $('#share-api').onclick = () => copy(location.href);
+  if (state.user) {
+    api('GET', '/site/favorites').then(({ modules }) => {
+      const b = $('#fav-api'); if (!b) return;
+      const on = modules.includes(m.name);
+      b.textContent = on ? '★ 已收藏' : '☆ 收藏';
+      b.onclick = async () => {
+        try { const { favorited } = await api('POST', `/site/favorites/${encodeURIComponent(m.name)}`, {}); b.textContent = favorited ? '★ 已收藏' : '☆ 收藏'; toast(favorited ? '已收藏' : '已取消收藏'); }
+        catch (e) { toast(e.message, true); }
+      };
+    }).catch(() => {});
+  }
+  $('#report-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const description = $('#report-desc').value.trim();
+    if (description.length < 5) return toast('请至少描述 5 个字', true);
+    try {
+      await api('POST', '/site/reports', { module: m.name, path: m.routes[active]?.path, description, contact: $('#report-contact').value.trim() });
+      toast('已提交，管理员会尽快处理');
+      e.target.reset();
+    } catch (err) { toast(err.message, true); }
+  });
 
   const drawRoute = () => {
     const r = m.routes[active];
@@ -1595,9 +1644,32 @@ const adminTabs = (active) => `<div class="seg">
   <a href="/admin/apis" class="${active === 'apis' ? 'active' : ''}">接口</a>
   <a href="/admin/stats" class="${active === 'stats' ? 'active' : ''}">统计</a>
   <a href="/admin/users" class="${active === 'users' ? 'active' : ''}">用户</a>
+  <a href="/admin/reports" class="${active === 'reports' ? 'active' : ''}">反馈</a>
   <a href="/admin/site" class="${active === 'site' ? 'active' : ''}">运营</a>
   <a href="/admin/changelog" class="${active === 'changelog' ? 'active' : ''}">更新记录</a>
   <a href="/admin/settings" class="${active === 'settings' ? 'active' : ''}">系统设置</a></div>`;
+
+// ---------- 异常反馈 ----------
+async function pageAdminReports(status = 'open') {
+  if (!state.user?.isAdmin) return pageNotFound();
+  $('#main').innerHTML = '<div class="wrap"><div class="loading"><span class="spinner"></span></div></div>';
+  const d = await api('GET', `/admin/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+  const list = d.reports || [];
+  $('#main').innerHTML = `<div class="wrap" style="padding:28px 20px 80px">
+    <div class="page-head"><div><h1>异常反馈</h1><p>用户在接口详情页提交的问题；处理完点「关闭」</p></div>${adminTabs('reports')}</div>
+    <div class="seg" style="margin-bottom:14px"><a href="/admin/reports" class="${status !== 'closed' ? 'active' : ''}">待处理</a><a href="/admin/reports/closed" class="${status === 'closed' ? 'active' : ''}">已关闭</a></div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>接口</th><th>问题</th><th>联系方式</th><th>时间</th><th>状态</th><th></th></tr></thead><tbody>
+      ${list.length ? list.map((r) => `<tr><td><a href="/docs/${encodeURIComponent(r.module)}">${esc(r.module)}</a><div class="small faint mono">${esc(r.path || '')}</div></td>
+        <td style="max-width:420px;white-space:pre-wrap">${esc(r.description)}</td><td class="small">${esc(r.contact || '—')}</td>
+        <td class="small faint">${new Date(r.createdAt).toLocaleString()}</td><td><span class="badge ${r.status === 'open' ? 'warn' : 'ok'}">${r.status === 'open' ? '待处理' : '已关闭'}</span></td>
+        <td><button class="btn sm" data-report="${r.id}" data-status="${r.status === 'open' ? 'closed' : 'open'}">${r.status === 'open' ? '关闭' : '重新打开'}</button></td></tr>`).join('')
+        : '<tr><td colspan="6"><div class="empty">暂无反馈</div></td></tr>'}
+    </tbody></table></div></div></div>`;
+  $$('[data-report]').forEach((b) => (b.onclick = async () => {
+    try { await api('PATCH', `/admin/reports/${b.dataset.report}`, { status: b.dataset.status }); pageAdminReports(b.dataset.status === 'closed' ? 'open' : 'closed'); }
+    catch (e) { toast(e.message, true); }
+  }));
+}
 
 // ---------- 更新记录 ----------
 async function pageAdminChangelog() {
@@ -2398,7 +2470,7 @@ async function router({ keepScroll = false } = {}) {
       case 'links': await pageLinks(); break;
       case 'login': case 'register': case 'reset': pageAuth(page); break;
       case 'console': await pageConsole(arg); break;
-      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : arg === 'site' ? pageAdminSite(sub) : arg === 'apis' ? pageAdminApis(sub) : pageAdmin()); break;
+      case 'admin': await (arg === 'settings' ? pageAdminSettings(sub, extra) : arg === 'users' ? pageAdminUsers() : arg === 'stats' ? pageAdminStats(sub) : arg === 'changelog' ? pageAdminChangelog() : arg === 'site' ? pageAdminSite(sub) : arg === 'apis' ? pageAdminApis(sub) : arg === 'reports' ? pageAdminReports(sub) : pageAdmin()); break;
       default: pageNotFound();
     }
   } catch (err) {

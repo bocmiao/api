@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { apiRouter, catalog, refreshRegistry } from './registry.js';
 import { accountRouter, checkConfirm } from './routes/account.js';
 import './routes/site.js';
+import './routes/market.js';
 import './routes/news60s.js';
 import './routes/api-admin.js';
 import { HttpError, errorCode } from './lib/http.js';
@@ -202,6 +203,8 @@ async function serveStatic(req, res, pathname, query, { page = false, status = 2
 // 只有同时也是 JSON 地址的（如 /status、/admin/users）才按请求类型区分：浏览器直接打开或搜索引擎爬虫返回页面，
 // 网页程序内部用 fetch 取数据时照常返回 JSON。/api/ 开头的接口和 /s/ 短链接不受影响
 const PAGE_ROOTS = new Set(['', 'docs', 'status', 'links', 'login', 'register', 'reset', 'console', 'admin']);
+// 市场层独立页面：广场 / 工具箱 / 排行 / 套餐 / 导航，共用 market.html + market.js
+const MARKET_PAGES = new Set(['/square', '/tools', '/ranking', '/packages', '/nav']);
 const BOT_RE = /bot|spider|crawl|slurp|bingpreview|facebookexternalhit|embedly|quora link preview|whatsapp|telegram|skype|lark|dingtalk/i;
 export function pageNavigation(req, path) {
   if (req.method !== 'GET' || path === '/api' || /^\/(api|s)\//.test(path) || /\.[a-z0-9]+$/i.test(path)) return null;
@@ -236,6 +239,17 @@ export async function handle(req, res) {
     if (req.method === 'GET' && (path === '/about' || path === '/about.html')) {
       const origin = siteOrigin(req);
       if (await serveStatic(req, res, '/about.html', url.searchParams, { page: true, transform: (html) => ({ html: renderAbout(html, origin), status: 200 }) })) return;
+    }
+    // 市场层：广场、工具箱、排行、套餐、导航
+    if (req.method === 'GET' && MARKET_PAGES.has(path)) {
+      const origin = siteOrigin(req);
+      if (await serveStatic(req, res, '/market.html', url.searchParams, {
+        page: true,
+        transform: (html) => {
+          const r = renderPage(html, path, origin);
+          return { html: r.html, status: r.status };
+        },
+      })) return;
     }
     const pageStatus = pageNavigation(req, path);
     if (pageStatus) {
