@@ -110,6 +110,10 @@ svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none;
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .quota-pill { font-size: 12px; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
 .btn.menu-btn { display: none; }
+@media (max-width: 1180px) {
+  .topbar .wrap { gap: 14px; }
+  .topbar .nav a { padding: 6px 8px; font-size: 13px; }
+}
 @media (max-width: 760px) {
   .nav { display: none; position: absolute; top: 60px; left: 0; right: 0; flex-direction: column; background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 16px 12px; }
   .nav.open { display: flex; }

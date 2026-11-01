@@ -215,6 +215,26 @@ db.exec(`
     reviewed_at INTEGER
   );
   CREATE INDEX IF NOT EXISTS friend_links_status ON friend_links(status, sort);
+  -- 接口异常上报：用户在详情页反馈问题，管理员在后台处理
+  CREATE TABLE IF NOT EXISTS api_reports (
+    id INTEGER PRIMARY KEY,
+    module TEXT NOT NULL,
+    path TEXT,
+    description TEXT NOT NULL,
+    contact TEXT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at INTEGER NOT NULL,
+    handled_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS api_reports_status ON api_reports(status, created_at);
+  -- 用户收藏的接口
+  CREATE TABLE IF NOT EXISTS api_favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    module TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, module)
+  );
   -- 每个接口模块的运行参数：置顶、推荐、缓存时长、每分钟限流（为空用接口自带的设置）
   CREATE TABLE IF NOT EXISTS module_options (
     name TEXT PRIMARY KEY,

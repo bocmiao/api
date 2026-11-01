@@ -54,6 +54,25 @@ ${links.length ? `<ul>${links.map((l) => `<li><a href="${esc(l.url)}" rel="noope
 </div>`;
 }
 
+// 市场层静态正文（接口广场、工具箱、排行、套餐、导航），给不执行 JS 的爬虫看
+function marketBody(h1, desc, extra = '') {
+  return `<div class="wrap seo-pre" style="padding:40px 20px"><h1>${esc(h1)}</h1><p>${esc(desc)}</p>${extra}</div>`;
+}
+function squareBody(list) {
+  const items = list.map((m) => `<li><a href="/docs/${encodeURIComponent(m.name)}">${esc(m.title)}</a>：${esc(m.description ?? '')}</li>`).join('');
+  return marketBody('接口广场', `按分类浏览 ${SITE} 的公开接口，支持搜索、调用方式和热度排序；点开接口可查看参数、返回字段、在线调试和示例代码。`, `<ul>${items}</ul>`);
+}
+function toolsBody() {
+  const names = ['JSON 格式化', 'Base64 编解码', 'URL 编解码', 'HTML 转义', 'JWT 解码', 'SHA-256 / SHA-1 / MD5', '时间戳转换', '正则测试', '随机密码', '文本统计', '颜色转换', '进制转换'];
+  return marketBody('开发者工具箱', '编码、哈希、时间戳、正则、颜色等常用小工具，全部在浏览器本地计算，不上传输入内容。', `<ul>${names.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`);
+}
+function rankingBody(list) {
+  return marketBody('API 调用排行榜', `${SITE} 公开的接口调用统计：累计调用、今日调用、成功率、接口热度与分类分布。数据每分钟更新。`, `<p>当前开放 ${list.length} 个接口、${routeCount(list)} 个调用地址。</p>`);
+}
+function packagesBody() {
+  return marketBody('接口套餐', `在线站点不接支付。匿名每天可调用 ${config.limits.anonDaily} 次，免费注册后每天 ${config.limits.userDaily} 次；需要更多次数可以用兑换码，或直接自部署。`, '<p><a href="/register">免费注册</a> · <a href="/docs">查看调用方式</a> · <a href="https://github.com/bocmiao/api">GitHub 自部署</a></p>');
+}
+
 function moduleBody(m, cat) {
   const info = m.sourceInfo ?? moduleSourceInfo(m.name);
   const routes = m.routes.map((r) => {
@@ -138,6 +157,22 @@ export function pageMeta(path) {
       module: m,
       category: cat,
     };
+  }
+  if (seg[0] === 'square' && seg.length === 1) {
+    return { title: `接口广场 - 浏览全部 API 接口 | ${SITE}`, description: `按分类浏览 ${SITE} 的 ${total} 个接口，支持搜索、调用方式筛选和热度排序，查看参数、返回字段与在线调试。`, keywords: 'API广场,接口列表,免费API,聚合API', body: squareBody(list) };
+  }
+  if (seg[0] === 'tools' && seg.length === 1) {
+    return { title: `开发者工具箱 - 编码、哈希、时间戳、正则 | ${SITE}`, description: 'JSON 格式化、Base64、URL 编解码、JWT 解码、SHA / MD5、时间戳、正则、随机密码、颜色与进制转换，全部在浏览器本地计算。', keywords: '开发者工具箱,JSON格式化,Base64,时间戳,正则测试,MD5', body: toolsBody() };
+  }
+  if (seg[0] === 'ranking' && seg.length === 1) {
+    return { title: `API 调用排行榜与统计 | ${SITE}`, description: `${SITE} 公开调用统计：累计调用、今日调用、成功率、接口热度与分类分布。`, keywords: 'API排行榜,API统计,接口调用量', body: rankingBody(list) };
+  }
+  if (seg[0] === 'packages' && seg.length === 1) {
+    return { title: `接口套餐与额度说明 | ${SITE}`, description: `${SITE} 额度说明：匿名每天 ${config.limits.anonDaily} 次，注册后每天 ${config.limits.userDaily} 次；不接在线支付，支持兑换码与自部署。`, keywords: 'API套餐,API额度,免费API', body: packagesBody() };
+  }
+  if (seg[0] === 'nav' && seg.length === 1) {
+    const links = friendLinks();
+    return { title: `导航 - 常用站点与工具 | ${SITE}`, description: `${SITE} 的导航页：常用站点、开发工具与合作伙伴链接。`, body: marketBody('导航', '常用站点、开发工具与合作伙伴链接。', links.length ? `<ul>${links.map((l) => `<li><a href="${esc(l.url)}" rel="noopener">${esc(l.name)}</a>${l.description ? `：${esc(l.description)}` : ''}</li>`).join('')}</ul>` : '') };
   }
   if (seg[0] === 'links' && seg.length === 1) {
     return { title: `友情链接 - 合作伙伴站点 | ${SITE}`, description: `${SITE} 的友情链接与合作伙伴站点，欢迎交换友链。`, body: linksBody() };
@@ -285,7 +320,9 @@ export function renderAbout(html, origin) {
 export function sitemap(origin) {
   const lastmod = lastRelease();
   const urls = [
-    ['/', '1.0', 'daily'], ['/about', '0.9', 'weekly'], ['/docs', '0.8', 'weekly'], ['/status', '0.5', 'hourly'], ['/links', '0.4', 'weekly'],
+    ['/', '1.0', 'daily'], ['/square', '0.9', 'daily'], ['/about', '0.9', 'weekly'], ['/docs', '0.8', 'weekly'],
+    ['/tools', '0.7', 'weekly'], ['/ranking', '0.6', 'hourly'], ['/packages', '0.5', 'weekly'], ['/nav', '0.5', 'weekly'],
+    ['/status', '0.5', 'hourly'], ['/links', '0.4', 'weekly'],
     ...enabled().map((m) => [`/docs/${encodeURIComponent(m.name)}`, '0.7', 'weekly']),
   ];
   return `<?xml version="1.0" encoding="UTF-8"?>
